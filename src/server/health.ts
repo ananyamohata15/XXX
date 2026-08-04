@@ -93,3 +93,7 @@ async function recordHealthTrace(
     console.error("health trace failed (non-fatal):", err);
   }
 }
+
+// Deliberate type error: CI-gate experiment (XXX-13). This branch is never merged.
+const ciProof: number = "this is not a number";
+void ciProof;
