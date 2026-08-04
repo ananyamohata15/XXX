@@ -54,9 +54,10 @@ export async function checkHealth(
 async function checkDb(supabase: SupabaseClient): Promise<DbCheck> {
   const startedAt = Date.now();
   try {
-    const { error } = await supabase
-      .from("traces")
-      .select("id", { head: true, count: "exact" });
+    // A real GET, not head:true — PostgREST HEAD responses carry no error
+    // body, so a missing table reads as success (observed live on Vercel:
+    // "healthy" while startTrace failed with table-not-found).
+    const { error } = await supabase.from("traces").select("id").limit(1);
     const latencyMs = Date.now() - startedAt;
     if (error) return { ok: false, latencyMs, error: error.message };
     return { ok: true, latencyMs, error: null };
