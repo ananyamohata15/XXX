@@ -107,6 +107,30 @@ Caveats, pending Vercel CLI auth:
 - Supabase env vars are not set in Vercel, so once reachable, health will
   honestly report `unhealthy` (`Supabase is not configured…`) until they are.
 
+## Incident: false "healthy" from HEAD-based db check (fixed)
+
+First production verification returned `{"status":"healthy","checks":{"db":{"ok":true,...}}}`
+**before any migration had been applied** — impossible. Runtime logs showed
+`startTrace failed: Could not find the table 'public.traces' in the schema cache`
+at the same moment. Root cause: the db check used
+`select("id", { head: true, count: "exact" })`; PostgREST HEAD responses carry
+no error body, so supabase-js surfaced `error: null` for a missing table.
+Fixed by switching to a real `select("id").limit(1)` (commit on this branch).
+Lesson recorded per CLAUDE.md constraint 7: the live environment caught what
+unit tests with a fake client structurally cannot — mock fidelity is bounded.
+
+## Vercel setup fixes (made via authenticated CLI/API this session)
+
+- Framework preset was **Other** (project auto-created by the Vercel GitHub
+  integration before the Next.js code landed); patched to **nextjs**.
+- Deployment protection was `all_except_custom_domains` (production
+  unreachable publicly, no custom domain). Changed to `preview`-only so the
+  production URL is public — required for external health verification;
+  previews remain SSO-protected.
+- Production URL (canonical alias): **https://xxx-bice-rho.vercel.app**
+- Env vars in Vercel are marked *sensitive* (unreadable via CLI) — local dev
+  values for `.env.local` must come from the Supabase dashboard.
+
 ## Branch protection — exact setting to click
 
 GitHub repo → **Settings → Branches → Add branch protection rule** →

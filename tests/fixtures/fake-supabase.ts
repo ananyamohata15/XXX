@@ -34,8 +34,12 @@ export function createFakeSupabase(
     from(table: string) {
       return {
         select() {
-          // Awaited directly by the health db check (head count).
-          return Promise.resolve({ data: null, count: error ? null : 0, error });
+          return {
+            // Health db check: select("id").limit(1).
+            limit() {
+              return Promise.resolve({ data: error ? null : [], error });
+            },
+          };
         },
         insert(row: Record<string, unknown>) {
           if (!error) inserts.push({ table, row });
