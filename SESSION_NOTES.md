@@ -138,14 +138,21 @@ pattern `main` → enable **"Require status checks to pass before merging"** →
 select the check **`build-and-test`** (appears after the first CI run) →
 optionally **"Require branches to be up to date before merging"**.
 
+## Production verification (in progress)
+
+- After the fix merged (PR #3, merge sha `3866679`), production honestly
+  reports the true state:
+  `{"status":"unhealthy","checks":{"db":{"ok":false,"latencyMs":100,"error":"Could not find the table 'public.traces' in the schema cache"}},"version":"0.1.0+3866679",...}`
+  HTTP 503 — correct, because migrations are not yet applied.
+- Vercel env vars were already set (Production+Preview) by the Supabase
+  integration/user; nothing to add there.
+
 ## Open questions
 
-- Supabase CLI auth + project ref needed to `supabase link` + `db push` the
-  two migrations, and to set the three env vars in Vercel.
-- Vercel CLI auth needed to set env vars, redeploy, and decide what to do
-  about deployment protection (health endpoint must be publicly reachable —
-  likely "Standard Protection" with a public production domain, or an OPTIONS
-  bypass; decide when we can see the project settings).
+- **Supabase CLI auth is the last blocker**: `npx supabase login` needed to
+  link the project and `db push` the two migrations; after that, re-verify
+  /api/health returns healthy and confirm the `health_check` trace row +
+  event land in Supabase.
 - Local git identity was set to name `Ananya Mohata` this session while the
   global config uses `AnanyaMohata15` — commits made before the repo-local
   config took effect may show either; harmless, flagging for transparency.
