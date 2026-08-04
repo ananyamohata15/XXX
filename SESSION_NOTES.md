@@ -1,8 +1,9 @@
 # Session 1 — Infra (XXX-12, XXX-13, XXX-14)
 
-Branch: `session-1-infra`. Status: local work complete, merged to `main` via
-PR #1, CI proven (green run + blocked type-error PR). Supabase link and Vercel
-env/verification pending auth (see Open questions).
+Branch: `session-1-infra`. Status: **complete**. All three tickets delivered,
+CI proven (green run + blocked type-error PR), migrations applied to the
+production Supabase project, production deployment verified healthy with a
+trace row landing (evidence below).
 
 ## What was done
 
@@ -138,21 +139,45 @@ pattern `main` → enable **"Require status checks to pass before merging"** →
 select the check **`build-and-test`** (appears after the first CI run) →
 optionally **"Require branches to be up to date before merging"**.
 
-## Production verification (in progress)
+## Production verification (final)
 
-- After the fix merged (PR #3, merge sha `3866679`), production honestly
-  reports the true state:
-  `{"status":"unhealthy","checks":{"db":{"ok":false,"latencyMs":100,"error":"Could not find the table 'public.traces' in the schema cache"}},"version":"0.1.0+3866679",...}`
-  HTTP 503 — correct, because migrations are not yet applied.
-- Vercel env vars were already set (Production+Preview) by the Supabase
-  integration/user; nothing to add there.
+- Supabase project: **XXX**, ref `epruyruabdcciergbmcp` (ca-central-1,
+  Postgres 17). Linked; both migrations applied via `npx supabase db push`
+  (`20260803000000_initial.sql`, `20260803000001_instrumentation.sql`).
+- Intermediate honest state, pre-migration (PR #3 merge sha `3866679`):
+  `{"status":"unhealthy","checks":{"db":{"ok":false,"latencyMs":100,"error":"Could not find the table 'public.traces' in the schema cache"}},...}`
+  HTTP 503 — correct, tables did not exist yet.
+- Post-migration, production URL https://xxx-bice-rho.vercel.app/api/health:
+  `{"status":"healthy","checks":{"db":{"ok":true,"latencyMs":172,"error":null}},"version":"0.1.0+3866679","timestamp":"2026-08-04T02:24:55.696Z"}`
+  HTTP 200.
+- **Trace proof-of-life** (queried via Supabase Management API):
+  - `traces`: id `48c3b73a-677c-494f-b32c-5e73ab76d922`, kind `health_check`,
+    started/finished 2026-08-04 02:24:55, total_cost_usd 0.000000, 1 event.
+  - `trace_events`: provider `supabase`, endpoint `traces.head_count`,
+    est_cost_usd 0, duration_ms 172, metadata `{"ok": true}`.
+  - (Endpoint label renamed to `traces.select_limit_1` in the final commit —
+    the check is no longer a HEAD count; honest names.)
+- Vercel env vars were already set (Production+Preview) by the user/Supabase
+  integration; nothing needed there.
+
+## Definition-of-done checklist
+
+- [x] `npm run build`, `npm run typecheck` (tsc --noEmit), lint, tests pass
+      locally — run before every commit this session.
+- [x] CI green on `main` (runs on PR #1/#3 and pushes to main).
+- [x] Deployed `/api/health` verified against production Supabase (evidence
+      above).
+- [x] Type-error PR demonstrably blocked by CI (PR #2, run 30870804940).
+- [x] SESSION_NOTES.md: decisions, evidence, open questions, exact branch
+      protection setting.
+- [x] Boundary lint rule proven with failing example, then removed.
 
 ## Open questions
 
-- **Supabase CLI auth is the last blocker**: `npx supabase login` needed to
-  link the project and `db push` the two migrations; after that, re-verify
-  /api/health returns healthy and confirm the `health_check` trace row +
-  event land in Supabase.
+- Branch protection must be clicked in GitHub by the user (setting below) —
+  the `build-and-test` check now exists and can be selected.
+- Deployment protection was relaxed to preview-only so production is public;
+  revert in Vercel → Project → Settings → Deployment Protection if unwanted.
 - Local git identity was set to name `Ananya Mohata` this session while the
   global config uses `AnanyaMohata15` — commits made before the repo-local
   config took effect may show either; harmless, flagging for transparency.

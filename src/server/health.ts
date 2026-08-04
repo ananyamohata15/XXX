@@ -84,7 +84,7 @@ async function recordHealthTrace(
     const traceId = await instrumentation.startTrace("health_check");
     await instrumentation.logEvent(traceId, {
       provider: "supabase",
-      endpoint: "traces.head_count",
+      endpoint: "traces.select_limit_1",
       estCostUsd: 0,
       durationMs: db.latencyMs ?? undefined,
       metadata: { ok: db.ok },
