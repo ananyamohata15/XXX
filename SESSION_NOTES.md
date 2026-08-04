@@ -1,7 +1,8 @@
 # Session 1 — Infra (XXX-12, XXX-13, XXX-14)
 
-Branch: `session-1-infra`. Status: local work complete; GitHub push / Supabase
-link / Vercel deploy pending auth (see Open questions).
+Branch: `session-1-infra`. Status: local work complete, merged to `main` via
+PR #1, CI proven (green run + blocked type-error PR). Supabase link and Vercel
+env/verification pending auth (see Open questions).
 
 ## What was done
 
@@ -75,6 +76,37 @@ link / Vercel deploy pending auth (see Open questions).
   ```
   The legitimate import in `src/app/api/health/route.ts` passes the same lint.
 
+## CI evidence (XXX-13)
+
+- Repo: https://github.com/ananyamohata15/XXX (pre-existing; local history
+  rebased onto its `main`, whose only commit was CLAUDE.md).
+- PR #1 (session-1-infra → main): CI green.
+  - First green run: https://github.com/ananyamohata15/XXX/actions/runs/30870607868
+  - After actions v4→v5 bump (v4 deprecation annotation): run 30870691515.
+  - Merged as merge-commit `eb86d51` (atomic ticket commits preserved).
+- **Type-error experiment**: branch `ci-proof-type-error`, PR #2, deliberate
+  `const ciProof: number = "this is not a number"` in `src/server/health.ts`.
+  - Failing run: https://github.com/ananyamohata15/XXX/actions/runs/30870804940
+    — Typecheck step failed, annotation `Type 'string' is not assignable to
+    type 'number'` (health.ts#98), exit code 2; `build-and-test` check
+    reported **fail** on the PR.
+  - PR #2 closed unmerged; branch deleted (local + remote).
+
+## Vercel discovery (first deployment)
+
+The GitHub repo already had a **Vercel integration connected**: project `xxx`
+under scope `trip-planner-mvp`. It auto-deploys every push — the merge of
+PR #1 produced a successful **Production** deployment
+(`https://xxx-l7q5eyv97-trip-planner-mvp.vercel.app`), and the type-error PR's
+Vercel preview deploy failed (build error), as expected.
+
+Caveats, pending Vercel CLI auth:
+- **Deployment protection (Vercel SSO) is on** — `/api/health` on both the
+  deployment URL and `xxx-trip-planner-mvp.vercel.app` returns 302 to
+  `vercel.com/sso-api`, so the endpoint is not publicly verifiable yet.
+- Supabase env vars are not set in Vercel, so once reachable, health will
+  honestly report `unhealthy` (`Supabase is not configured…`) until they are.
+
 ## Branch protection — exact setting to click
 
 GitHub repo → **Settings → Branches → Add branch protection rule** →
@@ -84,7 +116,12 @@ optionally **"Require branches to be up to date before merging"**.
 
 ## Open questions
 
-- GitHub repo, Supabase project, and Vercel project all need interactive
-  auth/creation — pending user login (gh / supabase / vercel CLIs).
-- CI type-error-PR experiment and production deploy verification pending the
-  above; evidence to be appended here.
+- Supabase CLI auth + project ref needed to `supabase link` + `db push` the
+  two migrations, and to set the three env vars in Vercel.
+- Vercel CLI auth needed to set env vars, redeploy, and decide what to do
+  about deployment protection (health endpoint must be publicly reachable —
+  likely "Standard Protection" with a public production domain, or an OPTIONS
+  bypass; decide when we can see the project settings).
+- Local git identity was set to name `Ananya Mohata` this session while the
+  global config uses `AnanyaMohata15` — commits made before the repo-local
+  config took effect may show either; harmless, flagging for transparency.
