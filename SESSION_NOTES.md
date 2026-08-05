@@ -231,6 +231,45 @@ on every dev run. CLAUDE.md edits are reserved for close-out with approval,
 so it stays uncommitted — decision for the reviewer: commit it alongside
 the approved `src/shared/` rule at close-out, or configure it away.
 
+### CHECKPOINT 2 outcome — layout PASSES visually; one fixture content fix
+
+**Golden-set lesson #1 — venue dwell-time plausibility.** The original
+afternoon put 6+ hours in one venue (Distillery 14:45 through dinner at
+19:00 next door); the Distillery is a 90–120 minute experience. Rule
+candidate: **days must respect plausible dwell ranges per venue/category**
+— flag for the E4 day-grammar validator (a dwell-range table per category,
+violations rejected like meal-window violations) and as a scenario
+dimension for the XXX-26 golden set (days that are time-valid but
+dwell-implausible must be caught by review).
+
+Restructure applied as directed: lunch as-is → **St. Lawrence Market
+15:00–16:30** (new slot; its published Saturday 17:00 close is an hours
+fact, tier 1 — a real constraint the timing must respect) → free time
+16:30–17:15 → **Distillery 17:15–19:00** → El Catrín anchor unchanged.
+Details:
+
+- New places: St. Lawrence Market (main), Chinatown + Graffiti Alley
+  (alternates). Kensington moved from the Distillery slot to the market
+  slot (a place shouldn't be offered as the alternate for two slots);
+  Distillery's alternates are now Graffiti Alley + Harbourfront.
+- Matrix: full symmetric coverage of the six main places (Annex→market
+  transit 35, market→Distillery walk 15) + new-alternate neighbour pairs.
+- `FREE_TIME_THRESHOLD_MINUTES` 40 → 30 so the deliberate 30-min gap
+  (45 min window minus the 15-min walk) is named, while the 25-min
+  after-lunch slack stays quiet.
+- Honest wrinkle, left in deliberately: Distillery ends 19:00 and the
+  4-min walk to El Catrín formally lands 19:04 — an in-district stroll
+  absorbs it, but this is exactly the class of boundary violation E5's
+  real validator should flag. Recorded, not silently fixed.
+
+**CLAUDE.md block ruling**: print the machine-appended block verbatim for
+inspection (done at checkpoint reply), apply at close-out. Investigated the
+generator: no config flag exists, but `writeAgentFiles` prefers AGENTS.md
+when present and skips CLAUDE.md entirely once the block lives there.
+Close-out plan: restore CLAUDE.md, commit a one-block AGENTS.md — the
+block stays contained between its own delimiters, CLAUDE.md stays purely
+human-authored, and `next dev` stops touching it.
+
 ---
 
 ~~~# Session 2 — Core domain schema (XXX-15)

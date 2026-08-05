@@ -14,7 +14,9 @@ import { TIERS, type Tier } from "../vocabulary";
  * - By the Way Cafe's price is status "absent": we looked, it isn't
  *   published. Displayed as missing, never guessed.
  * - Distillery District is known-free: min = max = 0, not absent.
- * - The 17:30–19:00 gap is on purpose — a day needs air.
+ * - The 16:30–17:15 gap is on purpose — a day needs air. St. Lawrence
+ *   Market's Saturday 17:00 close is a real published constraint the
+ *   timing has to respect (golden-set lesson #1: dwell-time plausibility).
  * - The travel matrix covers all main-slot pairs plus each alternate to its
  *   default-order neighbours. Pairs that drag-plus-swap can produce beyond
  *   that are honestly absent ("travel not computed"), matching how the real
@@ -157,6 +159,43 @@ const rawDay = {
         TIERS.judgment,
       ),
     },
+    "st-lawrence-market": {
+      id: "st-lawrence-market",
+      name: "St. Lawrence Market",
+      neighborhood: "Old Town",
+      priceRange: present(cad(0, 0), "stlawrencemarket.com", TIERS.verified),
+      // The 17:00 Saturday close is the fact that forces this slot's timing.
+      hoursToday: present("Sat 5:00–17:00", "stlawrencemarket.com", TIERS.verified),
+      vibe: present(
+        "Peameal bacon sandwich from Carousel Bakery — the city's canonical bite.",
+        "concierge",
+        TIERS.judgment,
+      ),
+    },
+    chinatown: {
+      id: "chinatown",
+      name: "Chinatown",
+      neighborhood: "Spadina & Dundas",
+      priceRange: present(cad(0, 0), "concierge", TIERS.judgment),
+      hoursToday: present("Open streets — busiest 12:00–18:00", "concierge", TIERS.judgment),
+      vibe: present(
+        "Produce stalls, BBQ windows, and bakery counters — graze as you go.",
+        "concierge",
+        TIERS.judgment,
+      ),
+    },
+    "graffiti-alley": {
+      id: "graffiti-alley",
+      name: "Graffiti Alley",
+      neighborhood: "Queen West",
+      priceRange: present(cad(0, 0), "concierge", TIERS.judgment),
+      hoursToday: present("Always open", "concierge", TIERS.judgment),
+      vibe: present(
+        "Rush Lane's rotating murals — a block-long argument about art.",
+        "concierge",
+        TIERS.judgment,
+      ),
+    },
     distillery: {
       id: "distillery",
       name: "Distillery Historic District",
@@ -284,21 +323,48 @@ const rawDay = {
       ],
     },
     {
-      id: "slot-afternoon",
+      id: "slot-market",
       origin: "concierge",
       kind: "activity",
-      startTime: "14:45",
-      endTime: "17:30",
-      placeId: "distillery",
+      startTime: "15:00",
+      endTime: "16:30",
+      placeId: "st-lawrence-market",
       reason: because(
-        "Car-free cobblestones and galleries — unhurried by late afternoon, and dinner is already inside it.",
+        "Saturday is the market's big day and it closes at five — this window catches the stalls alive but past the midday crush.",
       ),
       alternates: [
         {
           placeId: "kensington",
           rank: 1,
           reason: because(
-            "Livelier streets and better people-watching, if you have the legs for it.",
+            "Same grazing instinct, scruffier streets — and it doesn't close at five.",
+          ),
+        },
+        {
+          placeId: "chinatown",
+          rank: 2,
+          reason: because(
+            "Bakeries and BBQ windows along Spadina — cheaper, louder, open late.",
+          ),
+        },
+      ],
+    },
+    {
+      id: "slot-distillery",
+      origin: "concierge",
+      kind: "activity",
+      startTime: "17:15",
+      endTime: "19:00",
+      placeId: "distillery",
+      reason: because(
+        "Car-free cobblestones and galleries in the best light of the day — and dinner is already inside it.",
+      ),
+      alternates: [
+        {
+          placeId: "graffiti-alley",
+          rank: 1,
+          reason: because(
+            "Rawer than the cobblestones — an open-air gallery that photographs even better.",
           ),
         },
         {
@@ -322,16 +388,21 @@ const rawDay = {
     },
   ],
   travel: {
-    // Main-slot pairs — full symmetric coverage.
+    // Main-slot pairs — full symmetric coverage of the six main places.
     [travelKey("mildreds", "rom")]: { mode: "transit", minutes: 26 },
     [travelKey("mildreds", "by-the-way")]: { mode: "transit", minutes: 24 },
+    [travelKey("mildreds", "st-lawrence-market")]: { mode: "transit", minutes: 28 },
     [travelKey("mildreds", "distillery")]: { mode: "transit", minutes: 33 },
     [travelKey("mildreds", "el-catrin")]: { mode: "transit", minutes: 34 },
     [travelKey("rom", "by-the-way")]: { mode: "walk", minutes: 9 },
+    [travelKey("rom", "st-lawrence-market")]: { mode: "transit", minutes: 22 },
     [travelKey("rom", "distillery")]: { mode: "transit", minutes: 28 },
     [travelKey("rom", "el-catrin")]: { mode: "transit", minutes: 30 },
+    [travelKey("by-the-way", "st-lawrence-market")]: { mode: "transit", minutes: 35 },
     [travelKey("by-the-way", "distillery")]: { mode: "transit", minutes: 31 },
     [travelKey("by-the-way", "el-catrin")]: { mode: "transit", minutes: 32 },
+    [travelKey("st-lawrence-market", "distillery")]: { mode: "walk", minutes: 15 },
+    [travelKey("st-lawrence-market", "el-catrin")]: { mode: "walk", minutes: 18 },
     [travelKey("distillery", "el-catrin")]: { mode: "walk", minutes: 4 },
     // Each alternate to its slot's default-order neighbours.
     [travelKey("mahas", "rom")]: { mode: "transit", minutes: 29 },
@@ -345,7 +416,13 @@ const rawDay = {
     [travelKey("rom", "sushi-on-bloor")]: { mode: "walk", minutes: 10 },
     [travelKey("sushi-on-bloor", "distillery")]: { mode: "transit", minutes: 31 },
     [travelKey("by-the-way", "kensington")]: { mode: "transit", minutes: 15 },
+    [travelKey("kensington", "distillery")]: { mode: "transit", minutes: 22 },
     [travelKey("kensington", "el-catrin")]: { mode: "transit", minutes: 26 },
+    [travelKey("by-the-way", "chinatown")]: { mode: "transit", minutes: 12 },
+    [travelKey("chinatown", "distillery")]: { mode: "transit", minutes: 24 },
+    [travelKey("st-lawrence-market", "graffiti-alley")]: { mode: "transit", minutes: 16 },
+    [travelKey("graffiti-alley", "el-catrin")]: { mode: "transit", minutes: 25 },
+    [travelKey("st-lawrence-market", "harbourfront")]: { mode: "transit", minutes: 17 },
     [travelKey("by-the-way", "harbourfront")]: { mode: "transit", minutes: 25 },
     [travelKey("harbourfront", "el-catrin")]: { mode: "transit", minutes: 18 },
   },

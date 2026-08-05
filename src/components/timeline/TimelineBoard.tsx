@@ -10,7 +10,7 @@ import { TravelSegment } from "./TravelSegment";
 import { formatDayDate } from "./format";
 
 /** Gaps shorter than this are travel slack, not free time worth naming. */
-const FREE_TIME_THRESHOLD_MINUTES = 40;
+const FREE_TIME_THRESHOLD_MINUTES = 30;
 
 function mustGetPlace(day: FixtureDay, id: string): PlaceView {
   const place = day.places[id];
