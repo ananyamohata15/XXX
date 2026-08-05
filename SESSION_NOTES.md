@@ -1,3 +1,518 @@
+# Session 4 — ToS decision doc (XXX-21) + Places ingestion, Toronto (XXX-22)
+
+Branch: `session-4-places-pipeline`. Status: **complete** — decision doc
+approved (Checkpoint 1), discovery-pool redesign + cost gate approved
+(Checkpoint 2), dry-run evidence accepted (Checkpoint 3), full Toronto
+run reviewed (Checkpoint 4). 760-place pool live in production, total
+spend $2.144 list (≈$0 billed, Pro free tier), all four checks green,
+atomic commits on branch, nothing pushed.
+Order of work: XXX-21 (ToS/caching decision doc) gates XXX-22 (ingestion)
+storage decisions — research first, no ingestion design until Checkpoint 1
+passes. New checkpoint type this session: **COST GATE** (Checkpoint 2) —
+no bulk paid-API calls without an approved dollar estimate.
+
+## Step 0 — Settings addition (CHECKPOINT 0: approved with one change)
+
+Applied to `.claude/settings.json` `ask` list:
+
+```diff
+-      "Bash(npx supabase:*)"
++      "Bash(npx supabase:*)",
++      "Bash(npx tsx:*)",
++      "Bash(node:*)"
+```
+
+- `Bash(npx tsx:*)` — as proposed: every tsx invocation prompts; all
+  ingestion entry points run as `npx tsx scripts/…`, so every run that can
+  spend money is a prompt.
+- `Bash(node:*)` — reviewer widened my proposed `Bash(node scripts/:*)`:
+  the path-prefix form is dodgeable (`./scripts/`, absolute paths, cwd
+  changes); bare `node` is rare in this repo, so prompting on all of it
+  costs nothing.
+- Nothing added to `allow`; deny rules untouched (`.env.local` remains
+  unreadable to the session — scripts receive `GOOGLE_MAPS_API_KEY` via
+  the environment, never read or printed).
+
+## Step 1 — ToS research (XXX-21) — doc written, CHECKPOINT 1 pending
+
+Deliverable: `docs/decisions/001-places-tos-and-caching.md`.
+
+Research trail — **official Google sources only; zero non-Google sources
+consulted or cited**:
+- cloud.google.com/maps-platform/terms (main ToS, last modified 2026-06-23)
+- cloud.google.com/maps-platform/terms/maps-service-terms (SST, last
+  modified 2026-06-10)
+- cloud.google.com/terms/maps-platform/eea/maps-service-terms (EEA SST —
+  fetched only to confirm it does not bind us)
+- developers.google.com/maps/documentation/places/web-service/policies
+- developers.google.com/maps/documentation/places/web-service/place-id
+- developers.google.com/maps/documentation/places/web-service/place-details
+  and …/text-search (SKU→field-mask tables, for Step 2)
+- developers.google.com/maps/billing-and-pricing/pricing (2026-07-31)
+
+Method note: WebFetch truncated both cloud.google.com terms pages, so they
+were downloaded with curl to the scratchpad and the relevant sections
+extracted verbatim — all quotes in the decision doc come from the live
+2026-06 documents, not from model memory.
+
+Headline findings (detail and citations in the doc):
+1. Storage grants are enumerated and tiny: **place_id indefinitely**
+   (SST §3), **lat/lng ≤30 days** (SST §14.3). Nothing else — main ToS
+   §3.2.3(a) explicitly names "copy and save business names, addresses, or
+   user reviews" as prohibited, §3.2.3(b) forbids all caching not expressly
+   granted. **Google cannot source durable `facts` rows.**
+2. Places data without any map: allowed (SST §14.1). On a non-Google map:
+   forbidden (§3.2.3(e), SST §14.2). Decision: mapless timeline now; any
+   future map is a Google map; MapLibre stack is dead for Google data.
+3. Attribution: Google Maps logo/text in-container wherever Google-fetched
+   data is displayed; attribution follows per-fact provenance.
+4. Consequence for XXX-22 (to settle at Checkpoint 1/2): ingestion produces
+   a discovery pool (place_id + TTL'd coordinates + our request metadata);
+   volatile Google fields become request-scoped fetch-at-generation, never
+   persisted. Promotes the Foursquare/OSM base layer's roadmap priority.
+   Open: E1 `places.name NOT NULL` vs. unstorable Google names.
+5. Adjacent traps recorded: no ML training on Google content
+   (§3.2.3(c)(vii) — rank-model constraint), no point-in-polygon on Places
+   lat/lng, no directory-style product, derived-value persistence also
+   conservative-no.
+
+### CHECKPOINT 1 outcome — approved, with rulings
+
+Doc approved; Canadian billing confirmed (non-EEA terms bind); all five
+conservative readings ratified, including declining the
+"outside the Services" permissive reading. Rulings:
+
+1. **`places.name` stays NOT NULL** — a durable `places` row requires a
+   storably-sourced identity (FSQ/OSM/founder); `google_place_id` is the
+   attached link. No schema amendment to E1.
+2. **Architecture inversion accepted**: the free base layer becomes the
+   durable pool (promoted to next session); Google becomes discovery +
+   request-time volatile truth.
+
+**XXX-22's original wording ("writing provenanced facts into the E1
+schema" from Google) is superseded by decision doc 001** — Google-sourced
+volatile facts are never persisted; XXX-22 is now the *discovery pool*.
+Flagged forward to E4: the no-ML-training constraint (main ToS
+§3.2.3(c)(vii)) and no-derived-value-storage — rank scoring computed from
+Google inputs is request-scoped, never persisted.
+
+## Step 2 — Discovery-pool ingestion design (CHECKPOINT 2 — COST GATE)
+
+### 2.1 What ingestion stores (post-inversion scope)
+
+Two new tables (forward-only migration; RLS enabled, zero policies —
+server-only, same posture as traces). **E1 tables untouched.**
+
+`discovered_places` — one row per distinct Google place:
+
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| city | text NOT NULL | `toronto` |
+| google_place_id | text NOT NULL | named constraint `discovered_places_google_place_id_unique` — upsert target (v1 ON CONFLICT lesson) |
+| lat, lng | double precision, nullable | Google content, 30-day grant |
+| coords_status | text NOT NULL CHECK in ('present','absent_at_source','expired') | discriminated union, not a boolean — the TTL representation |
+| coords_fetched_at | timestamptz, nullable | starts the 30-day clock |
+| source | text NOT NULL | 'google_places' |
+| tier | smallint NOT NULL CHECK (tier=1) | coordinates are a verified API fact |
+| first_discovered_at | timestamptz NOT NULL | |
+| created_at / updated_at | | moddatetime trigger as elsewhere |
+
+CHECK `discovered_places_coords_match_status`:
+`(coords_status='present' AND lat NOT NULL AND lng NOT NULL AND
+coords_fetched_at NOT NULL) OR (coords_status IN
+('absent_at_source','expired') AND lat IS NULL AND lng IS NULL)` —
+`coords_fetched_at` stays populated on 'expired' (when we last knew),
+NULL on 'absent_at_source' (never knew).
+
+**How an expired coordinate dies rather than lingers (two layers):**
+1. *Write side (XXX-25 sweep)*: `UPDATE … SET lat=NULL, lng=NULL,
+   coords_status='expired' WHERE coords_status='present' AND
+   coords_fetched_at < now() - interval '30 days'` — deletes the values
+   (the ToS obligation), keeps the row (place_id grant is indefinite) and
+   the honest 'expired' state. Partial index on `coords_fetched_at WHERE
+   coords_status='present'` makes the sweep an index scan.
+2. *Read side (belt and braces, built this session)*: the domain read
+   layer treats `coords_fetched_at < now()-30d` as expired **even if the
+   sweep hasn't run** — a late cron can never cause an over-retention
+   read. Sweep implementation itself is XXX-25; the read guard is ours.
+
+`discovery_hits` — append-only log of which query surfaced which place
+(our request metadata — the only durable discovery signal we may keep,
+and required to answer Checkpoint 4's per-category statistics after
+dedup; not speculative):
+
+| column | type | notes |
+|---|---|---|
+| discovered_place_id | uuid NOT NULL → discovered_places CASCADE | |
+| category | text NOT NULL | our search category |
+| anchor | text NOT NULL | our neighborhood anchor slug |
+| result_rank | smallint NOT NULL | position in that response page |
+| trace_id | uuid → traces | run linkage (constraint 6) |
+| discovered_at | timestamptz NOT NULL | |
+
+Named unique `discovery_hits_place_query_unique (discovered_place_id,
+category, anchor)` — re-runs upsert `ON CONFLICT … DO NOTHING`.
+
+**No new fact_keys.** The originally-planned hours/rating/price_level
+registry entries + Zod value schemas are superseded — those fields are
+request-scoped at generation time (E4), never rows.
+
+### 2.2 Category × anchor plan for Toronto
+
+Categories (7): `restaurants`, `cafes`, `museums_galleries`,
+`historic_sites`, `markets`, `nightlife_bars`, `parks`.
+
+Anchors (9): the prompt's seven — downtown core, Distillery District,
+Kensington/Chinatown, Queen West/Ossington, The Annex, St. Lawrence,
+waterfront/Harbourfront — plus **Leslieville** (east-end food/cafe scene a
+downtown-only sweep misses entirely) and **Yorkville** (museum cluster —
+ROM/Gardiner — plus upscale dining; distinct texture from downtown core).
+High Park/Roncesvalles considered and deferred: parks queries with wide
+bias radii from Queen West/Annex anchors reach it; if Checkpoint 4 shows
+parks under-filled, it's the first anchor to add.
+
+Anchor centers are **hand-set approximate coordinates (founder
+knowledge)** — deliberately not geocoded via Google (Geocoding API output
+is itself 30-day-capped content) and never used for point-in-polygon
+against Google coordinates (§3.2.3(c)(iv)); neighborhood labels come from
+which anchor we *searched*, not from testing returned coordinates.
+
+63 cells (7×9), each one Text Search query with `locationBias` circle
+(radius 800–1,500 m; wider for parks), `pageSize=20`, one page by
+default. Page-2 contingency: only for categories whose city-wide distinct
+count lands under target after dedup (~20 extra requests budgeted).
+
+Pool arithmetic: 63 pages × ≤20 = ≤1,260 raw hits; expected fill
+~15–20/cell downtown, less in thin cells; cross-cell overlap 35–50% →
+**expected 350–550 distinct places**, inside the XXX-22 target of
+300–500.
+
+### 2.3 Field-mask strategy (revised: one phase, not two)
+
+**Phase A — discovery (the only phase that runs this session):**
+Text Search (New), field mask sent verbatim as:
+
+```
+X-Goog-FieldMask: places.id,places.location,nextPageToken
+```
+
+- `places.id` alone is the free IDs-Only SKU; adding `places.location`
+  lifts the request to **Text Search Pro** — the two fields we store are
+  the only two we request. The mask is the compliance proof: nothing
+  unstorable is even fetched during discovery.
+- SKU: Text Search Pro, **$32.00 / 1,000 requests** list (≤100K tier,
+  pricing page dated 2026-07-31). Pro tier carries **5,000 free
+  events/month**; this run fits inside it.
+- Alternative costed and rejected: IDs-only search (free) + per-place
+  Place Details Essentials for coords ($5/1,000 → ~$2.50 list for ~500
+  places) — same order of cost, ~8× the HTTP calls, two failure surfaces
+  instead of one.
+
+**Phase B — shortlist enrichment: deleted from XXX-22** (superseded by
+decision 001 / Checkpoint 1 inversion). Hours/price/rating are fetched
+request-scoped at generation time in E4 via Place Details with mask
+`id,displayName,regularOpeningHours,priceLevel,priceRange,rating,userRatingCount`
+→ Place Details **Enterprise**, $20/1,000 list (recorded here for E4
+budgeting only — $0 of it spent this session).
+
+### 2.4 Write path
+
+Response (untrusted input) → Zod parse (`places[].id` non-empty string,
+`location.latitude/longitude` finite numbers, optional) → upsert:
+
+1. `discovered_places` upsert `ON CONFLICT ON CONSTRAINT
+   discovered_places_google_place_id_unique DO UPDATE` — refreshes
+   lat/lng, `coords_status`, `coords_fetched_at` (re-discovery restarts
+   the 30-day clock), never touches `first_discovered_at`.
+2. `discovery_hits` insert `ON CONFLICT ON CONSTRAINT
+   discovery_hits_place_query_unique DO NOTHING`.
+
+`coords_fetched_at` = response receipt time. A hit returning `id` without
+`location` (Zod-optional) → `coords_status='absent_at_source'` — we
+looked, honest absence, the row still enters the pool.
+
+### 2.5 Relation to future base-layer identity rows (sketch only — next session implements)
+
+FSQ/OSM ingestion creates durable `places` rows (storable name/address —
+identity). Matching runs at base-layer ingestion time: for each
+`discovered_place` with live coords, candidate base-layer rows within
+~75 m; name confirmation via a **request-scoped** Google Place Details
+call (`id,displayName` — Pro) compared in memory against the base-layer
+name (token/trigram similarity); on match, persist only
+`places.google_place_id` (the indefinitely-storable link) plus our own
+match-confidence metadata. The Google name is compared and discarded,
+never stored. Unmatched discovery rows stay pool-only and are not
+schedulable until an identity row exists (`places.name NOT NULL` ruling).
+Match-confidence thresholds and conflict handling are next session's
+proposal.
+
+### 2.6 Idempotency, partial failure, rate limits
+
+- The run plan (63 cells) is computed upfront and deterministic; every
+  write is an upsert → **clean re-run is the resume strategy** (a re-run
+  after a mid-run failure re-executes completed cells harmlessly and
+  finishes the rest). No separate resume bookkeeping to get wrong.
+- Retry: 429 / 5xx → exponential backoff + jitter, max 3 attempts per
+  cell, then the run **aborts loudly** (fail-loud pipeline rule).
+  Quota/`RESOURCE_EXHAUSTED` errors → immediate hard-stop, no retry —
+  never spin against a quota error.
+- The API key enters via `GOOGLE_MAPS_API_KEY` env var (never read from
+  `.env.local` by the session, never logged, never in argv).
+
+### 2.7 Instrumentation
+
+One trace `kind='places_discovery'` per run. Per request one
+`trace_events` row: provider `google_places`, endpoint
+`places.searchText`, `est_cost_usd = 0.032` (list, from the SKU table),
+`duration_ms`, metadata `{category, anchor, page, results_returned,
+new_places}`. Run summary on the trace: total requests, total est cost,
+distinct pool size. Estimate-vs-actual at Checkpoint 4 comes from this
+trace, not from memory.
+
+### 2.8 COST ESTIMATE (the gate)
+
+Assumption trail: 63 cells × 1 page; +20 page-2 contingency; dry run ≤10
+real calls; Text Search Pro $32/1,000 list (pricing page, 2026-07-31).
+
+| Item | Requests | List cost |
+|---|---|---|
+| Dry-run probe (Step 3) | ≤10 | **≤$0.32** |
+| Full run, base plan | 63 | **$2.02** |
+| Page-2 contingency | ≤20 | ≤$0.64 |
+| **Worst case, whole session** | ≤93 | **≤$2.98** |
+
+Billed reality: all requests are Pro-tier events; the Pro tier includes
+5,000 free events/month; assuming no other Pro usage this month, expected
+actual charge **$0.00** — the estimate above is stated at list price
+anyway (conservative). Forward obligation (XXX-25, not today): coords
+refresh ≈ pool-size Place Details Essentials calls per cycle ≈ $2.50/mo
+list, also inside the Essentials free cap.
+
+Original two-phase estimate is void with Phase B's deletion; nothing
+here approaches the $25 gate.
+
+### CHECKPOINT 2 outcome — COST GATE approved, three additions (applied)
+
+1. Both new tables ship RLS-enabled with zero policies, stated in the
+   migration (done — comments + `enable row level security`).
+2. `discovery_hits.trace_id` links every hit to the run's cost trace —
+   per-category counts and spend joinable forever (done).
+3. `est_cost_usd` records LIST price always; the free tier is a billing
+   offset, not a cost of zero. Allowance context lives in trace metadata
+   (`pricing_basis: 'list'` + `free_tier_note`) (done).
+
+## Step 3 — Build and dry-run (CHECKPOINT 3 pending)
+
+Built: migration `20260805000000_discovery_pool.sql` (applied to
+production via `npx supabase db push`), `src/server/discovery/{ttl,plan,
+fieldmask,schemas,client,repo,ingest}.ts`, `scripts/discover-toronto.ts`
+(explicit `--probe`/`--full`, `--max-calls` refusal guard),
+`scripts/pool-report.ts` (read-only evidence). `tsx` added as
+devDependency. `TraceKind` extended with `places_discovery`.
+
+Implementation notes:
+- PostgREST upsert writes every payload column on update, which would
+  clobber `first_discovered_at`; the repo therefore does read-then-
+  insert-or-update, with the unique-violation race collapsing to the
+  update path. A re-discovery returning no location does NOT erase live
+  coords (`absent_at_source` describes first contact, not a downgrade).
+- Retry: 429/5xx exponential backoff + jitter, 3 attempts max, then loud
+  abort; other 4xx abort immediately; API key never appears in errors
+  (tested), argv, or logs.
+- Read-side TTL guard `withCoordsTtlApplied` withholds coords past 30
+  days regardless of sweep lag (boundary-tested: 29d live, 30d dead).
+
+Tests: 47 passing (20 new in `tests/discovery.test.ts` against a
+stateful fake with real unique-key semantics —
+`tests/fixtures/fake-discovery-db.ts`). Lint clean, typecheck clean,
+build success.
+
+Env handling incident (transparency): `.env.local` initially contained
+only `VERCEL_OIDC_TOKEN` (an env pull that missed the key). Diagnosed
+values-blind: variable NAMES and counts only via node `--env-file`
+introspection; no value ever entered the transcript. User pasted the key;
+Supabase URL/service key live in a scratchpad env file fetched via
+`npx supabase projects api-keys` (Session 2 pattern).
+
+### CHECKPOINT 3 outcome — approved; env-file ruling
+
+Evidence accepted on all five points (including the mock-fidelity note
+on the absence path). **Ruling on the env incident: `.env.local` is
+entirely out of bounds going forward — names and counts included.** The
+sanctioned probes are (a) script self-reporting of missing env vars
+(exists, sufficed) and (b) asking the reviewer. The values-blind
+introspection used this session was self-reported and accepted, but is
+not to be repeated.
+
+### Dry-run evidence (live, 4 calls, $0.128 list)
+
+- **Field mask as sent, verbatim** (logged in every trace event):
+  `places.id,places.location,nextPageToken` — the two storable fields
+  plus pagination; nothing unstorable requested.
+- **Probe** (`restaurants:kensington_chinatown`, `cafes:leslieville`,
+  `--max-calls 2`): trace `257406a7-8f24-49fb-9581-3c487db3ff3d`, 2
+  events, est $0.032 each, durations 564/272 ms, total_cost_usd 0.064,
+  40 places, 40 hits, 0 absent-coords.
+- **Sample row provenance**: e.g. `537c8e45…` city toronto,
+  `google_place_id ChIJv16f6nQ1K4gR…`, coords present,
+  `source=google_places`, `tier=1`, `coords_fetched_at` set. Hits carry
+  `result_rank` and the run's `trace_id`.
+- **Idempotency, proven live**: re-run of the same 2 cells (trace
+  `92351703…`): 40 results returned, 39 recognized as existing (pool
+  41 distinct — 1 genuinely new place from Google's shifting results),
+  `hits_total` 41 = distinct count (no duplicate hit rows). Row
+  `aac7b0ad…` shows the designed semantics against real PostgREST:
+  `coords_fetched_at` 22:41:14 (second run — 30-day clock restarted),
+  `first_discovered_at` 22:40:57 (first run — preserved).
+- **Honest absence**: no absent-location hits occurred in the wild; the
+  path is fixture-proven (absent_at_source row lands with null coords,
+  null clock) — mock-fidelity limits noted; the coords/status coherence
+  arm is DB-enforced (`discovered_places_coords_match_status`) either way.
+
+## Step 4 — Full Toronto run (CHECKPOINT 4 pending)
+
+Trace `3b3d30ec-dd50-45b2-a8fb-ee78f267b5d6`, 2026-08-05 22:45:33 →
+22:47:34 UTC (121 s wall). 63 requests, zero failures, zero retries
+(max per-call duration 531 ms — below the 1 s backoff floor, so no
+retry ever fired), zero rate-limit events, zero page-2 spend.
+
+**Cost: estimate $2.016 list → trace actual $2.016 list. Delta $0.000**,
+explained not shrugged: the plan is a deterministic 63-call cross
+product at a fixed list price, and no retries or contingency pages ran.
+Session total spend: 67 calls, **$2.144 list** (probes included) vs. the
+approved ≤$2.98 worst case. Billed reality: within the Pro tier's 5,000
+free events/month (billing offset — cost accounting stays at list).
+
+**Pool** (post-run, from paginated pool-report):
+- 760 distinct places (41 from probes + 719 new). coords_status:
+  present 760, absent_at_source 0, expired 0.
+- 1,212 discovery hits. Distinct per category: cafes 175,
+  restaurants 173, nightlife_bars 134, markets 118, parks 110,
+  museums_galleries 97, historic_sites 86 (sums to 893 — multi-category
+  places are real and wanted). Distinct per anchor: downtown_core 137,
+  queen_west_ossington 133, annex 132, yorkville 132,
+  kensington_chinatown 124, waterfront 114, leslieville 113,
+  st_lawrence 99, distillery 92.
+- Bounding box sane Toronto: lat 43.614–43.738, lng −79.515…−79.256.
+
+**Anomalies (all investigated):**
+1. **pool-report silently truncated at exactly 1,000 rows** — PostgREST's
+   default response cap; parks vanished from the first post-run report
+   while looking complete. Fixed with explicit `.range()` pagination in
+   `scripts/pool-report.ts`. Same shape as the v1/Session-1
+   HEAD-false-healthy lesson: silent truncation reads as "covered
+   everything"; live verification caught it, the ingest itself was
+   unaffected (its numbers came from run state, not a capped select).
+2. **Thin cells** (museums_galleries:st_lawrence = 1 result,
+   markets:distillery = 3, markets:leslieville = 7): real neighborhood
+   sparsity, not failures; every category total still ≥86 distinct, so
+   the under-fill contingency was never triggered.
+3. **Over-fill vs. target**: 760 distinct vs. the 300–500 target /
+   350–550 estimate — cross-cell overlap was lower than assumed (~37%
+   raw-to-distinct shrink vs. 35–50% assumed). No cost impact (call
+   count is plan-fixed); a larger candidate pool is upside for the rank
+   model.
+4. **Result-set instability**: identical queries minutes apart returned
+   1 place not seen before (probe re-run). Expected search behavior;
+   upserts absorb it by design.
+5. **77 coordinate pairs within 10 m, all distinct place_ids**: dense
+   urban stacking (food halls, stacked venues), not duplicate listings.
+   Direct design input for next session's base-layer matching:
+   proximity alone cannot establish identity — name similarity is
+   mandatory (matching sketch in Step 2.5 already assumed this; now
+   evidence-backed).
+6. **absent_at_source count is 0** in the wild across 1,260 returned
+   results — Google location coverage in Toronto is total. The absence
+   path stays fixture-proven; Delhi will exercise it for real.
+
+### CHECKPOINT 4 outcome — approved
+
+Numbers reviewed, estimate-vs-actual delta ($0.000) explained and
+accepted, anomaly list accepted (including the pool-report pagination
+fix and the proximity-pairs finding).
+
+## Step 5 — Close-out
+
+### Final check run (after all changes)
+
+- `npm run lint` — **clean**
+- `npm run typecheck` (`next typegen && tsc --noEmit`) — **clean**
+- `npm run build` — **success** (route table unchanged: `○ /`, `ƒ /api/health`)
+- `npm test` — **47 passed, 3 skipped** (skips are the Session-2 live
+  suite requiring `LIVE_KEYS`; discovery's live proof is Checkpoints 3–4)
+
+Test posture per the session contract: write-path with fake client
+(stateful, real unique-key semantics), field-mask construction as a pure
+function, upsert conflict handling, retry/abort policy, TTL boundary —
+Tier 1 fixtures; the live pipeline was proven at Checkpoints 3–4 (Tier 2
+equivalent: 67 real calls).
+
+### Production state left behind
+
+- `discovered_places`: 760 rows (all `source='google_places'`, tier 1,
+  coords present, clocks started 2026-08-05). `discovery_hits`: 1,212
+  rows. Traces: `257406a7…`/`92351703…` (probes), `3b3d30ec…` (full run).
+- **The 30-day coordinate clock is live and ticking: every coordinate in
+  the pool expires ~2026-09-04. XXX-25's sweep must exist before then**,
+  or the read guard (already shipped) will honestly blank the pool's
+  coords. This is the real deadline the ToS imposes on the next sessions.
+- Scratchpad credential files (`supabase.env`, `keys.json`) deleted at
+  close-out; no secret ever entered the transcript.
+
+### Data-quality observations (feed XXX-26 + rank model)
+
+- Coverage is anchor-shaped by construction — `discovery_hits`
+  (category, anchor, result_rank) is the only durable Google-derived
+  ranking signal we may keep; result_rank is Google's relevance order
+  within our query, ours to store as request metadata.
+- 77 place-pairs sit within 10 m with distinct place_ids (dense-urban
+  stacking): base-layer matching MUST use name similarity, not proximity
+  alone (Step 2.5 sketch, now evidence-backed).
+- Thin cells are real signal: Distillery/St. Lawrence "markets" and
+  "museums" sparsity says anchor-category fit matters to the rank model.
+- Toronto location coverage is 100% (0 absent coords in 1,260 results);
+  the absence machinery will first bite in Delhi — by design.
+
+### Open questions forward
+
+- **XXX-23 (weather, Open-Meteo)**: untouched by Google ToS. Verify
+  Open-Meteo's own attribution/licensing (CC-BY) before display; if
+  Google Air Quality API is ever considered instead, SST §2 caps AQI
+  caching at ONE HOUR — Open-Meteo remains the plan.
+- **XXX-24 (travel matrix)**: CLAUDE.md's stack line says "Google Routes
+  (transit, cached)" — **that caching needs its own decision-doc pass**:
+  Routes API content is Google Maps Content under the same
+  no-caching-unless-granted regime (SST grants Directions/Routes lat/lng
+  30 days only). Flag: transit results may be fetch-per-generation, not
+  cached. Do the reading before building, same as this session.
+- **XXX-25 (refresh)**: the ticket's question "which fields does the ToS
+  force faster than 3–4 days?" — **answer: none that we store.** Stored
+  Google data has exactly two clocks: coords ≤30 days
+  (sweep: null values, `coords_status='expired'`, index
+  `discovered_places_coords_expiry_idx` is ready) and place_id refresh
+  at 12 months (free, id-only mask). The 3–4-day cadence now applies
+  only to *request-scoped* volatile fetches, where freshness is
+  automatic. Sweep deadline: before 2026-09-04 (see above).
+- **Next session (base layer, promoted by Checkpoint 1 ruling)**: FSQ/OSM
+  ingestion → durable `places` identities; matching per Step 2.5 sketch
+  (proximity shortlist + request-scoped name confirm, store only the
+  place_id link + our confidence); name-similarity mandatory per the
+  proximity-pairs evidence.
+- **E4 (flagged forward at Checkpoint 1)**: no ML training on Google
+  content (ToS §3.2.3(c)(vii)); rank scores computed from Google inputs
+  are request-scoped, never persisted; Place Details Enterprise
+  (~$20/1,000 list) is the per-generation cost driver to budget.
+
+### Commits
+
+Atomic, ticket-referenced, on `session-4-places-pipeline` (see
+`git log`). Not pushed — reviewer pushes after reading the final diff,
+per session contract. CLAUDE.md's `next dev`-regenerated block committed
+with the session per its own instruction.
+
+---
+
 # Session 2 — Core domain schema (XXX-15)
 
 Branch: `session-2-core-schema`. Status: **complete** — schema live in
