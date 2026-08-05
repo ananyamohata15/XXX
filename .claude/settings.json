@@ -25,7 +25,9 @@
       "Bash(git checkout:*)",
       "Bash(git commit:*)",
       "Bash(npm install:*)",
-      "Bash(npx supabase:*)"
+      "Bash(npx supabase:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node:*)"
     ],
     "deny": [
       "Bash(git push:*)",
