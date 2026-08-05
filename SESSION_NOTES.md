@@ -370,6 +370,40 @@ unverified.
 
 Retest of all five criteria on the phone pending before any re-verdict.
 
+**Second iteration finding — the phone never ran ANY JavaScript.** New
+evidence from the retest: static HTML rendered and scrolled on the phone,
+but zero interactivity; desktop (localhost) worked. Cause found verbatim
+in the dev-server log:
+
+> ⚠ Blocked cross-origin request to Next.js dev resource
+> /_next/static/chunks/… from "192.168.2.10".
+> Cross-origin access to Next.js dev resources is blocked by default for
+> safety.
+
+Next 16's dev server blocks `/_next/*` assets for non-allowlisted origins;
+the phone (LAN IP origin) got the HTML but every script chunk was refused
+— hydration never ran. **Fix**: `allowedDevOrigins: ["192.168.2.10",
+"192.168.2.*"]` in `next.config.ts` (the wildcard covers whatever address
+the router hands out next); dev-only, no production impact — Vercel serves
+same-origin. Dev server restarted; verified a `/_next/static/` chunk now
+fetches 200 via the LAN origin and the new server log has zero blocked
+warnings.
+
+**Consequences for the record:**
+
+- The two prior touch fixes (touch ownership / live-event drag start /
+  touch slop) were **likely correct but unverifiable** — the device
+  executed no JS during that retest, so the gesture retest hasn't actually
+  happened yet. They stay in place, unclaimed.
+- This also retroactively explains the original kill-gate result: with no
+  JS reaching the phone, the "PASS on real hardware" could only ever have
+  been describing desktop behavior — nothing about touch was ever tested.
+- **On-device eyes added (dev-only, gated on NODE_ENV)**: a fixed
+  hydration badge — SSR renders amber "JS not running", flipping to green
+  "JS live" the moment hydration runs, so this exact failure class is
+  visible at a glance — plus the eruda on-device console (devDependency,
+  dynamically imported after hydration) for whatever the next mystery is.
+
 ### Honest tests added (`tests/timeline.test.ts`, 14 tests)
 
 Fixture-shape validation (schema parse, single-anchor invariant, full

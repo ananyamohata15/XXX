@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { DevTools } from "@/components/dev/DevTools";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="min-h-dvh bg-zinc-50 font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-50">
         {children}
+        {process.env.NODE_ENV === "development" && <DevTools />}
       </body>
     </html>
   );
