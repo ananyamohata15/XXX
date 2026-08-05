@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * trace recording and degrade gracefully (see recordHealthTrace in health.ts).
  */
 
-export type TraceKind = "health_check";
+export type TraceKind = "health_check" | "places_discovery";
 
 export interface TraceEvent {
   provider: string;
