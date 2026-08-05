@@ -6,6 +6,7 @@ import {
   TIERS,
   TIER_VALUES,
   TRANSPORT_MODES,
+  type Tier,
 } from "./vocabulary";
 
 /**
@@ -41,6 +42,11 @@ const factView = <T extends z.ZodType>(value: T) =>
     }),
     z.strictObject({ status: z.literal("absent"), ...provenanceFields }),
   ]);
+
+/** The displayed-fact shape, as a plain type for component props. */
+export type FactView<T> =
+  | { status: "present"; value: T; source: string; tier: Tier; fetchedAt: string }
+  | { status: "absent"; source: string; tier: Tier; fetchedAt: string };
 
 export const priceRangeSchema = z
   .strictObject({

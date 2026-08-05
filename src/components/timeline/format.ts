@@ -44,6 +44,17 @@ export const MODE_LABEL: Record<TransportMode, string> = {
   transit: "Transit",
 };
 
+/** "3 d ago" / "5 h ago" — used in the expanded provenance rows only,
+ *  which never render during SSR, so Date.now() is hydration-safe here. */
+export function formatAgo(iso: string): string {
+  const hours = Math.max(
+    1,
+    Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000),
+  );
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
 export function formatDayDate(isoDate: string): string {
   // Noon avoids timezone edge-shifts when formatting a date-only value.
   const d = new Date(`${isoDate}T12:00:00`);

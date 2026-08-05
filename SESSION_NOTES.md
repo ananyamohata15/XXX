@@ -270,6 +270,56 @@ Close-out plan: restore CLAUDE.md, commit a one-block AGENTS.md — the
 block stays contained between its own delimiters, CLAUDE.md stays purely
 human-authored, and `next dev` stops touching it.
 
+## Step 3 — Gestures (built; CHECKPOINT 3 kill-gate pending)
+
+Implemented per the approved interaction spec:
+
+- **Gesture arbitration** (`InteractiveCard.tsx`), one pointer state
+  machine per card: hold still `LONG_PRESS_MS` → lift (Reorder.Item drag
+  via dragControls, scale+shadow flip the same frame the timer fires);
+  horizontal move past the slop first → flick layer drag; vertical move
+  first → native scroll (`touch-action: pan-y`); clean press-and-release →
+  tap-expand. Tunables are named constants in
+  `src/components/timeline/constants.ts` (LONG_PRESS_MS **220**,
+  slop 8 px, flick 40 % width or 500 px/s, anchor rubber 8 px, wiggle
+  3 px) — change a number, HMR, feel again at the kill-gate.
+- **Drag-reflow**: Motion `Reorder.Group` reorders live during the drag
+  (the day visibly makes room via layout springs; travel pills between
+  cards recompute live as the order state changes). On release,
+  `commitReflow` runs the pure `reflowDay` — which may slide a colliding
+  slot past the anchor — and the board animates to the canonical order and
+  recomputed times.
+- **Flick-swap**: `AnimatePresence mode="popLayout"` keyed by occupant;
+  the dismissed card exits in the flick direction from wherever the finger
+  released it while the next occupant enters from the opposite side
+  simultaneously — no dead moment. Its own tier-3 reason is visible on
+  arrival (the reason belongs to the occupant, not the slot). The
+  dismissed card joins the back of the rotation: a decision, not a
+  deletion. Swaps also re-run reflow, since travel depends on the
+  occupant.
+- **Anchor refusal**: drag gives ≤ 8 px against a heavy rubber band
+  (elastic 0.05), then springs back with a ±3 px wiggle and a Booked-chip
+  pulse; long-press on the anchor refuses the same way. No lift, no swap,
+  ever.
+- **Tap-expand**: in-place height animation showing per-fact provenance
+  rows (value/absent + source + tier label + "fetched N d ago"), the vibe
+  fact (deliberately withheld from the collapsed card), and the alternate
+  list with reasons. Tap again collapses.
+- **Late-arrival honesty**: `anchorOverrunMinutes` from reflow renders as
+  an amber "Arrives N min after the booking" line above the anchor — the
+  collision is shown, never absorbed.
+- Static `TimelineBoard.tsx` deleted; its shell lives in
+  `InteractiveTimeline.tsx` ("use client"). All state is UI state; every
+  recomputation is the pure `reflowDay`.
+
+**Known risk to check first on device**: `dragControls.start()` is called
+with the pointerdown event ~220 ms after it fired (long-press lift). If
+Motion rejects the stale event on a real touch screen, the lift dies — the
+first thing to verify at the kill-gate.
+
+Checks after Step 3: lint clean, typecheck clean, tests 27 passed +
+3 live-gated skips, production build success.
+
 ---
 
 ~~~# Session 2 — Core domain schema (XXX-15)
