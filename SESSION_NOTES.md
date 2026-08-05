@@ -224,6 +224,13 @@ Windows/Hyper-V firewall — one elevated-PowerShell command fixes it:
 `New-NetFirewallRule -DisplayName "WSL dev 3000" -Direction Inbound
 -Protocol TCP -LocalPort 3000 -Action Allow`.
 
+**Side effect, not committed**: Next 16's `next dev` appends a
+machine-generated `nextjs-agent-rules` block to CLAUDE.md (verified against
+`node_modules/next/dist/server/lib/generate-agent-files.js`). It reappears
+on every dev run. CLAUDE.md edits are reserved for close-out with approval,
+so it stays uncommitted — decision for the reviewer: commit it alongside
+the approved `src/shared/` rule at close-out, or configure it away.
+
 ---
 
 ~~~# Session 2 — Core domain schema (XXX-15)
