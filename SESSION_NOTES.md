@@ -327,8 +327,48 @@ Checks after Step 3: lint clean, typecheck clean, tests 27 passed +
 > PASS — all five criteria met on real hardware, including the long-press
 > lift risk (fired correctly on touch).
 
-The E2 interaction survives its kill-gate. The prototype may still be
-thrown away; its lessons are recorded below.
+**VERDICT AMENDED: PASS → ITERATE.** Real-device retest: desktop mouse
+drag and swap worked; on the phone (touch), neither the long-press lift
+nor the flick-swap engaged at all.
+
+**Cause** (verified in the rendered HTML, not guessed): the outer card
+carried `touch-action: pan-y` and the inner flick layer carried no
+touch-action at all — and the browser evaluates touch-action **only at
+touch-start**, so CSS can never transfer a mid-gesture touch to Motion.
+The first vertical move after a lift started native pan-y scrolling, fired
+`pointercancel`, and killed the drag session. Compounding it: (a) the lift
+replayed a pointerdown event stored 220 ms earlier into
+`dragControls.start()` — the flagged known risk; (b) the 8 px press slop
+is smaller than real finger jitter, so touch holds could cancel their own
+press before the timer fired.
+
+**Fix** (commit referenced below):
+
+1. No stale-event replay anywhere: the timer now only *arms* the lift
+   (scale/shadow feedback still instant); the drag session starts from the
+   next **live** pointermove.
+2. Deliberate touch ownership: a **non-passive** `touchmove` listener
+   calls `preventDefault()` while a gesture owns the touch (lift fired, or
+   a horizontal flick committed) — the only mechanism that overrides
+   pan-y after touch-start. Explicit `touch-action: pan-y` on both layers
+   (verified in rendered HTML: 6 cards × 2 layers), plus
+   `user-select: none` / `-webkit-touch-callout: none` / context-menu
+   suppression so long-press doesn't trigger selection UI.
+3. Flick fixed independently, per instruction: horizontal commit is
+   detected from live pointermove direction and takes touch ownership at
+   that moment, on its own path — not assumed fixed by the lift change.
+   Touch slop widened to a named constant (`LONG_PRESS_SLOP_TOUCH_PX` 14;
+   mouse stays 8).
+
+**Process lesson: device-specific verification must name the device.**
+"Verified on real hardware" that was actually a desktop browser produced a
+false PASS on gesture code whose entire risk was touch-specific. Every
+future gesture/UI verification entry in these notes must state device +
+input method (e.g. "Pixel 8, touch" / "desktop Chrome, mouse"), and a
+checkpoint claim of "works" without a named device is to be read as
+unverified.
+
+Retest of all five criteria on the phone pending before any re-verdict.
 
 ### Honest tests added (`tests/timeline.test.ts`, 14 tests)
 

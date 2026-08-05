@@ -7,8 +7,11 @@
  *  threshold — scale + shadow flip the same frame the timer fires. */
 export const LONG_PRESS_MS = 220;
 
-/** Finger drift beyond this cancels the press (it's a scroll or a swipe). */
-export const LONG_PRESS_SLOP_PX = 8;
+/** Pointer drift beyond this cancels the press (it's a scroll or a swipe).
+ *  Touch gets a wider slop: real fingers jitter well past 8 px while
+ *  deliberately holding still — the kill-gate retest's first lesson. */
+export const LONG_PRESS_SLOP_MOUSE_PX = 8;
+export const LONG_PRESS_SLOP_TOUCH_PX = 14;
 
 export const LIFT_SCALE = 1.03;
 
