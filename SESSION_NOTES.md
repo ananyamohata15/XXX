@@ -404,6 +404,42 @@ warnings.
   visible at a glance — plus the eruda on-device console (devDependency,
   dynamically imported after hydration) for whatever the next mystery is.
 
+### Kill-gate re-verdict (verbatim) and verdict history — FINAL
+
+> PASS — on iPhone, Safari and Chrome, hydration confirmed via badge, all
+> five criteria exercised on touch.
+
+Full verdict history, in order:
+
+1. **PASS** — desktop-only, **invalid** (the device never ran JS; the
+   claim could only describe mouse input).
+2. **ITERATE** — touch semantics: stale-event drag start, mid-gesture
+   touch ownership under pan-y, finger-jitter slop. Fixed, unverifiable
+   at the time.
+3. **ITERATE** — hydration blocked: Next 16 dev cross-origin protection
+   refused `/_next/*` to the LAN origin; the gesture code never executed
+   on the phone at all.
+4. **PASS** — verified on device: iPhone, Safari and Chrome, hydration
+   confirmed via badge, all five criteria exercised on touch.
+
+The E2 interaction survives its kill-gate — this time verifiably.
+
+### Closing lessons
+
+- **(a) The hydration badge and eruda are permanent dev fixtures.** They
+  are not scaffolding to be removed with the prototype — the
+  "static HTML looks fine, zero JS ran" failure class must never be able
+  to hide again. Both are NODE_ENV-gated and cost production nothing.
+- **(b) `allowedDevOrigins` is dev-only config**, recorded as such in
+  `next.config.ts` with the reasoning inline: the LAN phone-review loop is
+  cross-origin to the dev server; production on Vercel is same-origin and
+  unaffected.
+- **(c) Kill-gate protocol for all future feel-gates**: a verdict counts
+  only when it states **named device + input method + per-criterion
+  observation**, and a **hydration indicator is confirmed before any
+  gesture verdict** — a gesture cannot fail (or pass) honestly on a page
+  that isn't running code.
+
 ### Honest tests added (`tests/timeline.test.ts`, 14 tests)
 
 Fixture-shape validation (schema parse, single-anchor invariant, full
@@ -485,7 +521,7 @@ kill-gate on hardware and is not pretended into unit tests.
   at judgment strength, not a deletion — the swap gesture's semantics are
   the taste signal's spec.
 
-### Final checks (stated explicitly)
+### Final checks (stated explicitly — last full run after all iterations)
 
 - `npm run lint` — clean
 - `npm run typecheck` (`next typegen && tsc --noEmit`) — clean
@@ -493,7 +529,9 @@ kill-gate on hardware and is not pretended into unit tests.
 - `npm run build` — success (static prerender proves the fixture parses)
 
 Session 3 delivered: XXX-18 (fixture day) + XXX-19 (timeline board with
-drag-reflow) — kill-gate **PASS**. Nothing pushed; reviewer pushes.
+drag-reflow) — kill-gate **PASS, verified on device** (iPhone, Safari and
+Chrome, touch; see verdict history above). Tree clean; nothing pushed —
+ready for reviewer push.
 
 ---
 
