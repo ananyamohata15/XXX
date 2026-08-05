@@ -1,4 +1,232 @@
-# Session 2 — Core domain schema (XXX-15)
+# Session 3 — Timeline prototype (XXX-18, XXX-19 — the E2 kill-gate)
+
+Branch: `session-3-timeline-prototype`. Status: **in progress** (running
+journal). Prototype with fake data and real gestures: no DB, no API, no
+persistence. Out of scope: XXX-20 streaming skeleton, auth, taste interview,
+real reflow validation (E5), desktop-optimized layout.
+
+## Step 0 — Settings reconciliation
+
+`.claude/settings.json` reconciled to the reviewer-approved spec; relayed
+instructions had compressed in transit. (Added: `git switch` → allow,
+`git restore` + bare `rm` → ask; the three `rm -rf/-fr/-r` denials stay as
+defense in depth behind the ask rule; `git checkout` stays ask.)
+
+## Step 1 — Plan proposal (XXX-18 + XXX-19)
+
+### 1. Where the fixture and shared types live
+
+New top-level directory: **`src/shared/`** — dependency-free domain
+vocabulary and view-model types. Contents this session:
+
+- `src/shared/vocabulary.ts` — the E1 vocabulary as constants + literal
+  types: tiers (1|2|3), kinds (`meal`|`activity`), origins
+  (`concierge`|`user`), fact status (`present`|`absent`), cities, transport
+  modes. **Single source of truth**: `src/server/domain/schemas.ts` is
+  refactored to build its Zod enums *from these constants* (server → shared
+  import is legal; the reverse never happens). No duplicated truth, boundary
+  rule untouched.
+- `src/shared/timeline.ts` — view-model types for the board (TimelineDay,
+  TimelineCard, Alternate, TravelSegment) + a Zod schema for the fixture
+  shape (Zod is isomorphic; using it in shared adds no server dependency).
+  View-model ≠ DB row: it's the presentation shape, but it speaks only
+  vocabulary words (kind/tier/origin/status), so it stays structurally
+  faithful to E1 and golden-set-ready (XXX-26).
+- `src/shared/fixtures/toronto-day.ts` — the static fixture day (XXX-18),
+  typed by the view-model schema; a unit test parses it.
+
+**Rule to add to CLAUDE.md structure notes** (at close-out, with approval):
+"`src/shared/` holds dependency-free vocabulary, view-model types, and pure
+functions usable by both client and server. `src/shared` imports nothing
+from `src/server` or `src/app`/`src/components`; both may import it. No
+I/O, no React, no secrets in shared." ESLint boundary rule needs no change
+(it only forbids client → server).
+
+### 2. Fixture day content (XXX-18)
+
+A realistic Toronto Saturday, geographically coherent (west → Bloor →
+Distillery), five slots + travel segments:
+
+| time | card | kind/origin | provenance highlights |
+|---|---|---|---|
+| 08:30–09:45 | **Mildred's Temple Kitchen** (Liberty Village brunch) | meal / concierge | hours tier 1, price_range $$ tier 2, reason tier 3: "Their ricotta pancakes are worth the early start — and Liberty Village is dead quiet on Saturday mornings." |
+| ↓ transit 26 min | 504 → Line 1 → Museum | | static, labeled fake |
+| 10:15–12:45 | **Royal Ontario Museum** | activity / concierge | hours tier 1, price ~$26 CAD tier 1, reason tier 3: "Rain likely until noon — the ROM soaks up a wet morning, and it's quietest right at open." |
+| ↓ walk 9 min | | | |
+| 13:00–14:00 | **By the Way Cafe** (Annex) | meal / concierge | hours tier 2, **price_range status='absent' → "price unknown" chip (honest absence)**, reason tier 3 |
+| ↓ transit 31 min | | | |
+| 14:45–17:30 | **Distillery District** stroll | activity / concierge | hours tier 2, price known-free (min=max=0 — distinct from unknown), reason tier 3 |
+| ↓ walk 4 min | | | |
+| 19:00–21:00 | **El Catrín Destilería** | meal / **user (ANCHOR)** | "Booked" chip; rendered locked; no reason line (user chose it), no alternates |
+
+- 2–3 alternates per concierge slot, each with a one-line tier-3 reason
+  (e.g. ROM ⇄ AGO "Also indoors; stronger on modern art than dinosaurs",
+  Casa Loma, Bata Shoe Museum; lunch ⇄ Fresh on Bloor, Sushi on Bloor; …).
+- A small **travel-minutes matrix** (walk + transit, plausible static
+  numbers) between all fixture places, so reflow after reorder shows sane
+  travel segments instead of stale ones. Labeled fake throughout.
+- The 17:30–19:00 gap is deliberate: free time before a booking is honest —
+  the concierge doesn't pretend to own every minute.
+
+### 3. Stack
+
+- **Styling: Tailwind CSS v4** (deferred in Session 1, enters now).
+  Argument: the prototype lives or dies on rapid visual iteration on a
+  phone; utility-first is the fastest tune loop, v4 is zero-config with
+  Next 16, zero runtime cost. Alternative (CSS Modules, already present):
+  fine for an app shell, slow for dense iterative prototype styling.
+- **Animation: Framer Motion** — per CLAUDE.md stack. Today that ships as
+  the **`motion`** package (`motion/react` — same library, renamed; I'll
+  verify the exact package at install and record it). Argument: best
+  spring physics in the React ecosystem (gesture velocity transfers into
+  the settle spring), `layout` animations give FLIP-based reflow of
+  siblings nearly free, `AnimatePresence` covers the swap transition.
+- **Drag: Framer Motion's drag**, not dnd-kit, not raw pointer events.
+  - *Spring quality*: native — release velocity feeds the settle spring.
+    dnd-kit animates drops with CSS transitions (no physics) unless you
+    bolt physics on; raw pointer events mean building springs by hand.
+  - *Mobile touch*: long-press (~180 ms) lifts the card so vertical page
+    scroll still works (`touch-action` managed per-card); Motion supports
+    this directly. dnd-kit's touch sensors are solid too — parity here.
+  - *Reorder-with-reflow*: Motion's layout animations reflow siblings
+    around the dragged card automatically; dnd-kit gives reorder logic but
+    the *feel* (the kill-gate criterion) is manual work. dnd-kit's real
+    edge — keyboard/a11y DnD — matters for the product, not this
+    prototype; noted as an open question for the real build.
+
+### 4. Interaction spec (XXX-19), as behaviors
+
+- **Drag-reflow (vertical)**: long-press lifts (scale ≈1.03 + shadow);
+  card follows the finger 1:1; a gap opens at the projected drop position
+  (siblings move via layout springs — the day visibly "makes room");
+  release → spring settle (no bounce past 1 overshoot), then times
+  recompute via `reflowDay` (below) and all cards/travel segments animate
+  to their new times.
+- **Flick/dismiss (horizontal)**: past ~40% width or high velocity → card
+  exits in flick direction; the **top alternate slides in from the
+  opposite side simultaneously** (pre-rendered beneath — no dead moment),
+  its one-line reason visible on arrival. The dismissed card joins the
+  back of that slot's alternates — a swap cycle, "a decision not a
+  deletion"; nothing is destroyed.
+- **Anchor refusal**: drag/flick on the anchor moves it ≤8 px against a
+  heavy rubber band, then springs back with a short ±3 px wiggle and a
+  pulse on the "Booked" chip. Refusal must read in <300 ms: *this is
+  fixed*. (The origin column made visible.)
+- **Tap-expand**: layout-animated in-place expansion showing per-fact
+  provenance chips (tier badge + source + "fetched Xh ago") and the full
+  reason line; tap again collapses. Absence renders as an explicit
+  "unknown" chip, never a blank.
+- **Travel segments**: slim connectors (mode glyph + minutes) between
+  cards; recomputed from the fixture matrix after any reorder.
+- **`reflowDay` — the fake logic, labeled as such (stands in for E5)**: a
+  pure function in `src/shared/`: first slot keeps the day start; each
+  subsequent start = previous end + matrix travel minutes, rounded up to
+  5 min; durations preserved; the anchor never moves — following slots
+  flow from max(anchor end, computed); a slot that would collide with the
+  anchor slides past it. Naive on purpose; unit-tested as a pure function.
+  What it deliberately ignores (opening hours, meal windows, pacing) is
+  exactly E5's job — the gap list feeds the close-out notes.
+
+### 5. Phone test loop (required for every review)
+
+This machine is **WSL2**, which NATs the dev server away from the LAN — an
+honest plan must say so. Loop:
+
+1. `next dev -H 0.0.0.0` (Turbopack) so the server binds all interfaces.
+2. **Preferred path**: WSL2 *mirrored networking* (Windows 11:
+   `.wslconfig` → `networkingMode=mirrored`) makes the phone-reachable URL
+   simply `http://<windows-lan-ip>:3000`. I'll detect whether it's on.
+3. **Fallback path** (classic NAT): one elevated-PowerShell command on the
+   Windows side (I cannot run it from WSL; paste-ready):
+   `netsh interface portproxy add v4tov4 listenaddress=0.0.0.0
+   listenport=3000 connectaddress=<wsl-ip> connectport=3000` (+ a one-time
+   firewall allow for TCP 3000). Then the phone uses the Windows LAN IP.
+4. Each checkpoint I post the URL; phone and PC must be on the same Wi-Fi.
+   QR via `npx qrcode-terminal` if wanted. No tunnels (ngrok/cloudflared
+   publish the dev app externally — out, per session posture).
+
+### CHECKPOINT 1 outcome — approved, two directives recorded
+
+1. **Long-press threshold is a tunable named constant** (starting range
+   200–250 ms). The latency cost of press-to-lift is acceptable only if the
+   moment of lift feels instant and intentional — immediate scale/shadow
+   feedback at lift. Constant lives with the gesture code so the kill-gate
+   review can tune it live.
+2. **Dismissal is a taste signal (E6 note)**: the prototype's swap cycle
+   doesn't capture it, but the gesture's meaning is already "not this one."
+   E6 should inherit that reading — a dismissal is negative-preference
+   evidence at judgment strength, not a deletion. Recorded here so the
+   taste-model ticket starts from the gesture's semantics, not from scratch.
+3. The proposed `src/shared/` rule goes into CLAUDE.md at close-out, as
+   written.
+
+## Step 2 — Static timeline (built; CHECKPOINT 2 pending)
+
+Built as approved:
+
+- **Tailwind v4 wired** (`postcss.config.mjs` + `@import "tailwindcss"` in
+  `globals.css`; `@theme` maps the existing Geist fonts). Installed:
+  `tailwindcss 4.3.3`, `@tailwindcss/postcss`, and `motion 12.43.0` —
+  confirming the Step 1 note: Framer Motion ships today as the `motion`
+  package (`motion/react`). Motion is installed but unused until Step 3.
+- **`src/shared/vocabulary.ts`** — E1 constants + literal types, plus
+  display vocabulary (`TIER_LABELS`, `CITY_LABELS`).
+  `src/server/domain/schemas.ts` now builds its Zod enums from these and
+  re-exports `CITIES`/`TIERS` so existing importers keep working. Existing
+  domain tests untouched and green.
+- **`src/shared/timeline.ts`** — view-model Zod schemas (fact views with
+  honest absence, tier-pinned reasons, anchor slots barred from carrying
+  concierge judgment) + pure time helpers + **`reflowDay`** implemented to
+  the approved naive spec: durations preserved, matrix travel (unknown leg
+  = null, adds no time — absence, not a guess), starts snap up to a 5-min
+  grid, the anchor never moves, a slot that would collide with the anchor
+  slides past it, post-anchor slots flow from max(anchor end, arrival).
+  `anchorOverrunMinutes` reports a late arrival *at* the anchor after
+  travel — reported, never absorbed.
+- **`src/shared/fixtures/toronto-day.ts`** — the five-slot Saturday as
+  approved, parsed through the schema at module load (a malformed fixture
+  fails the build — proven: the static page prerenders). 13 places (5 main
+  + 8 alternates, 2 per concierge slot), all with full provenance;
+  By the Way price **absent**; Distillery known-free (min=max=0); El Catrín
+  is the `origin:"user"` anchor — no reason, no alternates, Booked chip.
+- **Components** (`src/components/timeline/`): `TimelineBoard` (header,
+  connector logic, footer with tier legend + "hand-authored data, nothing
+  fetched" honesty line), `SlotCard` (time+duration, kind, name,
+  neighborhood, provenance chips, violet-accented reason line, alternates
+  hint, distinct anchor border + Booked chip), `TravelSegment` (mode pill;
+  null leg renders "Travel not computed"; gaps ≥ 40 min render "Free
+  time · …"), `ProvenanceChip` (tier as colored dot: emerald/amber/violet;
+  absent = dashed + muted), `format.ts` display helpers.
+
+Deltas from the Step 1 proposal, recorded honestly:
+
+- Reason texts the proposal specified verbatim (Mildred's, ROM, the AGO
+  alternate) are used verbatim; the rest (lunch, afternoon, other
+  alternates) were unspecified and are authored here.
+- Alternates: Gardiner Museum chosen over Casa Loma/Bata as the second ROM
+  alternate (the proposal's list was illustrative); 2 alternates per slot,
+  within the approved 2–3.
+- Travel matrix: full symmetric coverage of the 5 main places + each
+  alternate to its default-order neighbours. Drag-plus-swap combinations
+  beyond that surface as honest "Travel not computed" — matching how the
+  product behaves before a route is fetched. Deliberate, not a gap.
+- The vibe fact is authored for all 13 places but not shown on the static
+  card (density); it belongs to Step 3's tap-expand.
+
+Checks after Step 2: lint clean, typecheck clean, tests 27 passed +
+3 live-gated skips, production build success.
+
+**Phone loop**: WSL2 is in **mirrored networking** mode (`wslinfo
+--networking-mode` → `mirrored`), so no portproxy needed. Dev server runs
+`next dev -H 0.0.0.0`; verified 200 on `http://192.168.2.10:3000` from
+inside WSL. If the phone can't reach it, the remaining suspect is the
+Windows/Hyper-V firewall — one elevated-PowerShell command fixes it:
+`New-NetFirewallRule -DisplayName "WSL dev 3000" -Direction Inbound
+-Protocol TCP -LocalPort 3000 -Action Allow`.
+
+---
+
+~~~# Session 2 — Core domain schema (XXX-15)
 
 Branch: `session-2-core-schema`. Status: **complete** — schema live in
 production, provenance constraints proven against the real database (three
