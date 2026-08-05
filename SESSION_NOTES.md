@@ -320,6 +320,107 @@ first thing to verify at the kill-gate.
 Checks after Step 3: lint clean, typecheck clean, tests 27 passed +
 3 live-gated skips, production build success.
 
+## Step 4 — Close-out
+
+### CHECKPOINT 3 kill-gate verdict (verbatim)
+
+> PASS — all five criteria met on real hardware, including the long-press
+> lift risk (fired correctly on touch).
+
+The E2 interaction survives its kill-gate. The prototype may still be
+thrown away; its lessons are recorded below.
+
+### Honest tests added (`tests/timeline.test.ts`, 14 tests)
+
+Fixture-shape validation (schema parse, single-anchor invariant, full
+travel coverage of the default path, rejection of anchor-with-judgment /
+concierge-without-reason / overlaps / dangling travel keys), time-helper
+round-trips, and `reflowDay` as a pure function: identity-order layout,
+duration preservation under reorder, slide-past-anchor, late-arrival
+reporting, and unknown-travel-as-absence. Gesture *feel* was judged at the
+kill-gate on hardware and is not pretended into unit tests.
+
+### CLAUDE.md ruling applied
+
+- CLAUDE.md restored to purely human-authored content and the approved
+  `src/shared/` rule adopted verbatim under Engineering standards.
+- The machine block lives in `AGENTS.md`, exactly as `next dev` writes it,
+  under its own delimiters. The generator prefers AGENTS.md once the block
+  is there (`writeAgentFiles`), so CLAUDE.md is never touched again.
+
+### E5 lessons — what fake reflow teaches about real invalidation
+
+`reflowDay`'s known blind spots, each a requirement for E5's validator:
+
+1. **The 19:04 class (chief among them)**: boundary-touching transitions
+   where travel crosses into a fixed commitment. The fixture ships one
+   deliberately (Distillery ends 19:00; the 4-min walk lands 19:04).
+   Reflow only reports lateness *at the anchor*; E5 must validate the
+   arrival window on **every** edge, and decide which violations an
+   in-venue transition absorbs.
+2. **Hours-blindness**: reflow will schedule By the Way at 10:00 against
+   its 11:00 open. The hours facts exist on the places; reflow never reads
+   them. E5's invalidation must consume hours facts — and the market's
+   17:00 close shows hours can bound the *end* of a slot, not just the
+   start.
+3. **Meal windows**: a drag can put brunch at 16:40. Reflow doesn't care;
+   the day-grammar (E4) does. The validator, not the gesture, must be the
+   gate — exactly the v1 postmortem's division of labor.
+4. **Unknown travel is currently schedule-optimistic**: a null leg
+   displays honestly but contributes 0 minutes, silently tightening the
+   plan. E5 must treat unknown travel as *blocking validation* (fetch it,
+   or refuse to certify the transition), never as zero.
+5. **The 5-minute snap is a stand-in for buffer policy**: real buffers
+   should price transfer friction (mode changes, venue type), not
+   grid-round.
+6. **Slide-past-anchor reorders without consent**: mechanically right,
+   conversationally wrong. The real product must narrate it ("I moved the
+   market to after dinner — it didn't fit before your booking") — the
+   concierge explains its judgment; silence would read as a bug.
+
+### XXX-26 golden-set scenario dimensions established by this fixture
+
+- **Dwell-time plausibility** (golden-set lesson #1): time-valid days that
+  overstay a venue's plausible dwell range must fail review.
+- **Hours-bounded slots**: a slot pressed against a published close (the
+  market's Saturday 17:00).
+- **Anchor collision**: both flavors — late arrival (report, never move)
+  and doesn't-fit (slide past, narrated).
+- **Honest absence**: unpublished price on a main slot; uncomputed travel
+  after swaps; absence rendered, never guessed.
+- **Known-free vs unknown**: min=max=0 is a value, not an absence.
+- **Occupant-dependent travel**: a swap changes the routes on both sides
+  of the slot.
+
+### Open questions for the next sessions
+
+- **XXX-20 (streaming skeleton)**: which parts of a card can render before
+  facts resolve, and do gesture affordances exist on skeleton cards or
+  only after hydration of the full slot? Does reflow run during streaming
+  (times shifting as cards land) or only once the day is complete? The
+  InteractiveTimeline state model assumes a complete day at mount —
+  streaming will need order/rotations/times to tolerate arrival.
+- **XXX-26**: the golden set can be fixture days in this exact
+  `fixtureDaySchema` format — the schema already rejects several violation
+  classes for free; scenario days would deliberately construct the
+  dimensions above.
+- **a11y (from Step 1)**: Motion's drag has no keyboard/screen-reader
+  path; dnd-kit's real edge. Decision deferred to the production board,
+  recorded here so it isn't lost.
+- **E6 (from Checkpoint 1)**: a dismissal is negative-preference evidence
+  at judgment strength, not a deletion — the swap gesture's semantics are
+  the taste signal's spec.
+
+### Final checks (stated explicitly)
+
+- `npm run lint` — clean
+- `npm run typecheck` (`next typegen && tsc --noEmit`) — clean
+- `npm test` — 41 passed + 3 live-gated skips (27 prior + 14 new)
+- `npm run build` — success (static prerender proves the fixture parses)
+
+Session 3 delivered: XXX-18 (fixture day) + XXX-19 (timeline board with
+drag-reflow) — kill-gate **PASS**. Nothing pushed; reviewer pushes.
+
 ---
 
 ~~~# Session 2 — Core domain schema (XXX-15)
