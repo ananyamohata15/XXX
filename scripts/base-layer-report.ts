@@ -134,6 +134,22 @@ async function main() {
   const stride = Math.max(1, Math.floor(places.length / Math.max(sampleCount, 1)));
   const sample = places.filter((_, i) => i % stride === 0).slice(0, sampleCount);
 
+  // End-to-end evidence: confirmed matches joined to their identity row and
+  // categories fact — the full persisted surface of a match, showing nothing
+  // Google-sourced beyond google_place_id.
+  const placeById = new Map(places.map((p) => [p.id, p]));
+  const factByPlace = new Map(categoryFacts.map((f) => [f.place_id, f.value]));
+  const endToEnd = matches
+    .filter((m) => m.status === "matched_confirmed")
+    .slice(0, 3)
+    .map((m) => ({
+      identity_match: m,
+      place: m.place_id ? (placeById.get(m.place_id) ?? null) : null,
+      categories_fact_value: m.place_id
+        ? (factByPlace.get(m.place_id) ?? null)
+        : null,
+    }));
+
   console.log(
     JSON.stringify(
       {
@@ -148,6 +164,7 @@ async function main() {
         score_histogram: histogram,
         scores_sorted: scores,
         sample_places: sample,
+        end_to_end_confirmed: endToEnd,
       },
       null,
       2,
