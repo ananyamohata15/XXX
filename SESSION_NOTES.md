@@ -410,6 +410,57 @@ match end-to-end with the discarded-name proof (full row shown: nothing
 Google-sourced beyond the id), the two traces, idempotent re-run of
 both scripts (zero new rows, zero new spend).
 
+## Step 4 — Full Toronto run (in progress; two incidents, both fixed)
+
+**Full ingest** (trace `864e7965`, 42 min): 302,255 raw → **31,377
+identities** (30,480 new + 897 Kensington updates), extraction 53.4 MB /
+7.8 s. Drops: category_unmapped 241,034 (Business/Professional 109,069;
+Retail 51,906; Community/Government 24,101; **Event 59** — the
+events-not-venues rule visible in the wild), date_closed 24,344, flags
+5,500. Kept rate 10.4% city-wide. **Anomaly: 31,377 vs the 7–18K
+estimate band** — estimate was low, no correctness implication (identity
+count doesn't drive spend; confirm calls are bounded by the 760-place
+discovery pool).
+
+**Incident 1 — link-collision abort** (trace `4cf04ea1`, 468 calls,
+$7.956, aborted): two discovered Google places confirmed the same FSQ
+identity; `setPlaceGoogleLink`'s unconditional update silently overwrote
+the first link, and the `identity_matches_place_matched_unique` partial
+index (correctly) killed the run at the write. Root cause: the code-level
+collision guard watched google_place_id uniqueness — an invariant that
+cannot fire (each discovered place has a distinct id) — instead of
+"place already linked". Fix (committed): read-then-conditional link
+write (NULL-slot only, same-value idempotent, race-safe via the
+conditional), demotion to ambiguous/link_collision as designed at
+Checkpoint 2; fake upgraded to enforce the partial unique + PostgREST
+conditional-update semantics; regression test (double-confirm scenario).
+Production repaired via committed `--verify-links --repair`: exactly 1
+clobbered row (as predicted — abort fired at the first collision),
+restored from match evidence, re-verify clean. 257 confirmed matches
+from the aborted run were intact and are terminal (resume skips them).
+
+**Incident 2 — daily quota exhausted** (trace `758ae527`, resume run,
+35 calls, $0.595, aborted): `GetPlaceRequest per day` RESOURCE_EXHAUSTED
+for the GCP project after 518 successful confirm calls today (15 dry-run
++ 468 + 35). This is a per-day cap, not a rate limit; reset at midnight
+Pacific (07:00 UTC). Policy deviation found and fixed: the details
+client retried the 429 three times before aborting — Session 4 law says
+never spin against a quota error. Now a per-day RESOURCE_EXHAUSTED 429
+is non-retryable (tested: hard-stop after exactly 1 attempt; plain-429
+backoff retained). NB: quota-rejected requests are not billed; no spend
+impact, purely policy hygiene.
+
+**State at pause**: 527/745 processed — matched_confirmed 275 (=
+`with_google_link`, verified), name_mismatch 153, ambiguous 89,
+no_candidates 10. Remainder: 218 places ≈ **$3.71 list**. Spend to
+date: $0.255 + $7.956 + $0.595 = **$8.806 list**; projected total
+$12.51 ≤ $12.92 approved. Resume is proven mechanics (terminal skip);
+awaiting quota reset + reviewer go-ahead. City-wide score histogram so
+far (bucket: count): 0.0:39, 0.1:31, 0.2:40, 0.3:26, 0.4:29, 0.5:36,
+0.6:20, 0.7:35, 0.8:36, 0.9:7, 1.0:218 — a real mid-band tail exists
+(unlike Kensington's clean gap); full-distribution threshold discussion
+deferred to Checkpoint 4 per the ratification's revisit clause.
+
 ## Step 3 — Build and dry run: executed (CHECKPOINT 3 pending)
 
 Built and committed (atomic, XXX-25): migration applied to production;

@@ -67,8 +67,14 @@ export function createDetailsClient(
       },
     );
     if (!response.ok) {
-      const retryable = response.status === 429 || response.status >= 500;
       const detail = (await response.text().catch(() => "")).slice(0, 500);
+      // Session 4 rule: never spin against a quota error. A per-day
+      // RESOURCE_EXHAUSTED 429 cannot be backoff'd away — hard stop.
+      const dailyQuota =
+        detail.includes("RESOURCE_EXHAUSTED") &&
+        (detail.includes("per day") || detail.includes("1/d/"));
+      const retryable =
+        (response.status === 429 && !dailyQuota) || response.status >= 500;
       throw new DetailsRequestError(
         `places.get HTTP ${response.status}: ${detail}`,
         response.status,

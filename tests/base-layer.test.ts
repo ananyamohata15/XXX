@@ -18,7 +18,10 @@ import {
 import { createInstrumentation } from "../src/server/instrumentation";
 import { createFakeBaseDb } from "./fixtures/fake-base-db";
 import type { PlaceCategory } from "../src/server/domain/schemas";
-import type { DetailsClient } from "../src/server/base-layer/details-client";
+import {
+  createDetailsClient,
+  type DetailsClient,
+} from "../src/server/base-layer/details-client";
 
 const ID_MAP: Record<string, PlaceCategory> = {
   cat_cafe: "cafes",
@@ -325,6 +328,55 @@ describe("base-layer write path (fake client)", () => {
         traceId: "00000000-0000-4000-9000-000000000003",
       }),
     ).rejects.toThrow(/no_candidates/);
+  });
+});
+
+describe("details client retry policy", () => {
+  const makeClient = (responses: (() => Response)[]) => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      const make = responses[Math.min(calls, responses.length - 1)];
+      calls++;
+      return make();
+    }) as unknown as typeof fetch;
+    return {
+      client: createDetailsClient({
+        apiKey: "test-key",
+        fetchImpl,
+        sleep: async () => {},
+      }),
+      calls: () => calls,
+    };
+  };
+
+  it("hard-stops on per-day RESOURCE_EXHAUSTED without retrying", async () => {
+    const quotaBody = JSON.stringify({
+      error: {
+        code: 429,
+        status: "RESOURCE_EXHAUSTED",
+        message:
+          "Quota exceeded for quota metric 'GetPlaceRequest' and limit 'GetPlaceRequest per day'",
+      },
+    });
+    const { client, calls } = makeClient([
+      () => new Response(quotaBody, { status: 429 }),
+    ]);
+    await expect(client.getPlace("x")).rejects.toThrow(/RESOURCE_EXHAUSTED/);
+    expect(calls()).toBe(1);
+  });
+
+  it("retries plain rate-limit 429s with backoff, then succeeds", async () => {
+    const { client, calls } = makeClient([
+      () => new Response("rate limited", { status: 429 }),
+      () =>
+        new Response(
+          JSON.stringify({ id: "x", displayName: { text: "A" } }),
+          { status: 200 },
+        ),
+    ]);
+    const result = await client.getPlace("x");
+    expect(result.id).toBe("x");
+    expect(calls()).toBe(2);
   });
 });
 
