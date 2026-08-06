@@ -1,0 +1,161 @@
+import { createClient } from "@supabase/supabase-js";
+
+/**
+ * Read-only base-layer evidence report (Checkpoints 3–4). No writes, no
+ * Google calls. Paginates every select (the Session 4 1,000-row lesson).
+ *
+ * Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+ */
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Missing required env var: ${name}`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const PAGE = 1000;
+
+async function listAll<Row>(
+  fetchPage: (from: number, to: number) => PromiseLike<{
+    data: Row[] | null;
+    error: { message: string } | null;
+  }>,
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await fetchPage(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) return rows;
+  }
+}
+
+async function main() {
+  const sampleCount = (() => {
+    const i = process.argv.indexOf("--sample");
+    return i >= 0 ? Number.parseInt(process.argv[i + 1] ?? "5", 10) : 5;
+  })();
+
+  const supabase = createClient(
+    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+
+  const places = await listAll<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    address: string | null;
+    google_place_id: string | null;
+    fsq_place_id: string | null;
+    source: string;
+    source_version: string | null;
+    tier: number;
+    fetched_at: string;
+  }>((from, to) =>
+    supabase
+      .from("places")
+      .select(
+        "id, name, lat, lng, address, google_place_id, fsq_place_id, source, source_version, tier, fetched_at",
+      )
+      .eq("source", "fsq_os_places")
+      .order("fsq_place_id")
+      .range(from, to),
+  );
+
+  const categoryFacts = await listAll<{
+    place_id: string;
+    value: { mapped: string[] } | null;
+  }>((from, to) =>
+    supabase
+      .from("facts")
+      .select("place_id, value")
+      .eq("fact_key", "categories")
+      .order("place_id")
+      .range(from, to),
+  );
+
+  const matches = await listAll<{
+    discovered_place_id: string;
+    status: string;
+    place_id: string | null;
+    best_score: number | null;
+    method: string | null;
+    candidates: unknown;
+    matched_at: string;
+    trace_id: string | null;
+  }>((from, to) =>
+    supabase
+      .from("identity_matches")
+      .select(
+        "discovered_place_id, status, place_id, best_score, method, candidates, matched_at, trace_id",
+      )
+      .order("discovered_place_id")
+      .range(from, to),
+  );
+
+  const byCategory: Record<string, number> = {};
+  for (const f of categoryFacts) {
+    for (const c of f.value?.mapped ?? []) {
+      byCategory[c] = (byCategory[c] ?? 0) + 1;
+    }
+  }
+
+  const byStatus: Record<string, number> = {};
+  for (const m of matches) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;
+
+  const scores = matches
+    .map((m) => m.best_score)
+    .filter((s): s is number => s !== null)
+    .sort((a, b) => a - b);
+  const histogram: Record<string, number> = {};
+  for (const s of scores) {
+    const bucket = `${(Math.floor(s * 10) / 10).toFixed(1)}`;
+    histogram[bucket] = (histogram[bucket] ?? 0) + 1;
+  }
+
+  const linked = places.filter((p) => p.google_place_id !== null);
+  const bbox =
+    places.length > 0
+      ? {
+          latMin: Math.min(...places.map((p) => p.lat)),
+          latMax: Math.max(...places.map((p) => p.lat)),
+          lngMin: Math.min(...places.map((p) => p.lng)),
+          lngMax: Math.max(...places.map((p) => p.lng)),
+        }
+      : null;
+
+  // Deterministic pseudo-random sample: stable stride over the sorted list.
+  const stride = Math.max(1, Math.floor(places.length / Math.max(sampleCount, 1)));
+  const sample = places.filter((_, i) => i % stride === 0).slice(0, sampleCount);
+
+  console.log(
+    JSON.stringify(
+      {
+        fsq_places: places.length,
+        with_google_link: linked.length,
+        source_versions: [...new Set(places.map((p) => p.source_version))],
+        tiers: [...new Set(places.map((p) => p.tier))],
+        bbox,
+        category_fact_rows: categoryFacts.length,
+        distinct_per_category: byCategory,
+        match_outcomes: byStatus,
+        score_histogram: histogram,
+        scores_sorted: scores,
+        sample_places: sample,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+});

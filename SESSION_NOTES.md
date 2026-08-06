@@ -1,3 +1,417 @@
+# Session 5 — Base layer: durable identities (FSQ/OSM) + discovery matching
+
+Branch: `session-5-base-layer`. Status: **in progress**.
+Scope: licensing decision doc 002 (FSQ OS Places, OSM/ODbL, Google
+interaction), then Toronto identity ingestion into E1 `places`/`facts`,
+matched to the Session-4 discovery pool (place_id links + confidence).
+Amends XXX-25 scope forward; the TTL sweep itself is next session
+(deadline ~2026-09-04 stands). Out of scope: sweep/cron, weather
+(XXX-23), travel matrix (XXX-24), generation/ranking, UI, London/Delhi.
+If OSM is deferred at Checkpoint 1, no OSM code exists this session.
+
+## Step 0 — Settings check (CHECKPOINT 0: approved as proposed)
+
+Added to `ask`: `Bash(curl:*)`, `Bash(wget:*)` — dataset/license
+downloads are bandwidth + disk, and the provenance of downloaded
+artifacts is a compliance fact this session; every fetch is an
+individually-approved event. Nothing added to `allow`; deny untouched
+(`.env.local` remains fully out of bounds per Session 4 Checkpoint 3
+ruling).
+
+## Step 1 — Licensing research — doc written, CHECKPOINT 1 pending
+
+Deliverable: `docs/decisions/002-base-layer-licensing.md`. All sources
+fetched live 2026-08-05 (HF dataset card, FSQ access + schema docs,
+Apache 2.0 text, ODbL 1.0 text, osm.org/copyright, OSMF Community
+Guidelines incl. Collective Database Guideline).
+
+Headline findings (citations in the doc):
+1. **FSQ OS Places: Apache 2.0 confirmed** (HF license field + notice in
+   FSQ docs). Storage/modification/commercial use expressly granted; §4
+   conditions attach only on redistribution, which serving our app is
+   not. Pin release `dt=2026-07-09` via the S3 parquet channel — the
+   HF channel adds a marketing-use click-through gate we avoid.
+2. **OSM: recommend DEFER entirely.** The OSMF Collective Database
+   Guideline's own example — complementing a proprietary POI list with
+   OSM data, removing duplicates — is exactly our intended use and is
+   explicitly "not covered" by the collective-database safe harbor →
+   derivative database → public use triggers ODbL share-alike over the
+   merged pool. Isolation examined and rejected (cross-matching defeats
+   it; safe isolation delivers no value). FSQ-only suffices for Toronto.
+3. **Google boundary confirmed within 001**: place_id link = SST §3
+   grant; match metadata = Customer Data; name confirm request-scoped
+   in-memory, displayName discarded (never DB/trace/log). New ambiguity
+   flagged: numeric similarity score as persisted derived-of-Google
+   value — argued permissible, ruling requested (categorical-state-only
+   is the conservative floor).
+4. **Tiers**: FSQ identity = tier 2 Observed (snapshot observation,
+   staleness measurable, `unresolved_flags` uncertainty channel);
+   founder_groundtruth stays tier 1 (human verification). Argued in doc.
+
+### CHECKPOINT 1 outcome — approved, five rulings
+
+1. **OSM deferred entirely** — Collective Database Guideline analysis
+   ratified; no OSM code/schema/scaffolding this session; reversibility
+   via a future Delhi-triggered decision doc.
+2. **FSQ tier 2** ratified as argued.
+3. **Similarity score: persist state + numeric score** — state is
+   equally "derived"; granularity, not kind, distinguishes them; score
+   passes every SST §8.1.4 prong. Condition: score provenance records
+   method+version. Fallback recorded: state-only survives any future
+   counsel objection.
+4. **S3 channel, pinned `dt=2026-07-09`** ratified. If the S3 channel
+   presents gate terms in practice: stop and surface, never click
+   through.
+5. **`fetched_at` = dataset publication date** pre-ratified for
+   Checkpoint 2.
+
+**Standing rule (reviewer, mid-Step-3)**: no scratchpad execution for
+anything that produces checkpoint evidence or writes beyond the
+scratchpad itself — evidence-producing probes live in repo scripts,
+committed before running. (The one scratchpad pushdown probe that ran
+before this rule landed is superseded by the committed
+`--probe-pushdown` mode re-run; scratchpad probe + HF-listing one-offs
+deleted. The pin script's built-in glob listing is the in-repo
+replacement for release verification.)
+
+**Free-probe results (repo script, `--count-only`, approved runs)**:
+Toronto bbox 302,255 raw rows (vs. 100–250K estimated — slightly above,
+within reason for a 100M+-POI dataset); Kensington bbox 4,258.
+Pushdown acceptance: see `--probe-pushdown` evidence at Checkpoint 3
+(acceptance = transferred bytes a small fraction of the 118 MB probe
+file; if it failed, bulk pull stops and the ~11.5 GB
+download-filter-delete fallback becomes its own approval conversation).
+
+## Step 2 — Ingestion + matching design (CHECKPOINT 2 — COST GATE)
+
+### 2.1 Toronto extraction
+
+**Source**: `s3://fsq-os-places-us-east-1/release/dt=2026-07-09/places/parquet/*`
+(+ the release's categories parquet for the taxonomy). Reader: DuckDB
+(`@duckdb/node-api` as devDependency — stays inside the `npx tsx`
+prompt-gated script pattern), anonymous S3 access, projection + filter
+pushdown so we transfer the needed columns/row-groups, not the global
+dataset. If the bucket turns out to require credentials, requester-pays,
+or any gate terms: **stop and surface** (Checkpoint 1 ruling 4).
+Fallback if DuckDB-over-S3 misbehaves: curl the Toronto-relevant parquet
+partitions to scratchpad (curl is ask-gated) and read locally.
+
+**Geographic filter**: bbox, not admin polygon — lat `[43.58, 43.86]`,
+lng `[-79.64, -79.11]` (City of Toronto extents, hand-set founder-style
+like Session 4's anchors), `country = 'CA'`. An admin boundary would
+need a polygon source we don't have compliantly cheap (OSM boundaries
+are ODbL — deferred; note: bbox filtering of FSQ coords is unrestricted
+— the no-point-in-polygon rule is a Google-content constraint and no
+Google coordinate participates in extraction).
+
+**Quality filter** (each drop reason counted and reported):
+1. `name` empty/whitespace → drop.
+2. `latitude`/`longitude` missing → drop (E1 `places` requires coords).
+3. `date_closed IS NOT NULL` → drop.
+4. `unresolved_flags` containing any of `closed`, `doesnt_exist`,
+   `delete`, `duplicate` → drop (suspected-dead listings);
+   `privatevenue`, `inappropriate` → drop (not schedulable venues).
+5. Category unmapped → drop, counted by top-level breadcrumb.
+
+**Category mapping** (FSQ breadcrumbs → our seven; intent table below;
+exact label spellings and `fsq_category_id` sets are **pinned at build
+time from the pinned release's own categories table**, materialized as
+an explicit ID set in code — pure function, fixture-tested; build
+reports the materialized counts):
+
+| ours | FSQ breadcrumb prefixes (intent) |
+|---|---|
+| restaurants | Dining and Drinking > Restaurant* |
+| cafes | Dining and Drinking > Cafés/Coffee/Tea Houses*; Dining and Drinking > Bakery* (judgment: bakeries schedule like cafés) |
+| nightlife_bars | Dining and Drinking > Bar*; Arts and Entertainment > Night Club* |
+| museums_galleries | Arts and Entertainment > Museum*; Arts and Entertainment > Art Gallery* |
+| historic_sites | Landmarks and Outdoors > Historic and Protected Site*; Landmarks and Outdoors > Monument* |
+| markets | Retail > Farmers Market*; Retail > Flea Market*; public-market labels (pinned from taxonomy at build; grocery/supermarket explicitly excluded) |
+| parks | Landmarks and Outdoors > Park*; > Garden*; > Beach* (judgment: gardens/beaches schedule like parks) |
+
+Multi-category places keep every mapped category (array — Session 4
+showed multi-category is real: 893 category-hits over 760 places).
+Everything else (offices, dentists, gas stations — the bulk of a POI
+dataset) is honestly dropped and counted.
+
+**Expected counts** (estimates; measured numbers are a Checkpoint 3
+deliverable before the full run — the count queries are free): bbox
+raw ~100–250K rows; after category mapping ~8–20K; after quality
+filter ~7–18K. If materialized counts land wildly outside this, that's
+an anomaly to investigate, not shrug at.
+
+### 2.2 Write path
+
+Forward-only migration `20260806000000_base_layer.sql`:
+
+1. `places` gains `fsq_place_id text` + named constraint
+   `places_fsq_place_id_unique UNIQUE (fsq_place_id)` (nullable —
+   founder/fixture rows have none; symmetric with `google_place_id`),
+   and `source_version text` (nullable; NULL = source has no version
+   concept). Dataset version on every row's provenance =
+   `source_version = 'dt=2026-07-09'`.
+2. `identity_matches` (see 2.3), RLS enabled, zero policies.
+
+Row mapping: `city='toronto'`, `name` = FSQ `name`, `lat/lng` = FSQ
+coords (**durable — no TTL; that's the whole point of the base layer**),
+`address` = FSQ `address` (street; NULL = honest absence; locality/
+region/postcode not stored — no product need yet, available in the
+pinned dataset if that changes), `google_place_id` NULL until matching,
+`source='fsq_os_places'`, `tier=2`, `fetched_at = 2026-07-09` (dataset
+publication date — ruled: fetched_at answers "when was this observation
+current?"; ingestion date is pipeline metadata and lives in the trace).
+
+**Identity facts** — one new fact_key in the registry:
+
+- `categories`: value `{ mapped: [...], source_labels: [...] }` — Zod:
+  `mapped` non-empty array of our seven-category enum, unique;
+  `source_labels` non-empty string array (FSQ breadcrumb labels,
+  storable under Apache 2.0; kept so future re-mapping doesn't need a
+  re-scan). Source `fsq_os_places`, tier 2, fetched_at = publication
+  date.
+- **No `address` fact** — `places.address` is the owner (single-owner
+  rule); an address fact would be duplicate ownership.
+
+Upsert semantics: read-then-insert-or-update on
+`places_fsq_place_id_unique` (Session 4 pattern — PostgREST upsert
+clobbers; the read path protects `google_place_id` links and
+`created_at` on re-ingest). Re-ingesting the same version is a no-op.
+**Future-version re-ingest (designed now, executed at first refresh)**:
+updates identity fields + `source_version` + `fetched_at` to the new
+publication date; rows present in DB but absent from the new release
+are never deleted (slots FK is RESTRICT; deleting identities under
+itineraries is forbidden) — the disappeared-set handling (a
+`retired_at`-style marker) is recorded as the first-refresh design
+decision, not built today (no speculative columns).
+
+### 2.3 Matching to the discovery pool
+
+Direction: iterate the 760 `discovered_places` (coords live until
+~2026-09-04 — matching **must** run while the clock is; a dependency to
+record: expired discovery coords would leave only no-candidate
+outcomes). FSQ side loaded into memory (~15K id/name/lat/lng rows) and
+grid-bucketed; shortlist = FSQ rows within **100 m** haversine of the
+discovered coords. Distance comparison is not polygon containment
+(reading recorded; the §3.2.3(c)(iv) concern from 001 doesn't reach
+pairwise distance, and neighborhood labels still never derive from
+Google coords).
+
+Per discovered place:
+
+- **0 candidates** → outcome `no_candidates`, no confirm call, no spend.
+- **≥1 candidate** → one request-scoped Place Details call, field mask
+  exactly `id,displayName` (**Place Details Pro** — displayName is a
+  Pro-tier field per the live field/SKU table; $17.00/1,000 list,
+  pricing page last-updated 2026-07-31, both fetched 2026-08-05).
+  `displayName` is compared **in process memory** against each
+  candidate's FSQ name and then discarded — never written to DB,
+  traces, logs, fixtures, or error text.
+- **Name similarity** (method id `ns1`, recorded on every persisted
+  score per Checkpoint 1 ruling 3): normalize (lowercase, NFKD
+  diacritic strip, punctuation strip, whitespace collapse) → score =
+  `max(token_set_jaccard, trigram_dice)`. Thresholds: T_high = 0.75,
+  T_low = 0.45, runner-up margin = 0.15. v1 judgment values —
+  dry-run score distribution is Checkpoint 3 evidence and thresholds
+  get ratified/adjusted there before the full run.
+
+**Outcome states** (refining the brief's e.g. list; `unmatched` on the
+Google side = `no_candidates` ∪ `name_mismatch`, derivable):
+
+| status | meaning | rank-model semantics |
+|---|---|---|
+| `matched_confirmed` | confirm ran; best ≥ T_high; margin ≥ 0.15 or single candidate | identity ↔ google_place_id verified; discovery signals join at full weight |
+| `matched_unconfirmed` | reserved for the cost-shrink fallback (geometry-only singleton, confirm skipped). **Expected zero rows this session** — budget allows confirming every match | weaker join; must not outrank confirmed |
+| `ambiguous` | confirm ran; mid-band score or margin < 0.15; contenders recorded (our fsq ids + scores only) | no link persisted; human/founder disambiguation later |
+| `name_mismatch` | confirm ran; best < T_low | proximity was coincidence (the 77-within-10m lesson); no link |
+| `no_candidates` | no FSQ row within 100 m | Google-only long tail; stays pool-only, name-less by law |
+
+`identity_matches` table: `id`, `discovered_place_id` NOT NULL →
+`discovered_places` (named UNIQUE — one current outcome per discovered
+place; re-match upserts), `status` CHECK (the five above), `place_id`
+nullable → `places` (NOT NULL iff `matched_confirmed`/`_unconfirmed` —
+CHECK-enforced discriminated union, house style), `best_score numeric`
++ `method text` (NOT NULL when any score present), `candidates jsonb`
+(ambiguous contenders: our FSQ place ids + scores — no Google content),
+`matched_at timestamptz`, `trace_id` → traces. On `matched_confirmed`
+the matcher also writes `places.google_place_id` — the operational link
+the app reads; `identity_matches` is the evidence trail; the matcher is
+the sole writer of both (stated to keep single-owner honest).
+One-to-one enforced by `places.google_place_id UNIQUE` +
+`identity_matches.discovered_place_id UNIQUE`; if two discovered ids
+both confirm against one FSQ row (duplicate Google listings exist),
+deterministic processing order lets the first win and the second lands
+`ambiguous` with a conflict marker in `candidates` — investigated at
+Checkpoint 4, never silently dropped.
+
+**No path invents a name**: name writers are FSQ ingestion and the
+founder channel, full stop. The matcher's write surface is
+`identity_matches` + `places.google_place_id`; its write path takes no
+name parameter (type-enforced), and Checkpoint 3 evidence includes the
+before/after row proving nothing Google-sourced landed beyond the id.
+
+Unmatched FSQ rows (no discovery hit) are the long tail working as
+designed: first-class schedulable identities (they have names), with
+honest absence of Google-side volatile data at generation time.
+
+### 2.4 Idempotency and re-run semantics
+
+- Ingestion: deterministic pinned-release extraction + upsert = clean
+  re-run resume (Session 4 strategy). Same version → no-op.
+- Matching: skips discovered places whose `identity_matches` row is in
+  a terminal status unless `--rematch` — **a re-run re-spends nothing**
+  on already-decided places. `--rematch` exists for threshold changes
+  and prompts with a call estimate before running.
+- Both scripts: `--probe`/`--full` explicit-mode flags + `--max-calls`
+  refusal guard on the matcher (Session 4 pattern; every invocation
+  prompts via `npx tsx` ask-gating).
+
+### 2.5 Instrumentation
+
+- Trace `kind='base_layer_ingest'`: events per pipeline stage with
+  metadata `{rows_scanned, rows_bbox, rows_mapped, rows_kept,
+  drops_by_reason, dataset_version}`; `est_cost_usd = 0` (known-free,
+  honest zero); duration per stage.
+- Trace `kind='identity_matching'`: one event per confirm call —
+  provider `google_places`, endpoint `places.get`,
+  `est_cost_usd = 0.017` list, `pricing_basis: 'list'` + free-tier note
+  in metadata (Session 4 Checkpoint 2 rule), duration, metadata
+  `{discovered_place_id, n_candidates, status, best_score, method}` —
+  no Google content in metadata, ever.
+- Run summaries on both traces: totals, outcome distribution, spend.
+
+### 2.6 COST ESTIMATE (the gate)
+
+FSQ side: **$0** (Apache 2.0 open data, public S3). Bandwidth: est.
+1–8 GB scanned transfer for extraction (projection pushdown; measured
+and reported); disk: Toronto extract tens of MB, scratchpad-resident.
+
+Google side — confirm calls, Place Details Pro at **$17.00/1,000 list**
+(verified live 2026-08-05):
+
+| Item | Calls | List cost |
+|---|---|---|
+| Dry run (Kensington, Step 3) | ≤15 | **≤$0.26** |
+| Full matching, expected (55–80% of 760 have candidates) | 420–610 | **$7.14–$10.37** |
+| Full matching, worst case (every discovered place has a candidate) | 760 | **$12.92** |
+| **Worst case, whole session** | ≤775 | **≤$13.18** |
+
+Under the $15 gate without shrinking. If the reviewer wants headroom
+anyway, the shrink lever is pre-designed: confirm only multi-candidate
+and mid-band cases, let geometry-singleton matches land as
+`matched_unconfirmed` (the reserved state) — cuts calls roughly in
+half; not recommended (a $6 saving buys a permanently weaker link
+tier on half the pool).
+
+Billed reality: Pro-tier allowance is 5,000 free calls/month (pricing
+page, 2026-07-31); Session 4 consumed 67 Pro events in August → ≥4,225
+headroom even if the allowance pools across Pro SKUs; expected actual
+charge **$0.00**. Accounting stays at list per the Session 4 rule.
+
+### CHECKPOINT 2 outcome — COST GATE approved (≤$13.18 list), three additions
+
+1. **Deterministic matching order**: the run processes discovered
+   places ordered by `google_place_id` (stable, content-derived) — the
+   duplicate-collision winner must not depend on incidental iteration
+   order; Checkpoint 4 conflict investigations become reproducible.
+2. **Bandwidth measured, not waved at**: actual bytes transferred for
+   the FSQ extraction recorded in ingestion trace metadata.
+3. **Threshold ratification at Checkpoint 3 is against the score
+   distribution itself** (histogram / sorted score list of real
+   comparisons), not just outcome counts — T_high/T_low/margin get
+   judged on real Toronto name pairs before 760 places inherit them.
+
+Shrink lever declined as recommended (link confidence is permanent
+rank-model input).
+
+### INCIDENT (Step 3, during first live S3 contact): the sanctioned FSQ
+### S3 channel is dead — stopped and surfaced per Checkpoint 1 ruling 4
+
+Timeline (all 2026-08-05, this session):
+1. Build complete (migration applied, 81 tests green, lint/typecheck/build
+   clean). First live S3 action was the free category pin:
+   `read_parquet('s3://fsq-os-places-us-east-1/release/dt=2026-07-09/categories/parquet/*.parquet')`
+   → "No files found that match the pattern".
+2. Anonymous S3 listing (public list API, no credentials): bucket contains
+   exactly TWO objects — `LICENSE.txt` (Apache 2.0 full text) and
+   `NOTICE.txt` (© 2025 Foursquare Labs; Apache 2.0 restated; attribution
+   guidance incl. "preserve the full content of this NOTICE.txt file").
+   `release/` prefix: KeyCount 0. No CommonPrefixes anywhere.
+3. AWS Open Data registry entry for the dataset: HTTP 404 (delisted).
+4. FSQ release notes (fetched live): October 2025 — "We've deprecated the
+   public S3 bucket and replaced it with an Iceberg catalog accessible via
+   our new Places Portal"; old releases were to remain on S3 "for a period
+   of time" — that period has evidently ended. July 2026 release
+   (2026-07-09) exists and is current, distributed via: Places Portal
+   (account + token, Iceberg catalog, DuckDB snippets provided), Hugging
+   Face (the documented gate: contact sharing + marketing name/logo
+   permission), Snowflake Marketplace.
+
+What this does NOT change: the license. Apache 2.0 is confirmed by
+Foursquare's own LICENSE.txt + NOTICE.txt fetched from their bucket today
+— stronger primary evidence than the docs pages. Pin stays
+`dt=2026-07-09`. All built code, schema, tests unaffected except
+`extract.ts`'s source URL/connector.
+
+What it does change: decision doc 002's practical layer (§1) named S3 as
+the sanctioned channel specifically to avoid the HF gate. That channel no
+longer exists. Both remaining viable channels require founder action
+(account creation / gate acceptance) and terms review before acceptance.
+Stopped before any signup or click-through; awaiting ruling.
+
+New obligation recorded regardless of channel: NOTICE.txt content must be
+preserved in our attribution surface (its own instruction); carrying it
+in-repo + on the credits surface satisfies the conservative reading.
+
+**RULING (channel)**: Portal DECLINED after terms review — Spatial Master
+ToS §4.1(a) (no creating/augmenting location databases), Developer Master
+Terms §7.5.8 (no developing POI datasets), §8 (underlying data =
+Confidential Information), §13/§14 (at-will termination, destroy-all-
+copies, audit) — a contract at the door overrides the license on the
+files. **HF ruled in on merits**: gate terms restrict access, not use;
+Apache 2.0 travels intact. Standing rule recorded in 002's Channel
+Addendum: the governing question for any channel is use-restriction vs
+access-restriction. Applied same-day:
+- 002 amended (Channel Addendum: S3 sunset evidence, Portal clause
+  analysis, HF ruling, standing rule, NOTICE.txt obligation).
+- `docs/licenses/fsq-os-places-{LICENSE,NOTICE}.txt` captured verbatim.
+- `extract.ts` → shared `connectFsq(hfToken)` (HF secret; sanitized
+  errors — driver messages could echo the token, so they're withheld);
+  paths → `hf://datasets/foursquare/fsq-os-places/release/dt=2026-07-09/…`;
+  pin + ingest scripts take `HF_TOKEN` from environment only. Pin script
+  also records the HF-side release listing (verify-and-record ruling).
+- Checks re-run: lint clean, typecheck clean, 81 tests green.
+
+**Env-home ruling (reviewer)**: user-provided keys (HF_TOKEN,
+GOOGLE_MAPS_API_KEY) live in `.env.local` and reach scripts via
+`--env-file .env.local` (Session 4 ingestion pattern). The file itself
+stays out of bounds — no reads, no introspection; scripts self-report
+missing vars. Scratchpad env files are only for keys the session fetches
+itself (Supabase; fetched-used-deleted). One home per secret.
+
+**Mapping note — events are not venues** (reviewer instruction; recorded
+interpretation per CLAUDE.md ambiguity rule): the FSQ taxonomy carries an
+"Event" top-level branch (festivals, temporary marketplaces, etc.) that
+semantically brushes our `markets` category. Deliberate divergence from
+any card-side category table: our seven categories map durable,
+schedulable VENUES only — no breadcrumb rule touches the "Event" branch
+(markets maps from "Retail > …" prefixes exclusively), so event rows land
+in category_unmapped by construction. The pin report makes this
+reviewable: any "Event > …" label appearing in matched output would be a
+rule bug. If the intended referent of "the card's non-commercial table"
+was something else, correct at Checkpoint 3.
+
+### 2.7 Dry run plan (Step 3, for reference at the gate)
+
+Kensington bbox (≈ lat 43.650–43.660, lng −79.408…−79.393): ingest that
+slice to production `places`, match against the discovery pool's
+Kensington/Chinatown places, ≤15 confirm calls. Evidence: sample rows
+with provenance + `categories` fact, score distribution, one confirmed
+match end-to-end with the discarded-name proof (full row shown: nothing
+Google-sourced beyond the id), the two traces, idempotent re-run of
+both scripts (zero new rows, zero new spend).
+
+---
+
 # Session 4 — ToS decision doc (XXX-21) + Places ingestion, Toronto (XXX-22)
 
 Branch: `session-4-places-pipeline`. Status: **complete** — decision doc
