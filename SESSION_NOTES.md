@@ -410,6 +410,74 @@ match end-to-end with the discarded-name proof (full row shown: nothing
 Google-sourced beyond the id), the two traces, idempotent re-run of
 both scripts (zero new rows, zero new spend).
 
+## Step 3 — Build and dry run: executed (CHECKPOINT 3 pending)
+
+Built and committed (atomic, XXX-25): migration applied to production;
+`src/server/base-layer/{dataset,categories,category-ids.generated,
+schemas,similarity,geo,rows,repo,details-client,match,ingest,extract}.ts`;
+scripts `pin-categories`, `ingest-base-layer` (`--probe-pushdown`,
+`--count-only`, `--probe-kensington`, `--full`), `match-identities`
+(`--probe-kensington`/`--full`, `--max-calls`, `--limit`, `--rematch`),
+`base-layer-report` (`--sample`, `--trace`). Tests: 82 passing (35 new)
+incl. the discarded-name leak probe, identical-twin low-margin case, and
+TTL-expired-coords exclusion. `@duckdb/node-api` devDependency.
+
+Dry-run evidence (all live, production):
+1. **Pushdown probe** (committed mode): 155,029 bytes received to
+   evaluate the 118,153,796-byte probe file — **transfer fraction
+   0.0013**. Acceptance passed decisively; dataset is spatially
+   clustered (whole file pruned by row-group stats).
+2. **Free counts**: Toronto bbox 302,255 raw; Kensington 4,258.
+3. **Pin** (`dt=2026-07-09`, verified present in the HF listing of 20
+   monthly releases): 1,279 taxonomy rows → restaurants 335 labels,
+   nightlife_bars 27, parks 11, cafes 7, museums_galleries 6,
+   historic_sites 2, markets 2. Zero "Event >" labels matched
+   (events-not-venues holds by construction). Pin review caught ONE
+   over-capture: "Dining and Drinking > Cafeteria" via the bare "Cafe"
+   prefix — excluded by comma-anchoring the prefix ("Cafe,"), fixture
+   test added. Real label family is singular ("Cafe, Coffee, and Tea
+   House"), not the plural I'd assumed — the pin-from-release design
+   caught exactly the drift it was built for.
+4. **Kensington ingest** (trace `c2ca0557`): 4,258 → **897 identities**
+   (21%), drops fully accounted: category_unmapped 2,659 (top offenders:
+   Business & Professional Services 724, Retail 722, Community &
+   Government 373), date_closed 551, flag_closed 99, flag_duplicate 49,
+   flag_inappropriate 3; empty_name/missing_coords 0. Bandwidth
+   36.5 MB (proc_net_dev delta, in trace metadata). Per-category:
+   restaurants 580, cafes 161, nightlife_bars 116, museums_galleries 43,
+   parks 17, markets 10, historic_sites 4.
+5. **Matching dry run** (trace `16f7f7e5`): 79 eligible in-box, plan
+   truncated `--limit 15`; 15 confirm calls, $0.255 list (est ≤$0.26).
+   Outcomes: matched_confirmed 9, name_mismatch 4, ambiguous 2 (one
+   mid_band at 0.667, one low_margin identical-twin at 1.0), collisions
+   0. **Score distribution (sorted): 0.11, 0.23, 0.30, 0.32 | 0.667 |
+   0.80, 0.82, 0.83, 0.84, 1.0 ×6 — cleanly bimodal.** T_low 0.45 sits
+   in the empty 0.32–0.667 band; T_high 0.75 in the empty 0.667–0.80
+   band. Thresholds presented for ratification on this data.
+6. **End-to-end confirmed match**: FSQ identity `ece1ec91…` ("FILM
+   CAFE", 230 Augusta Ave, source fsq_os_places, tier 2, source_version
+   dt=2026-07-09, fetched_at 2026-07-09) + `google_place_id
+   ChIJ__8jD8I0K4gR…` + match row (score 1.0, method ns1, trace-linked).
+   Notably n_candidates=81 within 100 m — proximity alone could never
+   have picked it; the name did. **Discarded-name proof**: the row and
+   match carry nothing Google-sourced beyond the id; trace-event
+   metadata (dumped via `--trace`) holds only ids/score/status/mask;
+   the fixture leak test asserts the Google-only token appears nowhere
+   persisted.
+7. **Idempotency, live**: ingest re-runs → rowsIn 4,258, kept 897,
+   new 0, updated 897; `with_google_link` stayed 9 across re-ingest
+   (link + created_at preservation proven against real PostgREST).
+   Match re-run plan: skipped_terminal 15, plan 79→64, refused at
+   `--max-calls 0` — a re-run re-spends nothing.
+
+Spend so far this session: **$0.255 list** (15 Place Details Pro calls)
+vs. ≤$0.26 dry-run budget. Remaining full-run estimate unchanged.
+
+Observation for Checkpoint 4 planning: Kensington's in-box eligible
+count (79 of ~124 kensington-anchor discovered places) and 100%-candidate
+rate suggest the full-run confirm count will land nearer the top of the
+420–610 expected band; worst case 760 ($12.92) still bounds it.
+
 ---
 
 # Session 4 — ToS decision doc (XXX-21) + Places ingestion, Toronto (XXX-22)
