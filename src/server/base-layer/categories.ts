@@ -22,7 +22,10 @@ import type { PlaceCategory } from "../domain/schemas";
 export const CATEGORY_BREADCRUMB_RULES: Record<PlaceCategory, string[]> = {
   restaurants: ["Dining and Drinking > Restaurant"],
   cafes: [
-    "Dining and Drinking > Cafe",
+    // The comma is load-bearing: the release taxonomy's label family is
+    // "Cafe, Coffee, and Tea House"; a bare "Cafe" prefix over-captured
+    // "Cafeteria" (found in the 2026-07-09 pin review, excluded on purpose).
+    "Dining and Drinking > Cafe,",
     "Dining and Drinking > Coffee",
     "Dining and Drinking > Bakery",
   ],

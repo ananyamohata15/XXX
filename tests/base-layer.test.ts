@@ -34,7 +34,7 @@ const rawRow = (over: Record<string, unknown> = {}) => ({
   address: "307 Augusta Ave",
   category_ids_json: JSON.stringify(["cat_cafe"]),
   category_labels_json: JSON.stringify([
-    "Dining and Drinking > Cafes, Coffee, and Tea Houses > Coffee Shop",
+    "Dining and Drinking > Cafe, Coffee, and Tea House > Coffee Shop",
   ]),
   date_closed: null,
   unresolved_flags_json: null,
@@ -60,12 +60,15 @@ describe("category breadcrumb rules", () => {
       matchBreadcrumb("Dining and Drinking > Restaurant > Sushi Restaurant"),
     ).toBe("restaurants");
   });
-  it("catches the Cafes, Coffee label family via the Cafe prefix", () => {
+  it("catches the Cafe, Coffee label family via the comma-anchored prefix", () => {
     expect(
       matchBreadcrumb(
-        "Dining and Drinking > Cafes, Coffee, and Tea Houses > Coffee Shop",
+        "Dining and Drinking > Cafe, Coffee, and Tea House > Coffee Shop",
       ),
     ).toBe("cafes");
+  });
+  it("excludes Cafeteria (the pin-review over-capture)", () => {
+    expect(matchBreadcrumb("Dining and Drinking > Cafeteria")).toBeNull();
   });
   it("maps bakeries to cafes (recorded judgment)", () => {
     expect(matchBreadcrumb("Dining and Drinking > Bakery")).toBe("cafes");

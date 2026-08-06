@@ -15,6 +15,9 @@ import { KENSINGTON_BBOX } from "../src/server/base-layer/dataset";
  * Guard:
  *   --max-calls <n>       required in both modes; refuses to start if the
  *                         planned confirm-call count exceeds n
+ *   --limit <n>           truncate the plan to the first n confirm entries
+ *                         (deterministic google_place_id order); the rest
+ *                         stay unprocessed for a later run. Dry-run tool.
  *   --rematch             also reprocess terminal-status places (prompts a
  *                         larger plan; use for threshold changes only)
  *
@@ -58,10 +61,20 @@ async function main() {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
+  const limitIndex = argv.indexOf("--limit");
+  const limit =
+    limitIndex >= 0 ? Number.parseInt(argv[limitIndex + 1] ?? "", 10) : null;
+  if (limitIndex >= 0 && (!Number.isInteger(limit) || limit! < 1)) {
+    console.error("--limit requires a positive integer.");
+    process.exit(1);
+  }
+
   const plan = await buildMatchPlan(supabase, "toronto", new Date(), {
     rematch,
     within: probe ? KENSINGTON_BBOX : undefined,
   });
+  const plannedBeforeLimit = plan.toConfirm.length;
+  if (limit !== null) plan.toConfirm = plan.toConfirm.slice(0, limit);
 
   console.log(
     JSON.stringify(
@@ -70,6 +83,7 @@ async function main() {
         rematch,
         fsq_corpus: plan.fsqCorpusSize,
         planned_confirm_calls: plan.toConfirm.length,
+        planned_before_limit: plannedBeforeLimit,
         no_candidates: plan.noCandidates.length,
         skipped_terminal: plan.skippedTerminal,
         skipped_no_coords: plan.skippedNoCoords,
