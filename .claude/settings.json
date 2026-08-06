@@ -27,7 +27,9 @@
       "Bash(npm install:*)",
       "Bash(npx supabase:*)",
       "Bash(npx tsx:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
     ],
     "deny": [
       "Bash(git push:*)",
