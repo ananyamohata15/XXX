@@ -45,6 +45,29 @@ async function main() {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
+  // --trace <id>: dump one trace + its events (metadata included — which is
+  // itself evidence that no Google content rides in trace metadata).
+  const traceIndex = process.argv.indexOf("--trace");
+  if (traceIndex >= 0) {
+    const traceId = process.argv[traceIndex + 1];
+    if (!traceId) {
+      console.error("--trace requires a trace id.");
+      process.exit(1);
+    }
+    const trace = await supabase.from("traces").select().eq("id", traceId).single();
+    if (trace.error) throw new Error(trace.error.message);
+    const events = await listAll<Record<string, unknown>>((from, to) =>
+      supabase
+        .from("trace_events")
+        .select()
+        .eq("trace_id", traceId)
+        .order("created_at")
+        .range(from, to),
+    );
+    console.log(JSON.stringify({ trace: trace.data, events }, null, 2));
+    return;
+  }
+
   const places = await listAll<{
     id: string;
     name: string;
