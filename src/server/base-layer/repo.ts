@@ -159,26 +159,64 @@ export async function upsertIdentityMatch(
 }
 
 /**
- * Write the operational link on a confirmed match. A unique-violation on
- * places.google_place_id means another identity already holds this link
- * (duplicate Google listings) — surfaced as a collision, not an error.
+ * Write the operational link on a confirmed match. Collision = this place
+ * already carries a DIFFERENT link (two discovered Google places confirming
+ * one FSQ identity — duplicate Google listings), surfaced for the ambiguous/
+ * link_collision demotion, never an overwrite. The update is conditional on
+ * google_place_id IS NULL so a concurrent linker cannot clobber either
+ * (found the hard way: the full run's abort on
+ * identity_matches_place_matched_unique — the DB caught what the original
+ * unconditional update silently overwrote).
  */
 export async function setPlaceGoogleLink(
   client: SupabaseClient,
   placeId: string,
   googlePlaceId: string,
 ): Promise<{ collision: boolean }> {
+  const current = await client
+    .from("places")
+    .select("google_place_id")
+    .eq("id", placeId)
+    .single();
+  if (current.error) {
+    throw new Error(`places link lookup failed: ${current.error.message}`);
+  }
+  const existing = (current.data as { google_place_id: string | null })
+    .google_place_id;
+  if (existing === googlePlaceId) return { collision: false }; // idempotent
+  if (existing !== null) return { collision: true };
+
+  const updated = await client
+    .from("places")
+    .update({ google_place_id: googlePlaceId })
+    .eq("id", placeId)
+    .is("google_place_id", null)
+    .select("id");
+  if (updated.error) {
+    if (updated.error.message.includes("places_google_place_id")) {
+      return { collision: true };
+    }
+    throw new Error(`places google link update failed: ${updated.error.message}`);
+  }
+  // Zero rows updated = a concurrent linker won the race after our read.
+  return { collision: (updated.data ?? []).length === 0 };
+}
+
+/**
+ * Restore a link from match evidence (the repair path for the pre-fix
+ * clobber; deliberately unconditional — evidence wins).
+ */
+export async function repairPlaceGoogleLink(
+  client: SupabaseClient,
+  placeId: string,
+  googlePlaceId: string,
+): Promise<void> {
   const { error } = await client
     .from("places")
     .update({ google_place_id: googlePlaceId })
-    .eq("id", placeId);
-  if (error) {
-    if (error.message.includes("places_google_place_id")) {
-      return { collision: true };
-    }
-    throw new Error(`places google link update failed: ${error.message}`);
-  }
-  return { collision: false };
+    .eq("id", placeId)
+    .select("id");
+  if (error) throw new Error(`link repair failed: ${error.message}`);
 }
 
 async function listPaginated<Row>(
@@ -240,15 +278,22 @@ export async function listDiscoveredPlacesOrdered(
   return rows.map((r) => withCoordsTtlApplied(r, now));
 }
 
-/** Existing outcomes, for the skip-terminal-status re-run rule. */
+/** Existing outcomes, for the skip-terminal-status re-run rule and the
+ * link verifier. */
 export function listExistingMatches(
   client: SupabaseClient,
-): Promise<{ discovered_place_id: string; status: string }[]> {
-  return listPaginated<{ discovered_place_id: string; status: string }>(
+): Promise<
+  { discovered_place_id: string; status: string; place_id: string | null }[]
+> {
+  return listPaginated<{
+    discovered_place_id: string;
+    status: string;
+    place_id: string | null;
+  }>(
     (from, to) =>
       client
         .from("identity_matches")
-        .select("discovered_place_id, status")
+        .select("discovered_place_id, status, place_id")
         .order("discovered_place_id")
         .range(from, to) as never,
     "identity_matches",

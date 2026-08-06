@@ -171,46 +171,68 @@ export function createFakeBaseDb(): FakeBaseDb {
         };
       },
       update(patch: Record<string, unknown>) {
-        return {
-          eq(column: string, value: unknown) {
-            const apply = (): { message: string } | null => {
-              const row = places.find((p) => p[column] === value);
-              if (!row) return { message: "no places row" };
-              if (
-                patch.google_place_id != null &&
-                places.some(
-                  (p) =>
-                    p !== row && p.google_place_id === patch.google_place_id,
-                )
-              ) {
-                return {
+        // Filterable conditional update: .eq().is().select() like PostgREST —
+        // zero matching rows is data:[] with no error (the collision signal).
+        const filters: ((p: FakePlace) => boolean)[] = [];
+        const runUpdate = (): {
+          error: { message: string } | null;
+          rows: FakePlace[];
+        } => {
+          const matched = places.filter((p) => filters.every((f) => f(p)));
+          for (const row of matched) {
+            if (
+              patch.google_place_id != null &&
+              places.some(
+                (p) => p !== row && p.google_place_id === patch.google_place_id,
+              )
+            ) {
+              return {
+                error: {
                   message:
                     'duplicate key value violates unique constraint "places_google_place_id_key"',
-                };
-              }
-              Object.assign(row, patch);
-              return null;
-            };
+                },
+                rows: [],
+              };
+            }
+            Object.assign(row, patch);
+          }
+          return { error: null, rows: matched };
+        };
+        const chain = {
+          eq(column: string, value: unknown) {
+            filters.push((p) => p[column] === value);
+            return chain;
+          },
+          is(column: string, value: unknown) {
+            filters.push((p) => p[column] === value);
+            return chain;
+          },
+          then(resolve: (v: { error: { message: string } | null }) => void) {
+            resolve({ error: runUpdate().error });
+          },
+          select() {
             return {
-              // Awaited directly (setPlaceGoogleLink).
               then(
-                resolve: (v: { error: { message: string } | null }) => void,
+                resolve: (v: {
+                  data: FakePlace[];
+                  error: { message: string } | null;
+                }) => void,
               ) {
-                resolve({ error: apply() });
+                const r = runUpdate();
+                resolve({ data: r.rows.map((x) => ({ ...x })), error: r.error });
               },
-              select() {
-                return {
-                  single() {
-                    const error = apply();
-                    if (error) return fail(error.message);
-                    const row = places.find((p) => p[column] === value);
-                    return ok({ ...row });
-                  },
-                };
+              single() {
+                const r = runUpdate();
+                if (r.error) return fail(r.error.message);
+                if (r.rows.length !== 1) {
+                  return fail(`expected 1 updated row, got ${r.rows.length}`);
+                }
+                return ok({ ...r.rows[0] });
               },
             };
           },
         };
+        return chain;
       },
     };
   }
@@ -237,6 +259,23 @@ export function createFakeBaseDb(): FakeBaseDb {
         return selectChain(matches);
       },
       upsert(row: FakeIdentityMatch) {
+        const MATCHED = ["matched_confirmed", "matched_unconfirmed"];
+        if (
+          MATCHED.includes(row.status) &&
+          matches.some(
+            (m) =>
+              m.discovered_place_id !== row.discovered_place_id &&
+              m.place_id === row.place_id &&
+              MATCHED.includes(m.status),
+          )
+        ) {
+          return Promise.resolve({
+            error: {
+              message:
+                'duplicate key value violates unique constraint "identity_matches_place_matched_unique"',
+            },
+          });
+        }
         const existing = matches.find(
           (m) => m.discovered_place_id === row.discovered_place_id,
         );

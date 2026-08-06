@@ -3,6 +3,12 @@ import { createInstrumentation } from "../src/server/instrumentation";
 import { createDetailsClient, PLACE_DETAILS_PRO_USD_PER_CALL } from "../src/server/base-layer/details-client";
 import { buildMatchPlan, runMatching } from "../src/server/base-layer/match";
 import { KENSINGTON_BBOX } from "../src/server/base-layer/dataset";
+import {
+  listDiscoveredPlacesOrdered,
+  listExistingMatches,
+  listFsqPlaces,
+  repairPlaceGoogleLink,
+} from "../src/server/base-layer/repo";
 
 /**
  * Identity matching (decision 002). SPENDS MONEY — every invocation prompts
@@ -34,8 +40,72 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * --verify-links [--repair]: places.google_place_id must agree with the
+ * matched_confirmed evidence (identity_matches → discovered_places). A
+ * mismatch is the pre-fix clobber; --repair restores from evidence.
+ */
+async function verifyLinks(repair: boolean) {
+  const supabase = createClient(
+    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+  const [matches, discovered, places] = await Promise.all([
+    listExistingMatches(supabase),
+    listDiscoveredPlacesOrdered(supabase, "toronto", new Date()),
+    listFsqPlaces(supabase, "toronto"),
+  ]);
+  const googleIdByDiscovered = new Map(
+    discovered.map((d) => [d.id, d.google_place_id]),
+  );
+  const placeById = new Map(places.map((p) => [p.id, p]));
+
+  const mismatches: {
+    place_id: string;
+    expected: string;
+    actual: string | null;
+  }[] = [];
+  for (const m of matches) {
+    if (m.status !== "matched_confirmed" || m.place_id === null) continue;
+    const expected = googleIdByDiscovered.get(m.discovered_place_id);
+    const place = placeById.get(m.place_id);
+    if (!expected || !place) continue;
+    if (place.google_place_id !== expected) {
+      mismatches.push({
+        place_id: m.place_id,
+        expected,
+        actual: place.google_place_id,
+      });
+    }
+  }
+  console.log(
+    JSON.stringify(
+      {
+        mode: "verify-links",
+        confirmed_matches: matches.filter(
+          (m) => m.status === "matched_confirmed",
+        ).length,
+        mismatches,
+      },
+      null,
+      2,
+    ),
+  );
+  if (repair) {
+    for (const mm of mismatches) {
+      await repairPlaceGoogleLink(supabase, mm.place_id, mm.expected);
+    }
+    console.log(JSON.stringify({ repaired: mismatches.length }));
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes("--verify-links")) {
+    await verifyLinks(argv.includes("--repair"));
+    return;
+  }
   const probe = argv.includes("--probe-kensington");
   const full = argv.includes("--full");
   const rematch = argv.includes("--rematch");

@@ -425,6 +425,48 @@ describe("matching end-to-end (fake client + fake details)", () => {
     expect(persisted).not.toMatch(/Kensington/i);
   });
 
+  it("demotes a second confirm on the same identity to link_collision", async () => {
+    // The full-run abort scenario: two Google listings for one venue, both
+    // name-matching the same FSQ identity. First (google_place_id order)
+    // wins the link; second must land ambiguous/link_collision — never
+    // overwrite, never crash into identity_matches_place_matched_unique.
+    const db = createFakeBaseDb();
+    const cafe = await upsertBaseLayerPlace(db.client, newPlace());
+    const now = new Date().toISOString();
+    for (const gpid of ["gpid_dup_B", "gpid_dup_A"]) {
+      db.seedDiscovered({
+        city: "toronto",
+        google_place_id: gpid,
+        lat: 43.6547,
+        lng: -79.4005,
+        coords_status: "present",
+        coords_fetched_at: now,
+        source: "google_places",
+        tier: 1,
+        first_discovered_at: now,
+      });
+    }
+    const plan = await buildMatchPlan(db.client, "toronto", new Date());
+    const report = await runMatching({
+      supabase: db.client,
+      details: detailsReturning("Cafe Pamenar"),
+      instrumentation: createInstrumentation(db.client),
+      plan,
+    });
+    expect(report.collisions).toBe(1);
+    expect(report.outcomes).toMatchObject({
+      matched_confirmed: 1,
+      ambiguous: 1,
+    });
+    // Deterministic winner: gpid_dup_A processes first and keeps the link.
+    expect(db.places[0].google_place_id).toBe("gpid_dup_A");
+    const demoted = db.matches.find((m) => m.status === "ambiguous");
+    expect(
+      (demoted?.candidates as { note?: string } | null)?.note,
+    ).toBe("link_collision");
+    expect(cafe.row.id).toBe(db.matches.find((m) => m.status === "matched_confirmed")?.place_id);
+  });
+
   it("skips terminal statuses on re-run — a re-run re-spends nothing", async () => {
     const db = createFakeBaseDb();
     await seed(db);

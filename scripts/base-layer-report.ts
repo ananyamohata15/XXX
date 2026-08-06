@@ -45,6 +45,20 @@ async function main() {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
+  // --traces: list base-layer traces for spend accounting across runs.
+  if (process.argv.includes("--traces")) {
+    const traces = await listAll<Record<string, unknown>>((from, to) =>
+      supabase
+        .from("traces")
+        .select("id, kind, started_at, finished_at, total_cost_usd, metadata")
+        .in("kind", ["base_layer_ingest", "identity_matching"])
+        .order("started_at")
+        .range(from, to),
+    );
+    console.log(JSON.stringify(traces, null, 2));
+    return;
+  }
+
   // --trace <id>: dump one trace + its events (metadata included — which is
   // itself evidence that no Google content rides in trace metadata).
   const traceIndex = process.argv.indexOf("--trace");
