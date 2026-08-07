@@ -354,6 +354,86 @@ Ops item (founder, non-blocking): point a free uptime monitor at
 5. **Severity tiering**: sweep staleness = 503, weather staleness =
    warning.
 
+### CHECKPOINT 1 outcome — all five rulings granted as proposed
+
+Platform split accepted (the earlier "Option B" ruling formally
+superseded on the live evidence: Hobby daily-only limit +
+deploy-coupled activation vs. the Sep 4 deadline); hourly cadence
+ratified on the retention-vs-read layered argument; re-discovery stays
+human-triggered (cap + kill-switch recorded as hard requirements on any
+future automation; due-date comment on XXX-25 at close-out; first run
+Sep 1–3); weather_days shape, read-time windows with versioned params,
+astronomy-engine (not stored) — all as argued; severity tiering
+ratified.
+
+## Step 2 — Sweep build + proof (CHECKPOINT 2)
+
+Built and committed BEFORE any live run (standing rule —
+evidence-producing probes are repo scripts):
+- Migration `20260806200000_ttl_sweep.sql`: pg_cron extension;
+  `sweep_expired_coords()` (guarded UPDATE + trace insert **in one
+  transaction** — a run that deletes but doesn't trace cannot happen);
+  EXECUTE revoked from public/anon/authenticated, granted to
+  service_role; `cron.schedule('ttl-sweep', '7 * * * *', …)`
+  (upserts by name — re-push cannot double-schedule).
+- `ttl.ts`: `sweepWouldExpire` (pure mirror of the SQL predicate, tested
+  at the same 29/30-day boundary as `coordsExpired` so the layers can't
+  drift silently) + `expiresWithinDays` (re-discovery warning math).
+- `health.ts`: `ttlSweep` check (absence-based: newest `ttl_sweep`
+  trace ≤ 120 min or 503) + `warnings` array with `coords_expiring`.
+- Scripts `ttl-sweep.ts` (--status / --run-once / --insert-synthetic /
+  --delete-synthetic / --cron-status / --cron-set) and
+  `health-report.ts` (same code path as /api/health, exit 0/1).
+- Checks at commit: lint clean, typecheck clean, **106 passed | 3
+  skipped** (new: sweep-predicate boundary + expiring-window + 4 health
+  recency/warning tests).
+
+Live evidence (production, 2026-08-07 ~03:31–03:33 UTC):
+1. Migration pushed; `cron.job` shows `ttl-sweep`, `7 * * * *`,
+   active, command `select public.sweep_expired_coords()`.
+2. **Alert path demonstrated first** (controlled, absence-based): with
+   the schedule live but no run yet, `health-report` returned
+   `status: "unhealthy"`, `ttlSweep.error: "no ttl_sweep trace exists —
+   sweep has never run or its schedule is dead"`, exit 1 — this is
+   exactly where a dead cron surfaces.
+3. Baseline `--status`: real rows 760, all `present`, 0 would-expire,
+   0 expiring-within-7d; 0 fixture rows.
+4. Synthetic probe inserted (id `f50a3d7c…`, google_place_id
+   `SYNTHETIC-TTL-PROBE-1786073576343`, `source='fixture'`,
+   coords_fetched_at backdated 31 days to 2026-07-07, lat 43.0
+   lng −79.0, status `present`).
+5. `--run-once` → trace `9a5655e3`: `{rows_examined: 761,
+   rows_expired: 1, expiring_within_7d: 0}`, cost 0. After-state:
+   real 760 all `present` (untouched — count and status distribution
+   identical), fixture 1 `expired`.
+6. **Idempotency live**: second `--run-once` → trace `4e8b1521`:
+   `{rows_examined: 760, rows_expired: 0}` — zero-row run still
+   traced (silence is not evidence, demonstrated).
+7. Health after runs: `healthy`, `ttlSweep.ok: true`, exit 0.
+8. Synthetic row deleted; its final state on deletion was the full
+   expiry shape: `lat: null, lng: null, coords_status: 'expired',
+   coords_fetched_at: 2026-07-07…` — **values deleted, timestamp
+   persisted as the compliance evidence**, exactly the Checkpoint 1
+   semantics. Pool back to 760 real / 0 fixture.
+9. **Scheduled executions observed** (per the approved
+   observe-then-restore plan): temporarily `--cron-set '* * * * *'`;
+   pg_cron fired at **03:35:00** and **03:36:00 UTC** (runids 1–2,
+   both `succeeded` in cron.job_run_details), and both runs wrote
+   their traces (`4084e0b6` and `d89eb436`, each
+   `{rows_examined: 760, rows_expired: 0, expiring_within_7d: 0}` —
+   scheduled zero-row runs, traced). Cadence restored to
+   `'7 * * * *'` and re-verified — final state matches the migration.
+
+**Primary-vs-guard doctrine** (also in the migration header): the sweep
+is the compliance action (deletes expired values at rest — the SST
+§14.3 "must delete" obligation); the read guard is belt-and-suspenders
+(no over-retention read even when the cron is late/dead/unscheduled).
+Neither may be "simplified" away — each covers a hole the other cannot.
+
+Hygiene note: scratchpad `supabase.env` (service key + management
+token, fetched this session) is deleted at close-out per the
+fetched-used-deleted rule.
+
 ---
 
 # Session 5 — Base layer: durable identities (FSQ/OSM) + discovery matching
