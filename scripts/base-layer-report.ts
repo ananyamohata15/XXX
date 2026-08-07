@@ -147,16 +147,39 @@ async function main() {
   for (const m of matches) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;
 
   // Ambiguous rows carry their reason in candidates.note (mid_band /
-  // low_margin / link_collision). Collisions are listed in full — each one is
-  // a duplicate-Google-listing case Checkpoint 4 wants investigated.
+  // low_margin / link_collision). Each collision is a duplicate-Google-listing
+  // case: a second discovered Google place confirmed an already-linked FSQ
+  // identity. Enriched with the FSQ side (name, ids) so the listing reads
+  // without a second query; the FSQ name is FSQ content, not Google content.
+  const placeById = new Map(places.map((p) => [p.id, p]));
   const ambiguousReasons: Record<string, number> = {};
   const linkCollisions: unknown[] = [];
   for (const m of matches) {
     if (m.status !== "ambiguous") continue;
-    const note =
-      (m.candidates as { note?: string } | null)?.note ?? "unrecorded";
+    const cand = m.candidates as {
+      note?: string;
+      entries?: { place_id: string; score: number }[];
+    } | null;
+    const note = cand?.note ?? "unrecorded";
     ambiguousReasons[note] = (ambiguousReasons[note] ?? 0) + 1;
-    if (note === "link_collision") linkCollisions.push(m);
+    if (note !== "link_collision") continue;
+    const top = cand?.entries?.[0];
+    const fsq = top ? placeById.get(top.place_id) : undefined;
+    linkCollisions.push({
+      discovered_place_id: m.discovered_place_id,
+      best_score: m.best_score,
+      matched_at: m.matched_at,
+      trace_id: m.trace_id,
+      n_candidates: cand?.entries?.length ?? 0,
+      collided_fsq_place: fsq
+        ? {
+            place_id: fsq.id,
+            name: fsq.name,
+            fsq_place_id: fsq.fsq_place_id,
+            holds_google_link: fsq.google_place_id,
+          }
+        : null,
+    });
   }
 
   const scores = matches
@@ -187,7 +210,6 @@ async function main() {
   // End-to-end evidence: confirmed matches joined to their identity row and
   // categories fact — the full persisted surface of a match, showing nothing
   // Google-sourced beyond google_place_id.
-  const placeById = new Map(places.map((p) => [p.id, p]));
   const factByPlace = new Map(categoryFacts.map((f) => [f.place_id, f.value]));
   const endToEnd = matches
     .filter((m) => m.status === "matched_confirmed")
