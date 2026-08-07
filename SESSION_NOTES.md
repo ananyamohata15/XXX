@@ -545,6 +545,90 @@ this session):**
    `curl -H "Authorization: Bearer <value>" https://xxx-bice-rho.vercel.app/api/jobs/ingest-weather`
    → JSON summary; a wrong/missing header → 401.
 
+### CHECKPOINT 3 outcome — approved
+
+Both honesty findings accepted: the reference-API ~2-min lag (engine
+agrees with timeanddate's published values), and the golden-set
+correction — **"mid-January" becomes "early January" in golden-set v2**
+(the 16:55-ish sunset lives at Jan 5–8).
+
+## Step 4 — Close-out (Session 6 complete)
+
+**Four checks (run at close-out, in order):**
+- `npm run lint` — clean.
+- `npm run typecheck` (next typegen && tsc --noEmit) — clean.
+- `npm run build` — succeeded (`/api/jobs/ingest-weather` present as a
+  dynamic route).
+- `npm test` — **125 passed | 3 skipped** (the 3 are live-API tests,
+  keyed-environment only; honest count).
+
+### Final cadence / cost / alert table (the schedule of record)
+
+| Job | Platform | Cadence | Cost/run | Failure-alert path | State |
+|---|---|---|---|---|---|
+| `ttl_sweep` | Supabase pg_cron (`ttl-sweep`) | hourly `7 * * * *` | $0 | `/api/health` → **503** when newest `ttl_sweep` trace > 2h (absence-based; catches error/unschedule/scheduler-death); run errors also in `cron.job_run_details` | **LIVE in production** (observed firing at final cadence 04:07Z) |
+| `weather_ingest` | Vercel Cron → `/api/jobs/ingest-weather` | daily `30 10 * * *` UTC (±59 min Hobby) | $0 (2 keyless calls) | route fail-loud (503 config / 401 auth / 500 ingest → failed run in Vercel dashboard); `/api/health` **warning** `weather_stale` > 48h | config committed; **activates at merge** (CRON_SECRET = founder step, recorded above); prompted script covers until then |
+| re-discovery | **human-triggered only** — `discover-toronto.ts --full` | ~monthly; **first due Sep 1–3, 2026** (Jira comment 10292 on XXX-25) | $2.02 list (~$0 billed) | `/api/health` warning `coords_expiring` from ~Aug 28 (computed by every sweep run) | never scheduled; cap + kill-switch are hard preconditions of any future automation |
+| daylight | not a job — pure ephemeris on demand | — | $0 | deterministic; failures are test failures | in `src/server/weather/ephemeris.ts` |
+
+Ops item (founder, non-blocking): point an uptime monitor at
+`/api/health` so 503s/warnings push. Until then the guaranteed viewer
+is the session-start health check.
+
+### Doctrine of record (do not "simplify" either away)
+
+**Sweep = the compliance action** (discharges SST §14.3 "must delete"
+against data at rest, hourly). **Read guard = belt-and-suspenders**
+(no over-retention read even when the cron is late, dead, or
+unscheduled — `withCoordsTtlApplied` on every read path). Guard-only
+would leave values at rest past the grant; sweep-only would let a late
+cron cause over-retention reads. Stated here, in the migration header,
+and in ttl.ts.
+
+### Forward notes (next sessions)
+
+- **XXX-24 (travel matrix): still blocked on its own Routes ToS pass.**
+  Google Routes content sits under the same no-caching regime; a
+  decision-doc treatment (001-style) is required before any travel-time
+  caching is designed. CLAUDE.md's "Google Routes (transit, cached)"
+  line remains provisional until that doc exists.
+- **XXX-26 (golden set): unblocked on the weather/daylight axis** —
+  weather windows and computed daylight are now real, so golden-set
+  fixture conversion can encode daylight/weather-window compliance.
+  Correction of record: the winter day's 16:55-ish sunset is **early
+  January (Jan 5–8)**, not mid-January — apply in golden-set v2.
+- **Re-discovery (XXX-25)**: human trigger due **Sep 1–3** (Jira
+  comment 10292); health warns from ~Aug 28. If ever automated:
+  per-run call cap + kill switch, enforced in the job.
+- **Weather cron activation**: at merge — founder sets CRON_SECRET
+  (steps in Step 3 notes). After the first scheduled run, consider
+  allowlisting `scripts/weather-report.ts` by name (read-only) at a
+  checkpoint, per the settings principle.
+- **WINDOW_PARAMS v2 candidates** (deliberately deferred): wind
+  avoidance, humidity/humidex comfort, UV. Grammar work tunes v1
+  against golden-set days first.
+- **Delhi readiness note**: the AQI-absent path is live-proven (Toronto
+  dates beyond horizon); the AQI-present path with unhealthy windows is
+  fixture-proven (the heat-dome test) — Delhi ingestion needs only a
+  `CITY_GEO` row.
+
+**Session summary.** XXX-25 compliance core delivered and live: hourly
+pg_cron sweep (transactional delete+trace, zero-row runs traced),
+proven by synthetic backdated row and observed scheduled firings;
+absence-based 503 alerting; paid re-discovery ruled human-triggered
+with a dated obligation (Sep 1–3) in Jira. XXX-23 delivered: 14-day
+Toronto weather + 5-day AQI as tier-1 city-date facts with per-payload
+honest absence (CC BY 4.0 verified), read-time derived scheduling
+windows (v1 versioned params, fixture-tested on rainy/heat-dome/January
+days), computed-ephemeris daylight (known-answer tested ±2 min,
+never stored), Vercel Cron config committed (activates at merge).
+Settings revised per the prompts-mark-consequences principle. Total
+session spend: **$0**.
+
+**Hygiene:** scratchpad `supabase.env` deleted (fetched-used-deleted;
+scratchpad verified empty). Nothing pushed; branch
+`session-6-sweep-and-weather` left for review.
+
 ---
 
 # Session 5 — Base layer: durable identities (FSQ/OSM) + discovery matching
