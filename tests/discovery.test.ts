@@ -9,7 +9,11 @@ import {
   searchTextResponseSchema,
   newDiscoveredPlaceSchema,
 } from "@/server/discovery/schemas";
-import { coordsExpired } from "@/server/discovery/ttl";
+import {
+  coordsExpired,
+  expiresWithinDays,
+  sweepWouldExpire,
+} from "@/server/discovery/ttl";
 import {
   createPlacesClient,
   MAX_ATTEMPTS,
@@ -140,6 +144,43 @@ describe("30-day coordinate TTL", () => {
     expect(stale.coords_status).toBe("expired");
     expect(stale.lat).toBeNull();
     expect(stale.lng).toBeNull();
+  });
+});
+
+describe("sweep selection logic (XXX-25, pure mirror of the SQL predicate)", () => {
+  const fetched = "2026-08-05T12:00:00Z";
+  const day29 = new Date("2026-09-03T12:00:00Z");
+  const day30 = new Date("2026-09-04T12:00:00Z");
+
+  it("selects present rows at exactly 30 days, not at 29 — same boundary as coordsExpired", () => {
+    const row = { coords_status: "present", coords_fetched_at: fetched };
+    expect(sweepWouldExpire(row, day29)).toBe(false);
+    expect(sweepWouldExpire(row, day30)).toBe(true);
+    // The two layers must agree at the boundary by construction.
+    expect(sweepWouldExpire(row, day30)).toBe(coordsExpired(fetched, day30));
+  });
+
+  it("never selects absent_at_source or already-expired rows (idempotency)", () => {
+    const longAgo = new Date("2027-01-01T00:00:00Z");
+    expect(
+      sweepWouldExpire({ coords_status: "absent_at_source", coords_fetched_at: null }, longAgo),
+    ).toBe(false);
+    expect(
+      sweepWouldExpire({ coords_status: "expired", coords_fetched_at: fetched }, longAgo),
+    ).toBe(false);
+  });
+
+  it("expiresWithinDays flags rows whose deadline falls inside the window", () => {
+    const row = { coords_status: "present", coords_fetched_at: fetched };
+    // Deadline is Sep 4. On Aug 27 that is 8 days out; on Aug 28, 7 days.
+    expect(expiresWithinDays(row, new Date("2026-08-27T12:00:00Z"), 7)).toBe(false);
+    expect(expiresWithinDays(row, new Date("2026-08-28T12:00:00Z"), 7)).toBe(true);
+    // Already expired still counts as "expiring" (it needs action even more).
+    expect(expiresWithinDays(row, new Date("2026-09-10T12:00:00Z"), 7)).toBe(true);
+    // Non-present rows have no deadline.
+    expect(
+      expiresWithinDays({ coords_status: "expired", coords_fetched_at: fetched }, day30, 7),
+    ).toBe(false);
   });
 });
 

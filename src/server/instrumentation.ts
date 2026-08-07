@@ -15,7 +15,12 @@ export type TraceKind =
   | "health_check"
   | "places_discovery"
   | "base_layer_ingest"
-  | "identity_matching";
+  | "identity_matching"
+  // "ttl_sweep" is written by sweep_expired_coords() in SQL (migration
+  // 20260806200000), not through this module — listed in the union so
+  // readers (health checks, reports) share one vocabulary of kinds.
+  | "ttl_sweep"
+  | "weather_ingest";
 
 export interface TraceEvent {
   provider: string;
