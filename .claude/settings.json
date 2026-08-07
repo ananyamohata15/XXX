@@ -4,6 +4,8 @@
       "Read",
       "Grep",
       "Glob",
+      "Edit",
+      "Write",
       "Bash(npm run lint)",
       "Bash(npm run lint:*)",
       "Bash(npm run typecheck)",
@@ -17,16 +19,17 @@
       "Bash(git branch:*)",
       "Bash(git switch:*)",
       "Bash(git add:*)",
-      "Bash(ls:*)",
-      "Bash(cat:*)"
-    ],
-    "ask": [
-      "Edit",
-      "Write",
+      "Bash(git commit:*)",
       "Bash(git checkout:*)",
       "Bash(git restore:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(npx tsx scripts/pool-report.ts:*)",
+      "Bash(npx tsx scripts/base-layer-report.ts:*)",
+      "Bash(npx tsx scripts/health-report.ts:*)"
+    ],
+    "ask": [
       "Bash(rm:*)",
-      "Bash(git commit:*)",
       "Bash(npm install:*)",
       "Bash(npx supabase:*)",
       "Bash(npx tsx:*)",

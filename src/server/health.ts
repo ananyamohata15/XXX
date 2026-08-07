@@ -68,6 +68,9 @@ export async function checkHealth(
   const ttlSweep: TtlSweepCheck = supabase
     ? await checkTtlSweep(supabase, warnings)
     : { ok: false, lastRunAt: null, ageMinutes: null, error: configError };
+  if (supabase) {
+    await warnIfWeatherStale(supabase, warnings);
+  }
 
   if (supabase) {
     await recordHealthTrace(supabase, db);
@@ -158,6 +161,57 @@ async function checkTtlSweep(
       ageMinutes: null,
       error: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+/**
+ * Weather staleness is a WARNING, never a 503 (Checkpoint 1 ruling 5):
+ * stale weather is product-degrading but honest — rows carry fetched_at and
+ * generation degrades gracefully — while 503 is reserved for the compliance
+ * sweep. 48h = two missed daily runs.
+ */
+const WEATHER_MAX_AGE_HOURS = 48;
+
+async function warnIfWeatherStale(
+  supabase: SupabaseClient,
+  warnings: HealthWarning[],
+): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from("traces")
+      .select("started_at")
+      .eq("kind", "weather_ingest")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      warnings.push({
+        code: "weather_stale",
+        message: `weather_ingest trace lookup failed: ${error.message}`,
+      });
+      return;
+    }
+    const latest = data?.[0];
+    if (!latest) {
+      warnings.push({
+        code: "weather_stale",
+        message: "no weather_ingest trace exists — weather has never been ingested",
+      });
+      return;
+    }
+    const ageHours =
+      (Date.now() - new Date(latest.started_at as string).getTime()) /
+      3_600_000;
+    if (ageHours > WEATHER_MAX_AGE_HOURS) {
+      warnings.push({
+        code: "weather_stale",
+        message: `latest weather_ingest is ${Math.round(ageHours)}h old (limit ${WEATHER_MAX_AGE_HOURS}h) — run: npx tsx scripts/ingest-weather.ts`,
+      });
+    }
+  } catch (err) {
+    warnings.push({
+      code: "weather_stale",
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

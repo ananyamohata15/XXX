@@ -11,10 +11,19 @@ function sweepTrace(ageMinutes: number, metadata: Record<string, unknown> = {}) 
   };
 }
 
+/** A weather_ingest trace row as the staleness warning reads it. */
+function weatherTrace(ageHours: number) {
+  return {
+    kind: "weather_ingest",
+    started_at: new Date(Date.now() - ageHours * 3_600_000).toISOString(),
+    metadata: {},
+  };
+}
+
 describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
   it("reports healthy and records a trace with one event when the db responds", async () => {
     const fake = createFakeSupabase({
-      rows: { traces: [sweepTrace(30)] },
+      rows: { traces: [sweepTrace(30), weatherTrace(2)] },
     });
 
     const report = await checkHealth(fake.client);
@@ -79,7 +88,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
 
   it("picks the newest trace when several exist", async () => {
     const fake = createFakeSupabase({
-      rows: { traces: [sweepTrace(300), sweepTrace(10), sweepTrace(180)] },
+      rows: { traces: [sweepTrace(300), sweepTrace(10), sweepTrace(180), weatherTrace(2)] },
     });
 
     const report = await checkHealth(fake.client);
@@ -91,7 +100,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
 
   it("surfaces the coords_expiring warning without going unhealthy", async () => {
     const fake = createFakeSupabase({
-      rows: { traces: [sweepTrace(5, { expiring_within_7d: 412 })] },
+      rows: { traces: [sweepTrace(5, { expiring_within_7d: 412 }), weatherTrace(2)] },
     });
 
     const report = await checkHealth(fake.client);
@@ -101,6 +110,40 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
       {
         code: "coords_expiring",
         message: expect.stringContaining("412 coordinates expire within 7 days"),
+      },
+    ]);
+  });
+});
+
+describe("weather staleness warning (XXX-23, severity tiering: warning not 503)", () => {
+  it("warns when the latest weather_ingest is older than 48h — status stays healthy", async () => {
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(30), weatherTrace(50)] },
+    });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.status).toBe("healthy");
+    expect(report.warnings).toEqual([
+      {
+        code: "weather_stale",
+        message: expect.stringContaining("50h old"),
+      },
+    ]);
+  });
+
+  it("warns when weather has never been ingested — status stays healthy", async () => {
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(30)] },
+    });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.status).toBe("healthy");
+    expect(report.warnings).toEqual([
+      {
+        code: "weather_stale",
+        message: expect.stringContaining("never been ingested"),
       },
     ]);
   });

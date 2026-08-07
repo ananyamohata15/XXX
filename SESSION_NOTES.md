@@ -366,6 +366,27 @@ Sep 1–3); weather_days shape, read-time windows with versioned params,
 astronomy-engine (not stored) — all as argued; severity tiering
 ratified.
 
+### Settings revision (reviewer-directed, at Checkpoint 2 approval)
+
+Principle recorded: **prompts mark external/irreversible consequences;
+local reversible actions flow free.** Applied:
+- Moved to `allow`: `Edit`, `Write`, `Bash(git commit:*)`,
+  `Bash(git checkout:*)`, `Bash(git restore:*)`, and the named
+  read-only reports `Bash(npx tsx scripts/pool-report.ts:*)`,
+  `Bash(npx tsx scripts/base-layer-report.ts:*)`,
+  `Bash(npx tsx scripts/health-report.ts:*)`.
+- Kept in `ask`: `Bash(npx supabase:*)` (production mutations), generic
+  `Bash(npx tsx:*)` (anything that can spend or write to production
+  prompts — the named allowlist is the only exception; **new read-only
+  reports earn allowlisting by name at a checkpoint, never by
+  default**), `Bash(npm install:*)`, `Bash(rm:*)`, `Bash(curl:*)`,
+  `Bash(wget:*)`.
+- `Bash(node:*)` and `Bash(git push:*)` were in neither directive list;
+  both left in `ask` unchanged (push was deliberately deny→ask at
+  Session 5 close-out — the stricter current posture preserved, not
+  silently relaxed).
+- Denies untouched (vercel, rm -rf family, env files).
+
 ## Step 2 — Sweep build + proof (CHECKPOINT 2)
 
 Built and committed BEFORE any live run (standing rule —
@@ -433,6 +454,15 @@ Neither may be "simplified" away — each covers a hole the other cannot.
 Hygiene note: scratchpad `supabase.env` (service key + management
 token, fetched this session) is deleted at close-out per the
 fetched-used-deleted rule.
+
+### CHECKPOINT 2 outcome — approved in full
+
+Evidence accepted including the alert-path-first demonstration and the
+transactional delete+trace design. Settings revision applied at
+approval (see above). CRON_SECRET provisioning is the reviewer's when
+Step 3 reaches the route — hand over generate-and-set steps then.
+
+## Step 3 — Weather + AQI + daylight build (CHECKPOINT 3)
 
 ---
 

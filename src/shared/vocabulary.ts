@@ -18,6 +18,21 @@ export const CITY_LABELS: Record<City, string> = {
   new_delhi: "New Delhi",
 };
 
+/**
+ * City reference geometry — founder-set civic reference points (Toronto:
+ * City Hall) and IANA timezones. OUR vocabulary: hand-set like Session 4's
+ * anchors, never geocoded via Google (Geocoding output is 30-day-capped
+ * content). Weather fetches and ephemeris computation key off these.
+ */
+export const CITY_GEO: Record<
+  City,
+  { lat: number; lng: number; timezone: string }
+> = {
+  toronto: { lat: 43.6532, lng: -79.3832, timezone: "America/Toronto" },
+  london: { lat: 51.5074, lng: -0.1278, timezone: "Europe/London" },
+  new_delhi: { lat: 28.6139, lng: 77.209, timezone: "Asia/Kolkata" },
+};
+
 /** Provenance tiers: 1 Verified / 2 Observed / 3 Judgment. */
 export const TIERS = { verified: 1, observed: 2, judgment: 3 } as const;
 export type Tier = (typeof TIERS)[keyof typeof TIERS];
