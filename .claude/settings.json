@@ -15,6 +15,7 @@
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git branch:*)",
+      "Bash(git switch:*)",
       "Bash(git add:*)",
       "Bash(ls:*)",
       "Bash(cat:*)"
@@ -23,6 +24,8 @@
       "Edit",
       "Write",
       "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(rm:*)",
       "Bash(git commit:*)",
       "Bash(npm install:*)",
       "Bash(npx supabase:*)"
