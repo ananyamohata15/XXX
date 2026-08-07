@@ -461,6 +461,60 @@ far (bucket: count): 0.0:39, 0.1:31, 0.2:40, 0.3:26, 0.4:29, 0.5:36,
 (unlike Kensington's clean gap); full-distribution threshold discussion
 deferred to Checkpoint 4 per the ratification's revisit clause.
 
+### Step 4 complete — final run (trace `cb5b08fc`, 2026-08-07 01:53 UTC)
+
+Resumed on reviewer go-ahead ("resume"). Live-probed the quota rather
+than trusting the midnight-Pacific reset clock: the run was launched at
+01:53 UTC (18:53 Pacific, hours *before* the presumed reset) and all
+233 calls succeeded in 33 s — the per-day counter evidently had
+headroom despite yesterday's exhaustion. Lesson consistent with
+project law: live-reproduce beats clock reasoning; a quota-rejected
+call would have cost nothing (unbilled) and one hard-stop attempt.
+
+**Accounting correction**: the pause note said 218 remaining — wrong by
+15. The 745 denominator (aborted run's plan size) already excluded the
+15 dry-run terminals, which were also inside the 527 processed count;
+mixing the universes double-subtracted them. True remainder 233
+(527 + 233 = 760 ✓). Run cost $3.961 (vs $3.71 projected).
+
+**Final state (760/760 processed, `--verify-links` clean, outcomes sum
+to 760):**
+
+- matched_confirmed **395** (= `with_google_link`, verified, zero
+  mismatches)
+- name_mismatch **224**
+- ambiguous **131** — mid_band 119, low_margin 9, link_collision 3
+- no_candidates **10**
+- Scores recorded: 750 (= 760 − 10 no_candidates ✓)
+
+**Spend final**: $0.255 + $7.956 + $0.595 + $3.961 = **$12.767 list**
+≤ $12.92 approved (sum over traces `16f7f7e5`, `4cf04ea1`, `758ae527`,
+`cb5b08fc` via `--traces`).
+
+**Link collisions investigated (3 total, all best_score 1.0 — genuine
+duplicate-Google-listing cases, honestly demoted; report's
+`link_collisions` listing now enriched with the FSQ side):**
+
+1. **Stanley Park** (Toronto's, King West) — the Incident 1 pair; the
+   post-fix demotion of the second Google listing landed as designed.
+2. **The Distillery Historic District** (47 candidates in range) and
+3. **Thompson Landry Gallery** (22 candidates) — both in the Distillery
+   District block; the gallery sits *inside* the district, and Google
+   carries multiple listings at district scale. District-scale places
+   are structurally collision-prone: many Google listings legitimately
+   name-match the enclosing FSQ identity. One-link-per-identity held;
+   losers carry full candidate evidence for any later adjudication.
+
+**City-wide score histogram (final)**: 0.0:60, 0.1:54, 0.2:47, 0.3:39,
+0.4:42, 0.5:49, 0.6:35, 0.7:42, 0.8:49, 0.9:10, 1.0:323. The 1.0 spike
+(43% of scores) and low-band mass are Kensington-like, but the mid-band
+is populated (0.5–0.7: 126 scores), unlike Kensington's clean gap —
+the revisit clause is live at Checkpoint 4. Recommendation prepared:
+keep 0.75/0.45/0.15 — ambiguous is a designed, recoverable state
+(candidate evidence persisted), while lowering T_HIGH would mint false
+permanent links into the rank model; the mid-band is better resolved
+later by additional evidence than by threshold surgery now.
+
 ## Step 3 — Build and dry run: executed (CHECKPOINT 3 pending)
 
 Built and committed (atomic, XXX-25): migration applied to production;
