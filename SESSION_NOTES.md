@@ -464,6 +464,87 @@ Step 3 reaches the route — hand over generate-and-set steps then.
 
 ## Step 3 — Weather + AQI + daylight build (CHECKPOINT 3)
 
+Built and committed before live runs:
+- Migration `20260807000000_weather_days.sql`: city-date grain, house
+  provenance columns, tier CHECK (=1), per-payload honest-absence
+  unions (forecast_status / air_quality_status, value-matches-status
+  CHECKs), named upsert constraint `(city, date)`, RLS zero-policies.
+- `src/server/weather/`: `schemas.ts` (Zod boundary — parallel-array
+  length cross-checks, offset-bearing timestamps rejected, provider
+  nulls preserved), `client.ts` (keyless Open-Meteo fetchers,
+  fail-loud, 14d forecast / 5d AQI horizons), `repo.ts` (full-clobber
+  upsert per ruling), `ingest.ts` (trace `weather_ingest`, events per
+  endpoint, honest $0), `ephemeris.ts` (astronomy-engine@2.1.19;
+  golden hour = ±6° altitude, stated Tier-3 definitional param;
+  never stored — in-memory provenance per the 001 transient-fact
+  pattern).
+- `src/shared/scheduling-windows.ts`: zero-dep pure derivation
+  (rain / heat-avoid / cold-avoid / AQI / outdoor-friendly windows),
+  `WINDOW_PARAMS` **v1** versioned judgment thresholds (rain ≥40%,
+  heat ≥32°C apparent, cold ≤−12°C apparent, AQI ≥100). Unknown AQI
+  never blocks and never pretends — `aqiConsidered: false`.
+- `CITY_GEO` added to shared vocabulary (founder-set reference points +
+  IANA timezones; never Google-geocoded).
+- Route `/api/jobs/ingest-weather` (CRON_SECRET bearer guard; 503 on
+  missing config, 401 on bad auth, 500 on ingest failure — failed runs
+  show failed in the Vercel dashboard) + `vercel.json` cron
+  `30 10 * * *` (activates at merge; Hobby daily-only + ±59 min slop
+  both fine for weather).
+- Health: `weather_stale` warning (>48h or never-ingested; warning not
+  503 per severity ruling).
+- Tests: **125 passed | 3 skipped** at commit. Ephemeris known-answer
+  suite: Toronto 2026 solstices/equinoxes + Jan 7/15 2027 vs
+  api.sunrise-sunset.org (NOAA algorithm, fetched live) — **all within
+  ±2 min**. Note recorded: timeanddate.com blocked automated fetch
+  (403); sunrise-sunset.org used as the independent published source.
+  Local-render check: engine says solstice sunset 16:43, agreeing with
+  timeanddate's published 4:43 PM (the reference API runs ~2 min late
+  — the engine is the more accurate; deltas still inside tolerance).
+  Windows fixtures: rainy day (rain block splits outdoor windows),
+  heat-dome + AQI-155 day (Delhi-ready shape), January day (cold-avoid
+  morning + short daylight), null-precip-probability honest-unknown.
+
+Live evidence (production, 2026-08-07 ~04:07 UTC):
+1. Migration pushed. Ingestion run: trace `050f76f4`,
+   **14 dates written, 5 with AQI**, both endpoint events at $0.
+2. **Real upcoming date (2026-08-09)**: stored row `c9687e69…` with
+   full provenance (source `open_meteo`, tier 1, fetched_at
+   2026-08-07T04:07Z), daily aggregates (26.6/18.7°C, precip 0mm),
+   hourly + AQI samples; computed daylight (sunrise 06:15, golden-pm
+   19:49, sunset 20:29, provenance `ephemeris:astronomy-engine`);
+   derived windows: clear warm day → single outdoor-friendly window
+   06:00–21:00, `aqiConsidered: true`, max US AQI 68.
+3. **Honest absence live (2026-08-18**, beyond AQI horizon**)**:
+   `forecast_status: present`, `air_quality_status: absent`, windows
+   computed with `aqiConsidered: false`, `aqi: {status: 'absent'}`.
+4. **January golden-set daylight table** (pure ephemeris, no DB): Jan
+   5–15 2027 sunsets run 16:55 → 17:06; **the "16:55-ish" winter
+   sunset is reproduced at Jan 5–8 (16:55–16:58)**; by mid-month it is
+   17:06 — the brief's "mid-January" phrasing was slightly off and is
+   recorded honestly rather than force-fit. Golden hour ~16:08–16:55
+   on Jan 5. Sunset at 16:4x–16:5x confirms the winter front-load-
+   outdoor-time grammar rule's factual basis.
+5. Final health: **healthy, zero warnings** — sweep fresh
+   (`lastRunAt 04:07:00Z`), weather fresh. Bonus evidence: that
+   04:07:00 run is the restored **production hourly schedule firing on
+   its own** at final cadence (`7 * * * *`), unprompted — the Step 2
+   restore is proven live, not just configured.
+
+**CRON_SECRET handover (founder action, when ready — nothing blocks
+this session):**
+1. Generate: `openssl rand -hex 32` (any 64-hex string works).
+2. Vercel dashboard → project `xxx` → Settings → Environment
+   Variables → add `CRON_SECRET` = that value, **Production** scope,
+   mark Sensitive.
+3. It takes effect on the next production deployment (the merge that
+   carries `vercel.json` + the route). Vercel then attaches
+   `Authorization: Bearer $CRON_SECRET` to each cron invocation
+   automatically; the route 503s (loudly) if the var is missing and
+   401s any caller without it.
+4. Optional post-merge verification:
+   `curl -H "Authorization: Bearer <value>" https://xxx-bice-rho.vercel.app/api/jobs/ingest-weather`
+   → JSON summary; a wrong/missing header → 401.
+
 ---
 
 # Session 5 — Base layer: durable identities (FSQ/OSM) + discovery matching
