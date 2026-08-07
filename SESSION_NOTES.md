@@ -515,6 +515,73 @@ keep 0.75/0.45/0.15 — ambiguous is a designed, recoverable state
 permanent links into the rank model; the mid-band is better resolved
 later by additional evidence than by threshold surgery now.
 
+## Step 5 — Close-out (CHECKPOINT 4 approved)
+
+**Checkpoint 4 ruling (recorded verbatim in substance):** thresholds
+0.75/0.45/0.15 **ratified final** on the city-wide distribution.
+Reasoning of record: ambiguous is a designed, recoverable state —
+candidate evidence is persisted and can be adjudicated later with more
+signal — whereas lowering T_HIGH would mint false links as permanent
+rank-model input. The 131 ambiguous rows are a **future adjudication
+work item**; evidence already persisted, no rematch spend required.
+
+**Four checks (run at close-out, in order):**
+- `npm run lint` — clean, zero warnings.
+- `npm run typecheck` (tsc --noEmit) — clean.
+- `npm run build` — succeeded.
+- `npm test` — **85 passed | 3 skipped** (the 3 are live-API tests,
+  skipped by design outside a keyed environment; honest count).
+
+**Session summary.** Decision doc 002 (FSQ OS Places ruled in under
+Apache 2.0 via the HF channel, dt=2026-07-09 pinned; OSM deferred on
+ODbL derivative-database analysis with a Delhi-triggered reversibility
+clause; Portal declined on use-restricting contract terms — standing
+rule: channel terms restricting *use of data* disqualify, terms
+restricting *access* are judged on merits). Base layer delivered:
+**31,377 Toronto identities** (tier 2, full provenance, 7-category
+facts), **395 confirmed Google links** (52% of the 760-place discovery
+pool), matched by `ns1` name similarity with request-scoped
+never-persisted Google name confirmation. Total confirm spend
+**$12.767 list ≤ $12.92 approved**. Two incidents (link-collision
+clobber; quota-429 spin), both live-reproduced, root-caused, fixed
+with regression tests, and production-repaired from evidence.
+
+**Match-quality observations (rank-model input):**
+- Score distribution is bimodal with a real mid-band tail city-wide
+  (0.5–0.7: 126 of 750) — Kensington's clean gap does not generalize.
+- District-scale places (Distillery, Stanley Park) collide: multiple
+  Google listings legitimately name-match one enclosing FSQ identity.
+- name_mismatch (224) is heterogeneous: true different-place cases and
+  same-place-different-name cases are not yet distinguished.
+
+**Forward notes (next sessions):**
+- **XXX-25 TTL sweep**: the 30-day Google lat/lng grant clock is
+  running; sweep + cron due before **~2026-09-04**.
+- **Base-layer refresh cadence**: FSQ releases monthly on HF; a refresh
+  re-pins the taxonomy (`pin-categories`), re-runs ingest (upsert-safe),
+  and bumps `source_version` + fetched_at (= publication date).
+- **Ambiguous adjudication (131 rows)**: future work item per the
+  Checkpoint 4 ruling; candidate evidence persisted in
+  `identity_matches.candidates`.
+- **Place containment/scale as a rank-model concept** (Checkpoint 4
+  forward-note 1): seeded by the district↔tenant collisions — the rank
+  model should know a gallery can sit inside a district and both are
+  real. Containment is FSQ/geometry-derivable; no Google content needed.
+- **Tours-are-not-venues** (forward-note 2): named refresh-time
+  category-rule work item. The Chef's Tour class is pool contamination,
+  not a blocker — same family as events-not-venues, likely another
+  breadcrumb exclusion.
+- **Pool-vs-rank doctrine** (forward-note 3, ruling of record): the
+  pool records what exists; rank decides what's worthy — chains
+  (Tim Hortons et al.) stay in the pool.
+- **XXX-23** (weather/AQI) and **XXX-24** (travel matrix) untouched, as
+  scoped. **XXX-26 golden-set**: the 12-place founder spot-check sample
+  and the confirmed-match set are candidate seeds.
+
+**Hygiene:** scratchpad `supabase.env` and report artifacts deleted at
+close-out (fetched-used-deleted). Nothing pushed; branch
+`session-5-base-layer` left for review.
+
 ## Step 3 — Build and dry run: executed (CHECKPOINT 3 pending)
 
 Built and committed (atomic, XXX-25): migration applied to production;
