@@ -23,6 +23,7 @@ Concierge, not construction kit. The app presents a finished, fact-checked day; 
 - No speculative abstraction. Build for the current ticket; extract patterns on the third occurrence, not the first.
 - Migrations are forward-only and reviewed. Never edit a merged migration.
 - Naming: if a name needs a comment to explain it, the name is wrong.
+- `src/shared/` holds dependency-free vocabulary, view-model types, and pure functions usable by both client and server. `src/shared` imports nothing from `src/server` or `src/app`/`src/components`; both may import it. No I/O, no React, no secrets in shared.
 
 ## Workflow
 - Work on isolated branches. Maintain `SESSION_NOTES.md` at repo root: what was done, decisions made, open questions, anything the reviewer must know. Update it as you go, not at the end.

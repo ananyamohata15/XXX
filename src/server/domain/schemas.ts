@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  CITIES,
+  PLACE_CATEGORIES,
+  SLOT_KINDS,
+  SLOT_ORIGINS,
+  TIERS,
+  TIER_VALUES,
+  TRANSPORT_MODES,
+} from "@/shared/vocabulary";
 
 /**
  * Zod schemas for the core domain (XXX-15). These are the write boundary:
@@ -10,26 +19,19 @@ import { z } from "zod";
  * Provenance-at-creation: every fact-bearing input requires source + tier +
  * fetchedAt. There is no overload without them — omitting provenance is a
  * type error before it is a runtime error.
+ *
+ * Constant sets live in src/shared/vocabulary.ts (XXX-18) — one home,
+ * re-exported here so existing importers keep working.
  */
 
-export const CITIES = ["toronto", "london", "new_delhi"] as const;
+export { CITIES, TIERS };
 export const citySchema = z.enum(CITIES);
 
-/** The product's category vocabulary — deliberately small (seven). */
-export const PLACE_CATEGORIES = [
-  "restaurants",
-  "cafes",
-  "museums_galleries",
-  "historic_sites",
-  "markets",
-  "nightlife_bars",
-  "parks",
-] as const;
-export type PlaceCategory = (typeof PLACE_CATEGORIES)[number];
+export { PLACE_CATEGORIES };
+export type { PlaceCategory } from "@/shared/vocabulary";
 export const placeCategorySchema = z.enum(PLACE_CATEGORIES);
 
-export const TIERS = { verified: 1, observed: 2, judgment: 3 } as const;
-const tierSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+const tierSchema = z.literal([...TIER_VALUES]);
 
 const provenanceFields = {
   source: z.string().min(1),
@@ -144,9 +146,7 @@ export const newTripSchema = z
     startDate: z.iso.date(),
     endDate: z.iso.date(),
     partySize: z.number().int().min(1),
-    transportModes: z
-      .array(z.enum(["walk", "cycle", "drive", "transit"]))
-      .nonempty(),
+    transportModes: z.array(z.enum(TRANSPORT_MODES)).nonempty(),
     /**
      * Required-but-nullable: callers must say "no budget" out loud with an
      * explicit null (user declined to state), never by omission.
@@ -178,8 +178,8 @@ const slotReasonSchema = z.strictObject({
 export const newSlotSchema = z
   .strictObject({
     dayId: z.uuid(),
-    origin: z.enum(["concierge", "user"]),
-    kind: z.enum(["meal", "activity"]),
+    origin: z.enum(SLOT_ORIGINS),
+    kind: z.enum(SLOT_KINDS),
     startTime: timeOfDaySchema,
     endTime: timeOfDaySchema,
     placeId: z.uuid(),
