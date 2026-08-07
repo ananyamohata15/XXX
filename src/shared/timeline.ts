@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { minutesToTime, timeToMinutes } from "./time";
 import {
   CITIES,
   SLOT_KINDS,
@@ -175,16 +176,8 @@ export type FixtureDay = z.infer<typeof fixtureDaySchema>;
 // Pure time + reflow logic. No side effects, unit-testable with fixtures.
 // ---------------------------------------------------------------------------
 
-export function timeToMinutes(t: string): number {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-
-export function minutesToTime(m: number): string {
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-}
+/** Re-exported from ./time so existing importers keep working. */
+export { minutesToTime, timeToMinutes };
 
 /** Canonical unordered key for the travel matrix — travel is symmetric here. */
 export function travelKey(a: string, b: string): string {

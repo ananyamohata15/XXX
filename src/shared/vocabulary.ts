@@ -73,3 +73,28 @@ export type SlotKind = (typeof SLOT_KINDS)[number];
 
 export const TRANSPORT_MODES = ["walk", "cycle", "drive", "transit"] as const;
 export type TransportMode = (typeof TRANSPORT_MODES)[number];
+
+/**
+ * Weekdays, indexed to match `Date.prototype.getUTCDay()` so
+ * `weekdayOf()` is a lookup rather than arithmetic. Hours facts are
+ * per-weekday structures (XXX-5 trap class 2) — never a single string.
+ */
+export const WEEKDAYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+/**
+ * Weekday of a "YYYY-MM-DD" calendar date. Parsed as UTC midnight so the
+ * answer never depends on the machine's timezone — a city-local calendar
+ * date names the same weekday everywhere.
+ */
+export function weekdayOf(date: string): Weekday {
+  return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+}

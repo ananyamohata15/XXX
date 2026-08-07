@@ -1,3 +1,671 @@
+# Session 7 — Day-grammar validator (XXX-5 layer 2) + golden set as fixtures (XXX-26)
+
+Branch: `session-7-day-grammar`. Status: **in progress**.
+Scope: `validateDay(day, context) → Violation[]` — pure, deterministic,
+dependency-free, living in `src/shared/`; `GRAMMAR_PARAMS` v1 as the
+versioned judgment table; a `TravelTimeProvider` interface with a
+Haversine stub behind it; the founder's golden-set v2 converted to typed
+fixtures as the validator's permanent exam, plus one negative fixture per
+trap class. Out of scope: retrieval, ranking, narration/generation (the
+rest of E4); real travel times (XXX-24); excursion-specific rules
+(XXX-28 — the interface must not preclude them); any UI; any migration.
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### Settings
+
+Reviewed `.claude/settings.json` against this session's needs. **No
+changes needed for Steps 0–2.** This is pure TypeScript: `Read`, `Grep`,
+`Glob`, `Edit`, `Write` are allowed; `npm run lint` / `typecheck` /
+`build` / `npm test` / `npx vitest` are allowed; `git add` / `commit` /
+`branch` / `switch` are allowed. `.env.local` stays out of bounds
+(nothing here touches it). Nothing in this session costs money — no
+external API is called at any point.
+
+One **deferred** proposal, raised now and decided at CHECKPOINT 3 rather
+than pre-emptively (the settings principle of record: widen at proven
+need, narrowly): `scripts/grammar-report.ts` is read-only — it reads
+fixture modules or a JSON file from disk, runs the pure validator, prints
+a report; it opens no network socket and touches no database. Precedent
+exists for allowlisting such tools by name (`pool-report.ts`,
+`base-layer-report.ts`, `health-report.ts`). I will build it first, let
+the reviewer read the source, and only then propose
+`Bash(npx tsx scripts/grammar-report.ts:*)`. Until that is approved it
+runs under the existing `ask`-gated `Bash(npx tsx:*)`, prompting on every
+invocation — which is a perfectly acceptable way to ship the session.
+
+### Golden set v2 — **ABSENT from the repo**
+
+Searched the whole tree. `docs/` contains only `decisions/` (001 Places
+ToS, 002 base-layer licensing) and `licenses/`. There is no
+`docs/golden-set/`, no golden-set file under any other name, and nothing
+in git history. **Requesting it now — this is the one genuine blocker on
+Step 2** (Step 1's rulebook can be written from the board, and will be).
+
+Correction to apply at conversion, already recorded and ratified in
+Session 6: the winter day's "16:55-ish sunset" is **early January (Jan
+5–8)**, not mid-January. Session 6's ephemeris table: Jan 5 2027 sunset
+16:55, Jan 8 16:58, mid-month 17:06; Jan 5 golden hour ≈ 16:08–16:55.
+
+### Rule sources found on the board (nothing else in the tree bears on grammar)
+
+| Source | What it contributes |
+|---|---|
+| **XXX-5 description** (E4 epic) | Layer 2 definition: meal slots with valid windows, pacing (no back-to-back anchors without breather, max N food stops/day), category time-validity (hours, sunset), weather-window fit; strict layer ordering; reject-and-regenerate before the user sees a day |
+| **XXX-5 comment 10290** (founder review, 2026-08-05) | The three refinements: (1) daylight windows are scheduling facts, computed ephemeris Tier 1, winter front-loads outdoor time; (2) meal grammar is **patterns** not fixed slots — classic / coffee-then-brunch / grazing, selected by chronotype+pace, so "lunch 12:00–14:30" becomes pattern-relative; (3) prep-kit notes as a day-level concierge output derived from weather+plan |
+| **XXX-5 comment 10291** (founder red-pen, 2026-08-06) | The seven trap classes: permanently-closed, per-weekday hours, recurrence-rule facts, seasonal end dates, lodging/start-point schema gap, excursion route monotonicity, reservability as a fact class. Plus founder-verified truths: St. Lawrence Sat 07:00–17:00 **closed Mondays**; Juicy Dumpling $6; Winter Village to ~Jan 4 |
+| **XXX-5 comment 10289** (evidence rows, Session 5 era) | User-sourced observations are **evidence rows**, never facts. Binding on the validator only as a negative: the validator reads facts, and an unconfirmed report is not one — it never silently softens a rule |
+| **XXX-27** (anchors) | `origin='user'` slots are immovable and unswappable; hard reachability with transit buffer; grammar compression around anchors; egress/ingress buffers for crowd-flagged anchors; trip-level arrival/departure anchors |
+| **XXX-28** (excursions) | Out of scope, but the shape constrains interfaces: travel legs as first-class slots (90–120 min), hard return-time constraint, one dominant destination, physical gates (car / clear sky / near-new-moon), corridor monotonicity |
+| **XXX-29** (route offers) | The optimizer **reuses this validator** as its feasibility oracle under constraints; the travel-cost delta must be computable from what the validator already consumes. Concierge proposes, never auto-applies |
+| **XXX-26** (golden set) | The eval set must be queryable by the E4 regression harness; fixtures are the storage form |
+| **Session 3 notes** — golden-set lesson #1 | Dwell-time plausibility: the 6-hour Distillery. Days can be time-valid and still wrong |
+| **Session 3 notes** — fixture dimensions | Hours-bounded slots; anchor collision (both flavors); honest absence; known-free (min=max=0) vs unknown; occupant-dependent travel |
+| **Session 6** — `src/shared/scheduling-windows.ts` | `deriveSchedulingWindows()` + `WINDOW_PARAMS` v1 — **consumed, never reimplemented** |
+| **Session 6** — `src/server/weather/ephemeris.ts` | `computeDaylight(city, date)` → sunrise/sunset/golden-hour, Tier 1 |
+| **Session 3** — `src/shared/timeline.ts` | `FixtureDay` / `SlotView` / `FactView` / `travelKey` — the E1 vocabulary the fixtures must match |
+| **CLAUDE.md** | `src/shared` dependency rule; purity + fixture-testability of the validator named explicitly; honest-absence; provenance-at-creation including fixtures |
+
+### Housekeeping
+
+Untracked file at repo root: `h -u origin session-6-sweep-and-weather` —
+4 KB of captured `git log` output from a mistyped `git push` last
+session. It is junk, not data. Proposing deletion at CHECKPOINT 0 so the
+tree is clean before this session's commits.
+
+### CHECKPOINT 0 outcome — approved, with two sources added and one settled
+
+1. Golden set v2 landed at `docs/golden-set/golden-set-v2.md`; early-January
+   correction applies at conversion.
+2. Stray `h -u origin session-6-sweep-and-weather` deleted.
+3. **Two sources I missed, both now folded in** (they change the rulebook,
+   not just decorate it):
+   - **Session 3 E5-lessons — the six `reflowDay` blind spots.** Each is
+     rule material: the 19:04 class (validate arrival on *every* edge, not
+     just at anchors), hours-blindness (hours bound a slot's *end* as well
+     as its start), meal windows (the validator is the gate, not the
+     gesture), **unknown-travel-treated-as-zero is schedule-optimistic** —
+     which directly sets the stub's buffer policy and forces
+     `travel.uncertifiable` to be a violation rather than a shrug, the
+     5-minute snap as a stand-in for real buffer policy (buffers must price
+     transfer friction, not grid-round), and slide-past-anchor needing
+     narration.
+   - **Session 2 migration deferred-block — `slots_time_interval_valid`
+     (`end_time > start_time`).** Slots cannot cross midnight; deferred
+     "until E4 meets late-night itineraries". **This session is that
+     meeting** (Day 5's wanderer runs into night; the Torrance variant
+     returns ~02:00). The rulebook states the treatment and carries a
+     recommendation on the deferral. No migration this session.
+4. **Hours-compliance ≠ hours-wisdom** (golden Day 2: the market at 4pm
+   Saturday is open but wrong) enters as its own advisory family, distinct
+   from legality.
+5. Closed-place architecture settled as argued: request-time business-status
+   fetch lives in `src/server` context assembly; the pure validator checks
+   the resulting fact; the trap fixture asserts on the fact.
+
+## Step 1 — Rule inventory + architecture (CHECKPOINT 1)
+
+### 1.1 The rulebook
+
+38 rules in 12 families. **18 violations** (day is rejected and
+regenerated before any user sees it) and **20 advisories** (day ships; the
+advisory seeds a concierge note, a prep-kit line, or an XXX-29 offer).
+
+The severity line I drew, stated once so every row can be argued against
+it: **a violation asserts something factually false or physically
+impossible** — closed, unreachable, unstorable, over the stated band. **An
+advisory asserts something true but unwise, or something we could not
+verify.** Uncertainty is never a violation; we do not reject a day for our
+own missing data. The one deliberate exception is `travel.uncertifiable`,
+argued in §1.4.
+
+| # | ruleId | Statement | Sev | Inputs | Source |
+|---|---|---|---|---|---|
+| **Validity — can this place be visited at all** |
+| 1 | `validity.permanently-closed` | Slot's place has `businessStatus = closed_permanently` | **V** | businessStatus fact | Trap 1; Day 1 Seven Lives |
+| 2 | `validity.seasonal-expired` | Day date falls outside the place's seasonal operating range | **V** | seasonalRange fact, day.date | Trap 4; Day 3 Winter Village ~Jan 4 |
+| 3 | `validity.recurrence-unmet` | Slot claims a recurrence-gated offering on a date the rule does not match | **V** | recurrence fact, day.date | Trap 3; Day 3 AGO free = **first** Wed 18:00–21:00 |
+| 4 | `validity.status-unverified` | Business status never fetched / absent — cannot certify the place is open for business | A | businessStatus absence | Trap 1 + honest-absence |
+| **Hours — per-weekday legality** |
+| 5 | `hours.closed-day` | Place is closed on this specific weekday | **V** | hoursByWeekday, weekday | Trap 2; St. Lawrence **Mondays**, MOCA Mon/Tue |
+| 6 | `hours.outside-open-window` | Slot is not fully contained in an open interval **for that weekday** | **V** | hoursByWeekday, slot times | Trap 2; FIKA 10:00 Fri/Sat vs 10:30; E5 lesson 2 (close bounds the *end*) |
+| 7 | `hours.unknown` | No hours fact for this place | A | hours absence | Honest-absence |
+| **Wisdom — legal but wrong** |
+| 8 | `wisdom.off-peak-window` | Slot sits in a window the category is known to be poor in, though open | A | category, params.offPeak | Day 2: "morning = peak vendors; afternoon = picked over" |
+| **Dwell — plausibility of time spent** |
+| 9 | `dwell.overstay` | Concierge slot longer than the category's max | **V** | category, duration | Golden-set lesson #1 (6-hour Distillery); Day 2 "2h ceiling" |
+| 10 | `dwell.understay` | Concierge slot shorter than the category's min | **V** | category, duration | Same table, other bound |
+| 11 | `dwell.category-unknown` | Place has no mapped category — dwell not checkable | A | category absence | Honest-absence |
+| **Daylight** |
+| 12 | `daylight.outdoor-after-dark` | Outdoor-tagged slot extends past **civil dusk** or begins before civil dawn | **V** | outdoor tag, daylight | Refinement 1; Day 1 "lake walk after sunset"; Day 3 "light dies 16:55" |
+| 13 | `daylight.outdoor-in-twilight` | Outdoor slot runs past **sunset** but stays inside civil twilight | A | outdoor tag, daylight | Honest split — twilight is dim, not dark |
+| 14 | `daylight.golden-hour-missed` | Golden-hour-affine slot does not overlap either golden hour | A | affinity tag, daylight | Refinement 1, explicitly advisory |
+| **Weather** (consumes Session 6 `deriveSchedulingWindows` — never reimplemented) |
+| 15 | `weather.outdoor-in-adverse-window` | Outdoor slot sits in a rain/heat/cold/AQI window **and** an outdoor-friendly window long enough to hold it exists elsewhere that day | **V** | windows, outdoor tag | Epic layer 2; Day 3 |
+| 16 | `weather.outdoor-unavoidable-adverse` | Same, but **no** better window exists — the day cannot do better | A | windows | Refinement 3 — this advisory *is* the prep-kit note |
+| 17 | `weather.unknown` | No weather row for this date (beyond the 14-day horizon) | A | context absence | Honest-absence |
+| **Travel** |
+| 18 | `travel.infeasible` | Arrival at the next slot is later than its start by more than the provider's tolerance | **V** | provider, slot times | E5 lesson 1 — **every edge**, the 19:04 class |
+| 19 | `travel.tight-transfer` | Arrival is late, but within the tolerance the provider's own tier earns | A | provider tier | E5 lesson 4 + provenance discipline |
+| 20 | `travel.uncertifiable` | No estimate obtainable for a consecutive pair (missing coordinates) | **V** | provider null | E5 lesson 4, verbatim: never treat unknown as zero |
+| 21 | `travel.stub-provenance` | Day-level, emitted once: feasibility rests on tier-3 straight-line estimates | A | provider provenance | Honest-absence; the prompt's anticipated advisory |
+| **Anchors** (XXX-27) |
+| 22 | `anchor.arrival-late` | Arrival at a user anchor later than `anchorStart − arrivalBuffer` | **V** | provider, crowd flag | XXX-27 hard reachability; Day 1 "arrive 30 early" |
+| 23 | `anchor.mutated` | An `origin='user'` slot differs from the anchor baseline | **V** | anchorBaseline | XXX-27 immovable; XXX-29 "anchors pinned" |
+| 24 | `anchor.egress-buffer-short` | Next slot begins less than `egressBuffer` after a crowd-flagged anchor ends | **V** | crowd flag | XXX-27 egress; Day 1's deliberate 22:00–22:30 crush gap |
+| **Pacing** |
+| 25 | `pacing.food-stops-exceeded` | Meal-kind slot count exceeds the selected pattern's maximum | **V** | pattern, slots | Epic: "max N food stops/day" — pattern-relative |
+| 26 | `pacing.no-breather` | Two consecutive at-or-above-typical-dwell slots with less than `breather` between | A | dwell table | Epic: "no back-to-back anchors without breather" (see §1.7 ambiguity) |
+| 27 | `pacing.wanderer-overscheduled` | Wanderer persona given a day whose unstructured fraction is below the floor | **V** | persona | Day 5, verbatim: "A fully-scheduled output for this persona is a FAILURE" |
+| 28 | `pacing.long-gap-without-food` | More than `maxFoodGap` between food stops | A | slots | Replaces a "missing lunch" rule — one honest rule, not two |
+| **Meals** |
+| 29 | `meal.outside-pattern-window` | Meal slot outside every window of the selected pattern (**after** anchor displacement) | **V** | pattern, anchors | Refinement 2; XXX-27 compression; E5 lesson 3 (brunch at 16:40) |
+| 30 | `meal.pattern-unknown` | No pattern supplied — window checks skipped | A | context absence | Single-owner: taste selects, grammar validates |
+| **Budget** |
+| 31 | `budget.over-band` | Sum of **present** price-range midpoints exceeds the trip band | **V** | prices, band | Day 4 |
+| 32 | `budget.price-uncertain` | Count of slots whose price is absent/never-fetched — excluded from the sum, never guessed | A | price absence | Constraint 4; Day 4 |
+| 33 | `budget.headroom` | Remaining band after the sum — the figure the concierge narrates | A | prices, band | Day 4: "~$15 buffer — concierge narrates it" |
+| **Midnight** (Session 2 deferred block) |
+| 34 | `midnight.slot-inverted` | `endTime <= startTime` — unstorable under `slots_time_interval_valid` | **V** | slot times | Session 2 migration |
+| 35 | `midnight.late-night-tail` | Day's last slot ends at/after `lateNightTail`, or travel home lands past 24:00 | A | slots, provider | Day 5 wanderer; Torrance ~02:00 |
+| **Structure** |
+| 36 | `structure.reset-gap-without-lodging` | A reset/free gap at or above `resetGap` with no known lodging location | A | lodging absence | Trap 5; Day 2's 17:00–19:00, founder-flagged |
+| 37 | `reservability.walk-in-only` | Place takes no reservations at this time — the advice changes | A | reservability fact | Trap 7; Day 5 Lady Marmalade |
+| 38 | `route.detour-avoidable` | Swapping an adjacent movable pair strictly reduces total travel by more than `detourThreshold` | A | provider | **Trap 6 generalized** — see §1.8 |
+
+### 1.2 Violation shape
+
+```ts
+export interface Violation {
+  ruleId: RuleId;                 // union of the 38 literals above
+  severity: "violation" | "advisory";
+  slotIds: string[];              // [] = day-level (21, 33, 27, 35)
+  message: string;                // regeneration-ready, see below
+  data: Readonly<Record<string, JsonValue>>;
+}
+```
+
+Exactly the shape the brief specifies. Two notes on judgment:
+
+- **`message` is written for the regeneration prompt, not for a log.** It
+  states the fact and the constraint so a draft can be repaired without
+  re-deriving anything: *"Slot 3 starts 09:30; FIKA Cafe opens 10:00 on
+  Saturdays."* — subject, observed value, constraint, and the weekday that
+  makes the constraint bite. `describeViolations()` (Step 3) re-voices these
+  in concierge tone for humans; the raw message stays plain.
+- **`data` is an open record, not a 38-arm discriminated union.** CLAUDE.md
+  prefers discriminated unions, and I am deviating on purpose: only one
+  consumer needs typed payloads today (XXX-29 wants
+  `data.deltaMinutes` off rule 38), and 38 arms to serve one reader is the
+  speculative abstraction the same document forbids. Per-rule key shapes are
+  documented beside each rule; typed accessors get extracted when a third
+  consumer appears.
+
+### 1.3 `TravelTimeProvider` — an interface, not a hack
+
+```ts
+export interface TravelQuery {
+  origin: LatLng; destination: LatLng;
+  mode: TransportMode; departureLocal: string;  // "HH:MM"
+}
+export interface TravelEstimate {
+  minutes: number;
+  provenance: { source: string; tier: Tier };
+}
+export interface TravelTimeProvider {
+  estimate(q: TravelQuery): TravelEstimate | null;   // null = honest absence
+}
+```
+
+**The interface is synchronous, and that is the load-bearing decision.**
+The validator must stay pure and sync so E5 can run it in the browser for
+optimistic edit feedback. XXX-24's provider is networked and async — so it
+does not implement this interface directly. It sits in context assembly:
+the server pre-fetches the matrix for the day's pairs, then hands the
+validator a `MatrixTravelProvider` that reads that matrix synchronously.
+**Zero validator changes when XXX-24 lands** — one new provider class and
+one line in context assembly.
+
+**`HaversineStubProvider`** ships this session: great-circle distance ×
+detour factor ÷ mode speed + fixed overhead. `provenance = { source:
+"stub_haversine", tier: 3 }` — it says out loud that it is a guess.
+
+| Mode | Speed km/h | Detour × | Overhead min | Why |
+|---|---|---|---|---|
+| walk | 4.8 | 1.30 | 2 | Toronto's grid forces ~1.3× over straight-line |
+| cycle | 15.0 | 1.30 | 5 | lock/unlock at both ends |
+| drive | 24.0 | 1.35 | 8 | urban average incl. lights; parking |
+| transit | 16.0 | 1.40 | 10 | wait + walk to and from the stop |
+
+All eight numbers are **Tier-3 judgment**, marked as such in the params
+object. Calibration against founder-stated legs: Kensington→Graffiti Alley
+(founder "~12 min walk") → stub ~16.6; market→Distillery (founder "504
+~12") → stub ~17.9. The stub reads **long**, deliberately.
+
+**Buffer policy.** Reading long is only half of it — reading long against a
+founder-verified day would reject truth. So the provider's *tier* sets the
+tolerance:
+
+- **`stubToleranceMinutes = 10` for tier-3 legs; `0` for tier-1.** A
+  shortfall inside tolerance is `travel.tight-transfer` (advisory); beyond
+  it is `travel.infeasible` (violation). When XXX-24's tier-1 provider drops
+  in, tolerance goes to zero and the *same day* starts failing on the *same
+  edge* — which is exactly right. Provenance stops being decoration and
+  becomes the thing that decides severity.
+- **Anchor arrival buffer: 15 min normal, 30 min crowd-flagged.** Day 1 is
+  the calibration: founder wrote "arrive 30 early" for a stadium.
+- **Anchor egress buffer: 30 min crowd-flagged, 0 otherwise.** Day 1's
+  22:00–22:30 gap is exactly this, built in on purpose.
+- Buffers price transfer friction (crowd, mode), never grid-rounding —
+  E5 lesson 5, addressed head-on.
+
+### 1.4 Two severity calls I expect to be argued with
+
+**(a) `travel.uncertifiable` is a violation.** Everywhere else, missing data
+is an advisory. Here it is not, and the reason is Session 3's lesson 4
+verbatim: a null leg contributing zero minutes *silently tightens the plan*.
+An advisory would let a schedule-optimistic day ship. So: refuse to certify.
+It fires only when a place has no coordinates — with the stub, coordinates
+are all it needs.
+
+**(b) `anchor.egress-buffer-short` is a violation on a Tier-3 input.**
+Crowd-flagging is judgment, not fact, and I am letting judgment reject a
+day. My argument: a dinner reservation 5 minutes from the dome at 22:05 is a
+promise the day cannot keep, and the epic puts pacing in code-enforced layer
+2. If you would rather judgment never rejected, this drops to advisory
+cleanly — it is the single most droppable violation in the table.
+
+### 1.5 `GRAMMAR_PARAMS` v1
+
+One versioned object, same pattern as `WINDOW_PARAMS`. Every field carries
+its tier in a comment; the whole table is Tier 3 except where a founder
+verified a figure.
+
+**Dwell ranges (minutes).** Applied **only to `origin='concierge'` slots** —
+the user owns their own commitments and we do not tell them their booking is
+too long. That falls straight out of single-owner-per-fact.
+
+| Category | min | typical | max | Anchored on |
+|---|---|---|---|---|
+| `cafes` | 20 | 45 | 90 | Day 1 FIKA 45 |
+| `restaurants` | 45 | 90 | 150 | Day 2 dinner 120 |
+| `museums_galleries` | 45 | 120 | 210 | Day 3 ROM 150 ("winter museums earn 2.5h") |
+| `historic_sites` | 30 | 90 | **120** | Day 2 "**2h dwell ceiling**"; Session 3 "90–120 min experience" |
+| `markets` | 30 | 75 | 150 | Day 2 market 105 |
+| `parks` | 20 | 60 | 150 | Day 4 Bellwoods amble 150 (exactly at max — a boundary case) |
+| `nightlife_bars` | 45 | 90 | 180 | Day 5 evening |
+
+`typical` is used in messages and by rule 26 only; the bounds are min/max.
+
+**Meal patterns.** Windows are `[start, end]` inclusive of a slot fully
+contained within them.
+
+| Pattern | Windows | maxFoodStops |
+|---|---|---|
+| `classic` | breakfast 07:00–11:00, lunch 11:30–14:30, dinner 17:30–21:30 | 4 |
+| `coffee_then_brunch` | coffee 07:00–11:00, brunch 10:00–14:00, dinner 17:30–21:30 | 4 |
+| `grazing` | graze 08:00–22:00 | 7 (min 4) |
+
+**Anchor displacement.** XXX-27's compression, made concrete: when a user
+anchor overlaps a pattern window, that window is displaced to the nearer
+free side of the anchor, up to `maxDisplacementMinutes = 120`. Day 1 is why
+this exists — the 18:30–22:00 game swallows the dinner window, so dinner
+displaces to 22:00–23:30 and the 22:30 late bite at Ruby Soho is legal
+rather than a violation. Without displacement the founder's own verified day
+fails.
+
+**Other tunables:** `breatherMinutes 20` · `maxFoodGapMinutes 300` ·
+`wandererMinUnstructuredFraction 0.35` · `resetGapMinutes 90` ·
+`lateNightTail "23:30"` · `detourThresholdMinutes 20` (XXX-29's stated
+">20 min") · `offPeak: { markets: after 14:00 }` (only entry in v1 — the
+table shape supports more; no speculative rows).
+
+### 1.6 Where the code lives
+
+```
+src/shared/day-grammar/
+  types.ts       GrammarDay, GrammarSlot, GrammarPlace, GrammarContext, Violation, RuleId
+  params.ts      GRAMMAR_PARAMS v1
+  travel.ts      TravelTimeProvider, HaversineStubProvider, haversineKm
+  rules/         validity · hours · dwell · daylight · weather · travel · anchors ·
+                 pacing · meals · budget · midnight · structure · route
+  validate.ts    validateDay(day, context) → Violation[]
+  describe.ts    describeViolations()  [Step 3]
+  index.ts       public surface
+src/shared/fixtures/golden/    six golden days + trap fixtures
+src/server/day-grammar/context.ts   assembleGrammarContext() — the ONLY impure part
+tests/day-grammar/                  the exam
+scripts/grammar-report.ts           reviewer's tool [Step 3]
+```
+
+`src/shared/day-grammar` imports only `src/shared/*` — vocabulary,
+`scheduling-windows`, `timeline`'s time helpers. No I/O, no React, no
+secrets, so E5 can run it client-side unchanged.
+
+`src/server/day-grammar/context.ts` is deliberately thin: fetch hours,
+business status, seasonal/recurrence and reservability facts; read the
+weather row; call `computeDaylight`; build the travel provider. It assembles;
+it never judges.
+
+**Input shape — one honest deviation.** `FixtureDay` (Session 3) is an E2
+*view model*: no coordinates, no per-weekday hours, no categories, no outdoor
+tag. Bending it into a domain model would be worse than adding one. So the
+validator defines `GrammarDay`, built from the same E1 vocabulary constants
+(`SLOT_KINDS`, `SLOT_ORIGINS`, `TIERS`, `PLACE_CATEGORIES`, `FactView`'s
+present/absent discipline). A `GrammarDay → FixtureDay` projection for the
+timeline is a one-way adapter to write when something needs it — not now.
+
+### 1.7 Ambiguities recorded rather than silently decided
+
+1. **"No back-to-back anchors without breather" (epic).** Written before
+   XXX-27 defined *anchor* as `origin='user'`. Read literally it almost
+   never fires — days rarely carry two adjacent user commitments. My
+   interpretation: it means *heavyweight stops*, so rule 26 measures
+   consecutive slots at or above their category's `typical` dwell, and it is
+   an advisory. Flagging because this is a re-reading of the epic's words.
+2. **Day 5's soft anchors have no end times** ("Afternoon anchor ~14:30 —
+   MOCA", then "drift"). `GrammarSlot` requires start and end. At conversion
+   I give the three anchors bounded slots and let the *unstructured fraction*
+   (rule 27) carry the wanderer-ness, rather than inventing open-ended slots.
+3. **Day 3's "16:00–18:00 PATH wander + coffee"** is one slot doing two
+   category jobs, and 120 min breaks `cafes` max 90. Converting it as a
+   wander (not a cafe) is my reading; noted for adjudication.
+4. **Compound/uncategorized places.** Rogers Centre is not one of our seven
+   categories. Anchors escape dwell checks anyway (see §1.5), so this does
+   not bite in the golden set — but rule 11 exists for when it does.
+
+### 1.8 Trap-class coverage — and the one that needed generalizing
+
+| Trap | Rule | Note |
+|---|---|---|
+| 1 permanently-closed | 1, 4 | Fetch in `src/server`; validator checks the fact (settled at CP0) |
+| 2 per-weekday hours | 5, 6 | |
+| 3 recurrence-rule | 3 | |
+| 4 seasonal end date | 2 | |
+| 5 lodging/start-point | 36 | Advisory + schema-gap recorded; not a validator's job to invent a column |
+| 6 route monotonicity | **38** | XXX-28 is out of scope — so I implemented the **general** form |
+| 7 reservability | 37 | |
+
+On trap 6: excursion corridor monotonicity is XXX-28's, and out of scope.
+But its general form — *this order costs more travel than a legal
+reordering* — is computable from what the validator already holds, and it is
+precisely XXX-29's detector, whose ticket says the offer must reuse "the
+day-grammar solver, not a separate pure-TSP". So rule 38 ships as an
+advisory carrying `data.deltaMinutes`, adjacent-swap only (no optimizer this
+session), anchors excluded from swapping. Trap 6 gets its negative fixture;
+XXX-29 gets its seed; no excursion rules were built.
+
+### 1.9 The midnight boundary — treatment and recommendation
+
+**Treatment today.** Rule 34 (`midnight.slot-inverted`, violation) refuses
+to certify a slot with `end <= start`: the validator will not bless what
+`slots_time_interval_valid` cannot store. Rule 35
+(`midnight.late-night-tail`, advisory) names the shape when a day *implies*
+crossing — last slot ending at/after 23:30, or travel home landing past
+24:00 — so late-night days are visible rather than silently truncated.
+
+**Recommendation: do not lift the deferral yet, and when it is lifted, do
+not lift it by weakening the CHECK.** Relaxing `end_time > start_time` to
+permit wraparound would quietly break Session 2's decision #2 — ordering
+derives from `start_time` alone, with `slots_day_start_time_unique` as the
+key — because a 23:00 slot and a 01:00 slot would sort in the wrong order
+and no constraint would catch it. The honest fixes are an explicit
+`ends_next_day boolean`, or minutes-from-day-start instead of `time`. Either
+is a forward-only migration with real design behind it, and the trigger
+should be XXX-28's Torrance variant actually being built — not this session,
+where no golden day crosses midnight. Recorded as a recommendation only, as
+directed.
+
+### 1.10 No migration this session
+
+The validator is pure and reads facts; it stores nothing. Trap 5's lodging
+column is a genuine gap, but the validator's correct behaviour is to *report
+the absence* (rule 36), not to invent storage for it. The midnight deferral
+stays deferred per §1.9. **No migration is proposed, and I do not think one
+is justified.**
+
+### 1.11 Golden-set conversion plan
+
+Six days → typed `GrammarDay` fixtures, one file each, provenance on every
+fact including fixtures (constraint 2 admits no exception for fixture data).
+Weekday, daylight and weather context are computed, not hand-typed: Day 3's
+January daylight comes from `computeDaylight` with the **early-January**
+correction (Jan 5–8, sunset 16:55–16:58, golden hour ≈ 16:08–16:55).
+
+Trap fixtures — one deliberately-broken day per class, each asserting an
+expected `ruleId`: Seven Lives (1) · FIKA 09:30 Saturday (6) + St. Lawrence
+Monday (5) · wrong-Wednesday AGO (3) · Winter Village Jan 20 (2) ·
+hotel-reset gap with no lodging (36) · scrambled Day 6 corridor
+`NOL→Beamsville→Falls` (38) · Lady Marmalade weekend booking (37). Plus the
+non-trap negatives the sources demand: 6-hour Distillery (9), brunch at
+16:40 (29), lake walk after dark (12), 19:04 arrival (18), moved anchor
+(23), dinner at 22:05 by the dome (24), fully-scheduled wanderer (27),
+over-band budget (31), inverted slot (34).
+
+**Two golden-set findings already visible before a line of code** — flagged
+now rather than discovered at CHECKPOINT 2:
+
+1. **Day 2's Distillery slot is 14:30–17:00 = 150 min, against its own
+   parenthetical "(2h dwell ceiling)" and Session 3's "90–120 minute
+   experience".** The day contradicts itself. Either the ceiling is 150 and
+   the note is stale, or the slot should end at 16:30. **Reviewer
+   adjudication needed** — I will not pick silently.
+2. **[OPEN] items block two fixtures**: Day 1's lunch replacement (Rasta
+   Pasta proposed) and the PRESTO day-pass price, which Day 4's $70 hard
+   budget needs to be checkable at all. Until they close I convert Day 1
+   with Rasta Pasta marked provisional, and Day 4's transit cost as an
+   honest absence feeding rule 32 rather than a guessed number.
+
+### CHECKPOINT 1 outcome — approved with rulings
+
+1. **Day 2 Distillery shortened to 14:30–16:30** — the 2h ceiling and
+   Session 3's 90–120 lesson are the truth; the freed 30 minutes extend
+   the free-time gap. Applied to the fixture.
+2. **Day 1 lunch: Rasta Pasta confirmed**, provisional flag removed.
+3. **PRESTO day pass $13.50 confirmed** for Day 4's budget math. Recorded
+   additionally (Jira comment 10293 on XXX-5): single tap $3.30 with a
+   2-hour free-transfer window — fare EVENTS, not rides, are the unit;
+   day-pass breakeven ≈ 5 events. Grammar v1 uses the day-pass figure; a
+   per-city `FareModel` is the v2 refinement for E3 metadata.
+4. **`anchor.egress-buffer-short` stays a violation** — recorded as the
+   single named exception where judgment (crowd-flagging) may reject a
+   day. Day 1's founder-written crush gap is the warrant.
+5. Everything else ratified as argued: severity philosophy including
+   `travel.uncertifiable`, stub factors + tier-based tolerance,
+   dwell-on-concierge-slots-only, anchor displacement (120 max), §1.7
+   readings 1–4, rule 38 generalization, midnight recommendation (deferral
+   holds; never weaken the CHECK; `ends_next_day` or minutes-from-day-start
+   when Torrance triggers), no migration, open `data` record with
+   third-consumer extraction. Dwell table v1 as-is.
+
+## Step 2 — Validator core + golden exam (CHECKPOINT 2)
+
+### 2.1 What shipped
+
+```
+src/shared/time.ts                     timeToMinutes / minutesToTime, extracted
+src/shared/vocabulary.ts               + WEEKDAYS, weekdayOf()
+src/shared/day-grammar/
+  types.ts      38 RuleIds, GrammarDay/Slot/Place, GrammarContext, Violation
+  params.ts     GRAMMAR_PARAMS v1
+  travel.ts     haversineKm, HaversineStubProvider, MatrixTravelProvider
+  internal.ts   span/fact/violation plumbing
+  rules/        facts · dwell · environment · movement · rhythm · money · shape
+  validate.ts   validateDay, hasViolations, assertWellFormed
+  index.ts      public surface
+src/shared/fixtures/golden/            support + 6 days + 21 traps
+scripts/daylight-table.ts              read-only ephemeris table printer
+tests/day-grammar/                     golden-set · determinism · boundaries
+```
+
+`src/shared/day-grammar` imports only from `src/shared`. No I/O, no React,
+no Zod at runtime — E5 can run it in the browser unchanged.
+
+### 2.2 The exam — catch matrix
+
+**All 21 trap fixtures caught, on the expected ruleId, with a message that
+names the offending subject.** All seven founder trap classes covered.
+
+| Trap | Class | Rule | Caught |
+|---|---|---|---|
+| Seven Lives permanently closed | 1 | `validity.permanently-closed` | ✅ |
+| 09:30 coffee at a 10:00 Saturday open | 2 | `hours.outside-open-window` | ✅ |
+| St. Lawrence on a Monday | 2 | `hours.closed-day` | ✅ |
+| Free AGO on the third Wednesday | 3 | `validity.recurrence-unmet` | ✅ |
+| Winter Village on 20 January | 4 | `validity.seasonal-expired` | ✅ |
+| Hotel-reset gap, no lodging known | 5 | `structure.reset-gap-without-lodging` | ✅ |
+| NOL before Beamsville | 6 | `route.detour-avoidable` | ✅ |
+| Weekend brunch, no bookings taken | 7 | `reservability.walk-in-only` | ✅ |
+| Six hours in the Distillery | — | `dwell.overstay` | ✅ |
+| Twenty minutes in the ROM | — | `dwell.understay` | ✅ |
+| Brunch at 16:40 | — | `meal.outside-pattern-window` | ✅ |
+| Lake walk after dark | — | `daylight.outdoor-after-dark` | ✅ |
+| Skate inside the snow window | — | `weather.outdoor-in-adverse-window` | ✅ |
+| The 19:04 class | — | `travel.infeasible` | ✅ |
+| Moved anchor | — | `anchor.mutated` | ✅ |
+| Dinner five minutes after the final out | — | `anchor.egress-buffer-short` | ✅ |
+| Wanderer scheduled to the minute | — | `pacing.wanderer-overscheduled` | ✅ |
+| Splurge dinner on a $70 day | — | `budget.over-band` | ✅ |
+| Slot crossing midnight | — | `midnight.slot-inverted` | ✅ |
+| Market at four in the afternoon | — | `wisdom.off-peak-window` | ✅ |
+| Stop with no coordinates | — | `travel.uncertifiable` | ✅ |
+
+**Rule coverage: 38/38 exercised.** 31 fire in the golden or trap
+fixtures; the other 7 have dedicated boundary tests.
+
+**Test counts:** 145 tests in `tests/day-grammar` (141 passing, 4 failing
+— the four golden-day findings below, deliberately left failing pending
+adjudication). Full suite: 269 tests, 262 passing, 3 skipped (live-API),
+4 failing.
+
+**Determinism proven.** Every golden day and every trap: identical output
+on repeat runs, and identical output under five seeded permutations of the
+slot array. Rules read the schedule, never the array order.
+
+### 2.3 Golden-day findings — FOUR, all requiring adjudication
+
+| Day | Violations | Advisories |
+|---|---|---|
+| 1 — Jays game | **1** | 8 |
+| 2 — Old Town | 0 ✅ | 5 |
+| 3 — Deep winter | **1** | 4 |
+| 4 — Budget $70 | **2** | 6 |
+| 5 — Wanderer | 0 ✅ | 7 |
+| 6 — Excursion | **1** | 5 |
+
+#### Finding A — zero transfer time between adjacent slots (4 violations, 3 days)
+
+This is one systematic issue, not four separate ones. The golden set is a
+prose itinerary, and prose itineraries elide transfers. The founder DID
+write `(walk ~12 min)` markers on Days 1 and 2 where a transfer mattered —
+so the convention exists; it was applied inconsistently.
+
+| Day | Edge | Distance | Stub | Gap given |
+|---|---|---|---|---|
+| 1 | Roundhouse Park → Rogers Centre (anchor) | 0.27 km | 7 min + 15 buffer | **0** |
+| 4 | Grange Park → Trinity Bellwoods | 1.78 km walk | 31 min | **0** |
+| 4 | Harbourfront → Banh Mi Nguyen Huong | 2.11 km walk | 37 min | **0** |
+| 6 | NOL old town → Peller Estates | 2.50 km drive | 17 min | **0** |
+
+Where the hop is trivial the validator already absorbs it — the 150-metre
+negligible-distance rule means two stalls in Kensington Market cost
+nothing. These four are 0.27–2.5 km with a hard commitment or a
+cross-neighbourhood walk on the other side.
+
+**Proposed corrections**, each preserving the day's character:
+
+- **Day 1**: Roundhouse Park 17:15–**18:15** (frees 15 min for a 7-minute
+  walk plus buffer). The anchor does not move — it never does.
+- **Day 4**: Grange Park 12:30–**13:30**, and Trinity Bellwoods reached by
+  **transit** (the 505 Dundas, which is what one actually does) — a 20-min
+  leg into a 30-min gap.
+- **Day 4**: Harbourfront 17:00–**18:30** (90 min, comfortably inside the
+  parks range), dinner unchanged at 19:00 — a 30-min gap for a 22-min
+  transit leg.
+- **Day 6**: NOL old town 11:15–**12:40** (85 min) — a 20-min gap for the
+  17-min drive to the winery.
+
+#### Finding B — Day 3's stated budget does not cover Day 3
+
+Priced total **CAD 174.50** against a **CAD 140** band: over by 34.50.
+ROM admission for two is 46 of that on its own (and the real 2026 adult
+price is nearer 26 each, which would make it worse, not better). The day's
+content is right; the budget line was the approximation — the document
+writes "budget ~$140" with a tilde.
+
+**Recommendation: raise Day 3's band to ~$180.** Alternatives if you'd
+rather hold the number: swap ROM for a cheaper anchor, or accept the day
+as a deliberate over-budget case and let the violation stand as the golden
+set's one budget-stretch scenario.
+
+### 2.4 Two rule refinements made during the build (reported, not silent)
+
+1. **`pacing.long-gap-without-food` measured meal-end to meal-end**,
+   treating eating as an instant. It fired on all six golden days, which
+   is the signature of a mis-tuned rule rather than six starved
+   itineraries. Now measured end-of-meal to start-of-next-meal. Fires on
+   three days, each honestly (Day 1's 13:00 lunch to 22:30 late bite with
+   a ballgame between).
+2. **`pacing.no-breather` used `>= typical` dwell** to mean "heavyweight",
+   so a 45-minute coffee at exactly the typical length counted as a long
+   haul. Now strictly `> typical`.
+
+### 2.5 One deviation from the CHECKPOINT 1 proposal — reported for ratification
+
+**Anchor arrival buffer is now a flat 15 minutes, not 15/30-by-crowd.**
+
+At CHECKPOINT 1 I proposed 30 minutes of arrival buffer for crowd-flagged
+anchors, citing Day 1's founder-written "arrive 30 early". Building it
+showed that reasoning was wrong: the anchor's own start time is **18:30
+for a 19:07 first pitch** — the 30-minute lead is already in the user's
+commitment. Adding another 30 on top double-counts the user's own
+judgment, which single-owner-per-fact forbids: the user owns when they
+intend to arrive.
+
+Crowd flags therefore drive **egress only** (rule 24, 30 minutes,
+unchanged). Recorded in `params.ts` beside the value.
+
+### 2.6 The stub cannot see corridor backtracking — and the fixture says so
+
+Trap class 6 initially **missed**, and the reason is worth more than the
+fix. Straight-line, Beamsville and Niagara-on-the-Lake are both roughly
+"on the way" from Toronto, so the founder's rejected
+NOL→Beamsville→Falls order costs only ~14 minutes on the stub and never
+clears XXX-29's 20-minute threshold. By road it costs **55**, because the
+QEW curves around the lake.
+
+Lowering the threshold to make the test pass would have been fudging the
+exam. Instead the corridor fixture does two things, both of which are
+findings:
+
+1. It carries the **Toronto departure as a slot** (`origin: "user"`, a
+   trip-level anchor per XXX-27). The golden day starts at Beamsville with
+   "08:30 — depart Toronto" as prose, so the leg where the backtrack
+   actually costs money is not modelled at all. This is exactly what
+   XXX-28's "travel legs as first-class slots" is for.
+2. It runs on a **`MatrixTravelProvider`** seeded with founder-plausible
+   QEW road times. That is the same seam XXX-24 drops into, so the fixture
+   doubles as proof the seam holds: one provider swap, zero validator
+   changes, and the rule fires at 55 minutes.
+
+**Corridor monotonicity is not detectable without real road times.**
+Stated here so nobody later assumes the stub covers it.
+
+### 2.7 Smaller things the exam surfaced
+
+- **Day 6's Toronto → Beamsville leg is unchecked** in the golden fixture
+  for the same reason as above: no departure slot. XXX-28's to fix.
+- **Ruby Soho closes at 24:00 in the fixture** because the hours model is
+  same-day. It really trades past midnight. Recorded as a limitation of
+  the model, not as a fact about the bar — and it is the same limitation
+  §1.9's midnight recommendation addresses.
+- **`hours.unknown` and `dwell.category-unknown` fire honestly** on Rogers
+  Centre (a stadium is none of our seven categories; event-day hours are
+  not a weekly pattern), on the PATH, and on the Beamsville winery the
+  founder named only by region. Each is a real absence, reported as one.
+
+---
+
 # Session 6 — TTL sweep (XXX-25 compliance core) + weather/AQI/daylight (XXX-23)
 
 Branch: `session-6-sweep-and-weather`. Status: **in progress**.
