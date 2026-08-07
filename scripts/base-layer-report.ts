@@ -146,6 +146,19 @@ async function main() {
   const byStatus: Record<string, number> = {};
   for (const m of matches) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;
 
+  // Ambiguous rows carry their reason in candidates.note (mid_band /
+  // low_margin / link_collision). Collisions are listed in full — each one is
+  // a duplicate-Google-listing case Checkpoint 4 wants investigated.
+  const ambiguousReasons: Record<string, number> = {};
+  const linkCollisions: unknown[] = [];
+  for (const m of matches) {
+    if (m.status !== "ambiguous") continue;
+    const note =
+      (m.candidates as { note?: string } | null)?.note ?? "unrecorded";
+    ambiguousReasons[note] = (ambiguousReasons[note] ?? 0) + 1;
+    if (note === "link_collision") linkCollisions.push(m);
+  }
+
   const scores = matches
     .map((m) => m.best_score)
     .filter((s): s is number => s !== null)
@@ -198,6 +211,8 @@ async function main() {
         category_fact_rows: categoryFacts.length,
         distinct_per_category: byCategory,
         match_outcomes: byStatus,
+        ambiguous_reasons: ambiguousReasons,
+        link_collisions: linkCollisions,
         score_histogram: histogram,
         scores_sorted: scores,
         sample_places: sample,
