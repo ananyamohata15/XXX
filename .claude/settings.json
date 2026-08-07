@@ -29,10 +29,10 @@
       "Bash(npx tsx:*)",
       "Bash(node:*)",
       "Bash(curl:*)",
-      "Bash(wget:*)"
+      "Bash(wget:*)",
+      "Bash(git push:*)"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(vercel:*)",
       "Bash(npx vercel:*)",
       "Bash(rm -rf:*)",
