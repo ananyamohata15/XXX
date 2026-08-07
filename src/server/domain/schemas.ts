@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   CITIES,
+  PLACE_CATEGORIES,
   SLOT_KINDS,
   SLOT_ORIGINS,
   TIERS,
@@ -25,6 +26,10 @@ import {
 
 export { CITIES, TIERS };
 export const citySchema = z.enum(CITIES);
+
+export { PLACE_CATEGORIES };
+export type { PlaceCategory } from "@/shared/vocabulary";
+export const placeCategorySchema = z.enum(PLACE_CATEGORIES);
 
 const tierSchema = z.literal([...TIER_VALUES]);
 
@@ -70,6 +75,18 @@ export const factValueSchemas = {
     .refine((r) => r.max >= r.min, "max must be >= min"),
   /** Concierge/founder judgment about character. Tier 3 territory. */
   vibe: z.string().min(1),
+  /**
+   * Our seven-category mapping of a place plus the source taxonomy labels it
+   * was mapped from (storable under the source's license — decision 002;
+   * kept so future re-mapping needs no dataset re-scan). Tier 2 territory.
+   */
+  categories: z.strictObject({
+    mapped: z
+      .array(placeCategorySchema)
+      .nonempty()
+      .refine((a) => new Set(a).size === a.length, "mapped must be unique"),
+    source_labels: z.array(z.string().min(1)).nonempty(),
+  }),
 } as const;
 export type FactKey = keyof typeof factValueSchemas;
 const factKeySchema = z.enum(

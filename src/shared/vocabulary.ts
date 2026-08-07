@@ -37,6 +37,18 @@ export const TIER_LABELS: Record<Tier, string> = {
 export const FACT_STATUSES = ["present", "absent"] as const;
 export type FactStatus = (typeof FACT_STATUSES)[number];
 
+/** The product's category vocabulary — deliberately small (seven). */
+export const PLACE_CATEGORIES = [
+  "restaurants",
+  "cafes",
+  "museums_galleries",
+  "historic_sites",
+  "markets",
+  "nightlife_bars",
+  "parks",
+] as const;
+export type PlaceCategory = (typeof PLACE_CATEGORIES)[number];
+
 /** Who placed a slot: the concierge proposed it, or the user pinned it. */
 export const SLOT_ORIGINS = ["concierge", "user"] as const;
 export type SlotOrigin = (typeof SLOT_ORIGINS)[number];

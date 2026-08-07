@@ -28,10 +28,14 @@
       "Bash(rm:*)",
       "Bash(git commit:*)",
       "Bash(npm install:*)",
-      "Bash(npx supabase:*)"
+      "Bash(npx supabase:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git push:*)"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(vercel:*)",
       "Bash(npx vercel:*)",
       "Bash(rm -rf:*)",
