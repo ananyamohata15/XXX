@@ -1,3 +1,361 @@
+# Session 6 — TTL sweep (XXX-25 compliance core) + weather/AQI/daylight (XXX-23)
+
+Branch: `session-6-sweep-and-weather`. Status: **in progress**.
+Scope: the scheduled TTL expiry sweep, built and proven (the ~2026-09-04
+deadline is the star); XXX-23 weather + AQI + daylight ingestion with
+derived scheduling windows (free, unblocks E4 grammar work). The paid
+monthly re-discovery is DESIGNED but not scheduled. Out of scope:
+scheduling any paid job, FSQ re-ingest, Routes/travel matrix (XXX-24),
+ambiguous-match adjudication, generation, UI.
+
+## Step 0 — Settings check (CHECKPOINT 0)
+
+Reviewed `.claude/settings.json` against this session's needs:
+
+- **Sweep + weather scripts**: run as `npx tsx scripts/…` — already
+  ask-gated (Session 4 rule); every invocation prompts.
+- **Migrations**: `npx supabase db push` — already ask-gated.
+- **Open-Meteo fetches**: happen inside the tsx-gated scripts via Node
+  fetch; no new curl surface (curl stays ask-gated if spot-checks are
+  needed).
+- **Cron config is code**: pg_cron schedules live in SQL migrations
+  (push is ask-gated); a Vercel Cron alternative would live in
+  `vercel.json` (Write is ask-gated). Neither needs a settings change.
+- **`Bash(vercel:*)` / `Bash(npx vercel:*)` stay denied** (Session 1
+  posture; CLI not installed). If Checkpoint 1 rules for Vercel Cron
+  and something needs Vercel-side action (env var, deploy to observe a
+  scheduled firing), the routes are the Vercel MCP tools (each call
+  prompts individually) or founder dashboard action — if those prove
+  insufficient, a narrow settings proposal comes at that point, not
+  pre-emptively now.
+- **`.env.local` remains fully out of bounds** (no reads, no
+  introspection; scripts self-report missing vars).
+
+**Conclusion: no settings changes needed.** Nothing new to `allow`,
+`ask`, or `deny`.
+
+CHECKPOINT 0: **approved** — non-proposal on the Vercel deny ratified
+(widen at proven need, narrowly, never pre-emptively).
+
+## Step 1 — Design proposal (CHECKPOINT 1)
+
+### 1.1 Sweep semantics, exactly
+
+**Which rows qualify.** `discovered_places` where `coords_status =
+'present' AND coords_fetched_at <= now() - interval '30 days'`. This is
+the SQL twin of the read guard's `coordsExpired()` (`>= 30 days elapsed`,
+boundary-inclusive on both sides — the TS side is already
+fixture-tested at the boundary). The Session-4 partial index
+(`coords_fetched_at WHERE coords_status='present'`) makes the sweep an
+index scan.
+
+**What happens.** `SET lat = NULL, lng = NULL, coords_status =
+'expired'`. Rows survive — the place_id grant is indefinite (001 §1).
+
+**`coords_fetched_at`: persists — it is the expiry evidence.** Argued:
+1. SST §14.3 obligates deleting "the cached latitude and longitude
+   values". The fetch timestamp is *our* request metadata (Customer
+   Data, 001 §6 last row); no deletion obligation reaches it.
+2. It is the compliance record: an `expired` row whose
+   `coords_fetched_at` is T proves the values were deleted within the
+   grant window measured from T (paired with the sweep-run trace).
+   Nulling it would destroy the very evidence that shows we complied.
+3. The shipped Session-4 CHECK constraint already encodes exactly this
+   discriminated union: `expired` → lat/lng NULL, fetched_at populated
+   ("when we last knew"); `absent_at_source` → fetched_at NULL ("never
+   knew"). The sweep honors the schema as designed, no migration to the
+   CHECK needed.
+4. Re-discovery prioritization needs it (which places have been dark
+   longest).
+
+**What is logged.** Trace `kind='ttl_sweep'` per run, **including
+zero-row runs** — silence is not evidence; a nightly auditor must find
+one trace per scheduled slot, each stating what was examined. Metadata:
+`{rows_examined, rows_expired, expiring_within_7d}` (`rows_examined` =
+count of `coords_status='present'` before the update;
+`expiring_within_7d` feeds the re-discovery warning, §1.3),
+`total_cost_usd = 0` (honest zero — no external call), started/finished
+timestamps. ~720 traces/month at hourly cadence: cheap rows, and they
+*are* the compliance log — kept indefinitely.
+
+**Cadence: hourly. The layered argument:**
+- *Is daily's ~24h worst-case overshoot acceptable?* Split the exposure:
+  (a) **over-retention reads can never happen at any sweep cadence** —
+  the read-side guard enforces the 30-day boundary computationally on
+  every read, so a late sweep changes nothing user- or product-facing;
+  (b) but SST §14.3 says "must delete", not "must not use" — a value
+  sitting at rest 23 hours past day 30 is retained beyond the grant
+  under the conservative reading, even if unreadable in practice. The
+  guard moots the *read* exposure, not the *retention* obligation.
+- *Therefore*: since tightening costs literally nothing (the sweep is
+  an idempotent index-scan UPDATE; pg_cron runs it for free), the
+  conservative-reading rule buys the 24×-smaller bound. Hourly caps
+  worst-case overshoot at ~1h. Sub-hourly is diminishing returns
+  (overshoot is already dominated by the granularity of "calendar
+  days" in the grant itself).
+- Idempotency: expired rows leave the `'present'` predicate set, so
+  re-runs (or overlapping runs) are no-ops. Safe at any cadence.
+
+### 1.2 Cron platform: Supabase pg_cron for the sweep (proposed ruling)
+
+Compared against Vercel Cron hitting a protected API route:
+
+| criterion | pg_cron | Vercel Cron |
+|---|---|---|
+| Where the code lives | SQL function next to the data it deletes — a retention action on the storage layer, same boundary logic as Session 2's "DB owns the invariant it *can* own". The TS read guard remains the API-layer enforcement. | TS route in the app — natural for business logic, but this job is a data-layer deletion with zero business input. |
+| Cadence | any (hourly fine) | **Hobby plan: daily-only; hourly cron expressions fail deployment** (docs verified live 2026-08-06; precision ±59 min even for daily). Hourly needs a Pro upgrade — a paid dependency for a free compliance job. |
+| Activation | **effective immediately after `npx supabase db push` this session** — no merge, no deploy | crons activate only on *production deployments* → the compliance schedule would wait on the merge train. Session rule is no push; deadline is ~Sep 4. |
+| Public surface / secrets | none — never leaves Postgres | route must reject non-cron callers → CRON_SECRET provisioning + a public endpoint to defend |
+| Failure observability | `cron.job_run_details` (silent unless watched) + our absence-based health check (below) | Vercel dashboard cron/function logs (silent unless watched) + same health check |
+| Local testability | function invocable anywhere (`select sweep_expired_coords()` / RPC from a committed script); selection logic mirrored + fixture-tested in TS | route handler testable, but the *schedule* isn't exercisable pre-deploy |
+
+**Proposal: pg_cron.** Deploy-decoupling and cadence are each
+individually decisive; together they're conclusive. Honest counterpoint
+recorded: this couples the compliance job to Supabase — acceptable
+because the data lives there anyway (if the DB is unreachable, there is
+nothing reachable to over-retain, and the read guard covers the reads).
+
+Mechanics: migration enables `pg_cron`, creates
+`sweep_expired_coords()` (performs the guarded UPDATE **and writes the
+trace row in the same function** — a run that deletes but fails to
+trace cannot happen silently, they commit together), revokes EXECUTE
+from `anon`/`authenticated` (functions in `public` are auto-exposed via
+PostgREST RPC; service-role/postgres only), and calls
+`cron.schedule('ttl-sweep', '7 * * * *', …)`. If extension creation is
+refused to the migration role: stop, surface, dashboard-enable by
+founder, re-push (never silently skip).
+
+**The failure-alerting answer, honestly.** Neither platform alerts a
+human for free — `cron.job_run_details` and the Vercel dashboard are
+both pull-only surfaces nobody watches. So alerting is **absence-based
+and ours**: `checkHealth()` gains a check that the newest `ttl_sweep`
+trace is younger than 2 hours (2 missed hourly slots). Older-or-missing
+→ `/api/health` returns 503. This detects every failure mode upstream
+of it — job erroring, job unscheduled, scheduler dead, extension
+dropped — because it asserts the *evidence of success*, not the absence
+of errors. Caveat stated plainly: the updated health check serves from
+production only after merge; until then it runs in local/session
+invocations against the production DB, and the guaranteed viewer is the
+session-start health check. Ops item (founder): point a free uptime
+monitor at `/api/health` so a 503 becomes a push notification — until
+that exists, "alerting" is honest-but-passive. The pg_cron *sweep
+itself* is live this session regardless.
+
+**Primary-vs-guard doctrine (recorded so nobody "simplifies" one
+away):** the **sweep is the compliance action** — it discharges the SST
+§14.3 deletion obligation against data at rest. The **read guard is
+belt-and-suspenders** — it guarantees no over-retention *read* even
+when the cron is late, dead, or not yet scheduled. They overlap by
+design; deleting either reopens a hole the other does not cover
+(guard-only = values linger at rest past the grant; sweep-only = a late
+cron causes over-retention reads).
+
+### 1.3 Paid re-discovery: designed, NOT scheduled (proposed ruling: stays human-triggered)
+
+**The job** (when triggered): re-run the 63-call Toronto discovery
+(`discover-toronto.ts --full`, Text Search Pro, $2.02/run list, inside
+the 5,000/month Pro free tier at our volume). Upserts restart
+`coords_fetched_at` clocks for every place Google still returns and
+discover new places. Places Google no longer returns expire at the next
+sweep — correct honest behavior, and **low-stakes since Session 5**:
+durable FSQ coordinates exist for 31,377 identities, so discovery
+coords now matter mainly for future matching of the unmatched pool, not
+for product reads. A missed month degrades nothing user-facing;
+compliance stays enforced by sweep + guard. This materially weakens the
+case for automating the spend.
+
+**PO lean, ratification proposed:** automated jobs must be free and
+read-only/deletion-only (sweep: free deletion; weather: free
+ingestion). Anything that spends money stays human-triggered until
+spend-automation is deliberately ratified — and any future ratification
+must ship, as hard requirements: a **per-run call cap** enforced in the
+job itself (the `--max-calls` refusal guard already exists in the
+script family) and a **kill switch** read at run start (config flag,
+e.g. `DISCOVERY_ENABLED=false` aborts before the first call). Both are
+design requirements recorded now, built if/when scheduling is ever
+approved.
+
+**Making the human trigger reliable** (the mechanism, and where the
+warning lands so it is *seen*):
+1. Every sweep run computes `expiring_within_7d` (count of `present`
+   rows whose deadline falls inside 7 days) into its trace.
+2. `checkHealth()` surfaces it as a structured warning —
+   `warnings: [{code: 'coords_expiring', message: 'N coordinates expire
+   within 7 days — run: npx tsx scripts/discover-toronto.ts --full'}]`
+   — non-fatal (status stays healthy; it's a to-do, not an outage).
+3. Surfaces that actually get looked at: `/api/health` is checked at
+   every session start (project ritual) and by the future uptime
+   monitor (ops item above). SESSION_NOTES forward-notes carry the
+   first due date.
+4. **First due date: ~2026-09-01 → 09-03** (all 760 clocks die ~09-04;
+   running Sep 1–3 restarts them with margin). Proposed close-out
+   action: comment the due date on XXX-25 so the obligation lives in
+   the tracker, not only in repo notes.
+
+### 1.4 Weather + AQI + daylight (XXX-23)
+
+**Fetch.** Open-Meteo, city-level, keyless, free:
+- `api.open-meteo.com/v1/forecast` — hourly: temperature, apparent
+  temperature, precipitation probability + amount, weather_code, wind,
+  cloud cover; daily aggregates. `forecast_days=14` (rolling 14-day
+  horizon per brief), `timezone=America/Toronto` so series align with
+  the civic day the grammar schedules.
+- `air-quality-api.open-meteo.com/v1/air-quality` — hourly: US AQI,
+  PM2.5, PM10, ozone. AQI horizon is shorter (~5 days) → dates 6–14
+  carry `air_quality_status='absent'` — honest absence by
+  construction, Delhi-ready shape.
+- City reference point: founder-set Toronto coords (City Hall,
+  43.6532 N 79.3832 W) — our own vocabulary, not Google-derived.
+- Cadence: refreshed daily. Each run upserts today…+13; past dates are
+  left frozen at last fetch (recorded caveat: past rows are *last
+  forecast*, not observed actuals — nobody may treat them as ground
+  truth; Open-Meteo's archive API exists if actuals are ever needed).
+
+**License (verified live 2026-08-06,** open-meteo.com/en/terms**).**
+Open-Meteo's terms state: "The data obtained through the API is
+provided under the terms of the CC-BY 4.0 licence." CC BY 4.0 expressly
+grants copying, redistribution, and adaptation "in any medium or
+format… for any purpose, even commercially", conditional on
+attribution (credit + license link + indicate changes). Storage of
+fetched rows and computation of derived windows are therefore expressly
+permitted — these are OUR rows with no ToS retention ceiling; the
+Google regime's storage prohibition has no analogue here. Attribution
+obligation: a credits-surface line "Weather data by Open-Meteo.com
+(CC BY 4.0)" with license link (joining the FSQ credits line from 002),
+plus per-row provenance `source='open_meteo'`. Separately from the data
+license, the *free API service tier* is restricted to non-commercial
+use — an access/service term, not a data-license term (002's standing
+channel-vs-data rule applied): we are pre-commercial during build, and
+XXX-23 already budgets the $29/mo Standard plan at commercial launch.
+
+**Storage shape.** New table `weather_days` (forward-only migration) —
+**not** rows in `facts`: `facts.place_id` is NOT NULL by design
+(place-grain); city-date facts are a different grain and a different
+single-owner (single-owner rule: `weather_days` owns city-date weather
+observations). Same provenance vocabulary as everything else:
+
+- `id` uuid PK; `city` text NOT NULL; `date` date NOT NULL; `timezone`
+  text NOT NULL; named unique `weather_days_city_date_unique (city,
+  date)` — upsert target. Full-row clobber on re-fetch is *correct*
+  here (each fetch supersedes the forecast wholesale; no cross-source
+  fields to protect, unlike Session 5's read-then-write).
+- `forecast_status` / `forecast` (jsonb) and `air_quality_status` /
+  `air_quality` (jsonb) — two payloads, two independent honest-absence
+  discriminated unions, CHECK-enforced value-matches-status (house
+  pattern from `facts`).
+- `source` text NOT NULL (`'open_meteo'`), `tier` smallint NOT NULL
+  CHECK (`tier = 1`), `fetched_at` timestamptz NOT NULL (fetch receipt
+  time — this is a live API answer, unlike the FSQ snapshot dataset),
+  `created_at`/`updated_at` + moddatetime. RLS enabled, zero policies
+  (server-only, house posture).
+- **Tier 1 argued**: it is the authoritative source's answer fetched
+  live at a known time — same class as Session 4's Google coordinates.
+  Forecast *uncertainty* is a property of the value (a forecast is a
+  prediction), not of the provenance chain; the tier system grades the
+  latter.
+- Payloads are Zod-parsed at the boundary (external API = untrusted
+  input) and stored in normalized shape (explicit metric units in field
+  names), so readers never re-interpret raw API idioms.
+
+**Derived scheduling windows: computed at read time (argued).** A pure
+function `deriveSchedulingWindows(weatherDay, daylight, params)` →
+outdoor-friendly ranges, rain windows, heat-avoid windows, AQI flags.
+Not materialized, because: (1) the thresholds (rain-probability cutoff,
+humidex ceiling, AQI bands) are Tier-3 judgment parameters that grammar
+work will actively tune — materialized windows bake today's guesses
+into rows and demand a re-derivation job on every tweak; (2) the
+computation is trivial (≤24×16 array entries per request — no latency
+argument exists); (3) single-owner stays clean: `weather_days` owns
+observations, windows are judgment applied to them. Parameters live in
+code as a versioned object (`WINDOW_PARAMS` v1) so any window output is
+reproducible from (row, params-version). Revisit trigger recorded:
+materialize only if generation-latency profiling ever indicts this
+computation (it won't).
+
+**Daylight via computed ephemeris (the XXX-5 E4 grammar comment, item
+1).** Library: **`astronomy-engine`** (MIT, pure math, zero I/O,
+TypeScript types, actively maintained). Test story: the author
+validates against JPL Horizons / NOVAS reference ephemerides with
+published error bounds (±1 minute for rise/set across centuries) and
+ships an extensive test suite; on top we add our own known-answer
+tests: Toronto sunrise/sunset for the 2026 solstices + equinoxes
+against published almanac values (±2 min), plus the golden-set winter
+check — mid-January Toronto sunset ≈ 16:55 reproduced. Sunrise, sunset,
+civil twilight, golden hour per city-date; golden hour defined as
+sun-altitude ≤ 6° above horizon before sunset (and the morning mirror)
+— a definitional Tier-3 parameter applied to Tier-1 ephemeris outputs,
+stated in code.
+**Not stored**: deterministic + free + instant means storage adds a
+sync liability with zero gain; computed on demand with in-memory
+provenance (`source='ephemeris:astronomy-engine'`, tier 1, fetched_at =
+computed-at) — the 001 pattern of provenance-at-creation for transient
+facts. Module placement honoring the strict `src/shared`
+dependency-free rule: the ephemeris wrapper (npm dep) lives in
+`src/server/weather/ephemeris.ts`; the windows pure function +
+daylight/window types (zero deps) live in `src/shared` where the
+validator and clients can consume them.
+
+**Weather scheduling: Vercel Cron, daily (proposed).** The ingestion is
+TypeScript by nature (fetch + Zod + PostgREST writes) — pg_cron cannot
+run it without either parsing JSON in SQL (violates parse-don't-hope)
+or a pg_net→HTTP hop that reintroduces the secret problem with extra
+moving parts. So: core logic `src/server/weather/ingest.ts`, two entry
+points — `scripts/ingest-weather.ts` (prompted runs, live this session)
+and route `/api/jobs/ingest-weather` guarded by `CRON_SECRET`
+(rejects any request lacking `Authorization: Bearer $CRON_SECRET`;
+Vercel sends it automatically for cron invocations once the env var
+exists). `vercel.json` cron `30 10 * * *` (≈06:30 Toronto; Hobby's
+daily-only limit and ±59 min slop are both fine for a daily weather
+refresh). Honest activation note: the schedule fires only after merge
+to main deploys it; until then the prompted script keeps data fresh,
+and rows' `fetched_at` provenance makes any staleness visible rather
+than silent. CRON_SECRET provisioning (generate + set in Vercel env) is
+a build-step item — via Vercel MCP tool (prompts per call) or founder
+dashboard.
+
+**Failure severity tiering (deliberate asymmetry):** sweep staleness →
+health **503** (compliance-grade); weather staleness → health
+**warning** (newest `weather_ingest` trace > 48h). Argued: stale
+weather is product-degrading but *honest* (provenance-stamped, and
+generation degrades gracefully per honest-absence), not a legal
+obligation missed; hard-failing health for it would cry wolf at
+compliance severity — and would flap during the pre-merge window when
+the cron cannot yet fire. The route itself is fail-loud (any
+fetch/parse error → 500 → failed cron run in the Vercel dashboard +
+function logs).
+
+### 1.5 Cost + cadence table (every scheduled job)
+
+| Job | Platform | Cadence | Cost/run | Failure-alert path |
+|---|---|---|---|---|
+| `ttl_sweep` | Supabase pg_cron | hourly (`7 * * * *`) | $0 (no external calls) | absence-based: `/api/health` → **503** if newest `ttl_sweep` trace > 2h; run errors also in `cron.job_run_details` |
+| `weather_ingest` | Vercel Cron → `/api/jobs/ingest-weather` | daily `30 10 * * *` UTC (±59 min, Hobby) | $0 (free tier, 2 requests/run) | route fail-loud → failed cron in Vercel dashboard + logs; `/api/health` **warning** if newest trace > 48h |
+| re-discovery | **human-triggered** script, never scheduled | ~monthly; **first due ~Sep 1–3** | $2.02 list (~$0 billed, Pro free tier) | `/api/health` warning `coords_expiring` (N expire within 7d), computed by every sweep run |
+| daylight/ephemeris | not a job — pure computation on demand | — | $0 | deterministic; failures are test failures |
+
+Ops item (founder, non-blocking): point a free uptime monitor at
+`/api/health` so 503s/warnings become push notifications.
+
+### CHECKPOINT 1 — rulings requested
+
+1. **Cron platform**: pg_cron for the sweep (deploy-decoupled, hourly-
+   capable, live this session); Vercel Cron for weather (TS-natured,
+   daily fits Hobby). Two platforms by nature of the job — explicit
+   ruling requested since the brief framed it as either/or.
+2. **Sweep cadence**: hourly, with the layered retention-vs-read
+   argument above.
+3. **Re-discovery**: stays human-triggered (PO lean ratified as
+   argued); health-warning trigger mechanism; cap + kill-switch as
+   hard requirements on any future automation; due-date comment on
+   XXX-25 at close-out.
+4. **Weather storage**: `weather_days` table (not `facts`), tier 1,
+   full-clobber upsert, honest-absence AQI split; windows derived at
+   read time; `astronomy-engine` for ephemeris, not stored.
+5. **Severity tiering**: sweep staleness = 503, weather staleness =
+   warning.
+
+---
+
 # Session 5 — Base layer: durable identities (FSQ/OSM) + discovery matching
 
 Branch: `session-5-base-layer`. Status: **in progress**.

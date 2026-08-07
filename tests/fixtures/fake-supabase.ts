@@ -61,13 +61,25 @@ export function createFakeSupabase(
                       : { data: row, error: null },
                   );
                 },
-                order(orderColumn: string) {
+                order(orderColumn: string, opts?: { ascending?: boolean }) {
                   const sorted = [...matches].sort((a, b) =>
                     String(a[orderColumn]) < String(b[orderColumn]) ? -1 : 1,
                   );
-                  return Promise.resolve(
-                    error ? { data: null, error } : { data: sorted, error: null },
-                  );
+                  if (opts?.ascending === false) sorted.reverse();
+                  const settle = (rows: typeof sorted) =>
+                    error ? { data: null, error } : { data: rows, error: null };
+                  // Thenable (awaited directly by domain reads) that also
+                  // chains .limit() (health's latest-trace query).
+                  return {
+                    limit(n: number) {
+                      return Promise.resolve(settle(sorted.slice(0, n)));
+                    },
+                    then(
+                      resolve: (value: ReturnType<typeof settle>) => void,
+                    ) {
+                      resolve(settle(sorted));
+                    },
+                  };
                 },
               };
             },

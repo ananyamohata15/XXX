@@ -10,12 +10,38 @@ export interface DbCheck {
   error: string | null;
 }
 
+/**
+ * Absence-based alerting for the XXX-25 compliance sweep: the check asserts
+ * the *evidence of success* (a recent ttl_sweep trace), so it catches every
+ * upstream failure mode — job erroring, job unscheduled, scheduler dead —
+ * without needing any of them to report in.
+ */
+export interface TtlSweepCheck {
+  ok: boolean;
+  lastRunAt: string | null;
+  ageMinutes: number | null;
+  error: string | null;
+}
+
+export interface HealthWarning {
+  code: string;
+  message: string;
+}
+
 export interface HealthReport {
   status: "healthy" | "unhealthy";
-  checks: { db: DbCheck };
+  checks: { db: DbCheck; ttlSweep: TtlSweepCheck };
+  /** Non-fatal, action-needed notices (severity tiering: Checkpoint 1 ruling 5). */
+  warnings: HealthWarning[];
   version: string;
   timestamp: string;
 }
+
+/**
+ * Hourly cadence + one missed slot of slack. Staleness beyond this means the
+ * compliance sweep is not running — unhealthy (503), not a warning.
+ */
+const TTL_SWEEP_MAX_AGE_MINUTES = 120;
 
 /**
  * Checks Supabase connectivity and records the check itself as a trace
@@ -38,14 +64,20 @@ export async function checkHealth(
     ? await checkDb(supabase)
     : { ok: false, latencyMs: null, error: configError };
 
+  const warnings: HealthWarning[] = [];
+  const ttlSweep: TtlSweepCheck = supabase
+    ? await checkTtlSweep(supabase, warnings)
+    : { ok: false, lastRunAt: null, ageMinutes: null, error: configError };
+
   if (supabase) {
     await recordHealthTrace(supabase, db);
   }
 
   const sha = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
   return {
-    status: db.ok ? "healthy" : "unhealthy",
-    checks: { db },
+    status: db.ok && ttlSweep.ok ? "healthy" : "unhealthy",
+    checks: { db, ttlSweep },
+    warnings,
     version: sha ? `${pkg.version}+${sha}` : pkg.version,
     timestamp: new Date().toISOString(),
   };
@@ -65,6 +97,65 @@ async function checkDb(supabase: SupabaseClient): Promise<DbCheck> {
     return {
       ok: false,
       latencyMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function checkTtlSweep(
+  supabase: SupabaseClient,
+  warnings: HealthWarning[],
+): Promise<TtlSweepCheck> {
+  try {
+    const { data, error } = await supabase
+      .from("traces")
+      .select("started_at, metadata")
+      .eq("kind", "ttl_sweep")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      return { ok: false, lastRunAt: null, ageMinutes: null, error: error.message };
+    }
+    const latest = data?.[0];
+    if (!latest) {
+      return {
+        ok: false,
+        lastRunAt: null,
+        ageMinutes: null,
+        error: "no ttl_sweep trace exists — sweep has never run or its schedule is dead",
+      };
+    }
+    const lastRunAt = latest.started_at as string;
+    const ageMinutes = Math.round(
+      (Date.now() - new Date(lastRunAt).getTime()) / 60_000,
+    );
+    const stale = ageMinutes > TTL_SWEEP_MAX_AGE_MINUTES;
+
+    const expiring = Number(
+      (latest.metadata as Record<string, unknown> | null)?.[
+        "expiring_within_7d"
+      ] ?? 0,
+    );
+    if (!stale && expiring > 0) {
+      warnings.push({
+        code: "coords_expiring",
+        message: `${expiring} coordinates expire within 7 days — run: npx tsx scripts/discover-toronto.ts --full`,
+      });
+    }
+
+    return {
+      ok: !stale,
+      lastRunAt,
+      ageMinutes,
+      error: stale
+        ? `latest ttl_sweep trace is ${ageMinutes} min old (limit ${TTL_SWEEP_MAX_AGE_MINUTES})`
+        : null,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      lastRunAt: null,
+      ageMinutes: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }

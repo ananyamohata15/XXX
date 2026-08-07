@@ -2,9 +2,20 @@ import { describe, expect, it } from "vitest";
 import { checkHealth } from "@/server/health";
 import { createFakeSupabase } from "./fixtures/fake-supabase";
 
+/** A ttl_sweep trace row as the health check reads it. */
+function sweepTrace(ageMinutes: number, metadata: Record<string, unknown> = {}) {
+  return {
+    kind: "ttl_sweep",
+    started_at: new Date(Date.now() - ageMinutes * 60_000).toISOString(),
+    metadata: { rows_examined: 760, rows_expired: 0, expiring_within_7d: 0, ...metadata },
+  };
+}
+
 describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
   it("reports healthy and records a trace with one event when the db responds", async () => {
-    const fake = createFakeSupabase();
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(30)] },
+    });
 
     const report = await checkHealth(fake.client);
 
@@ -12,6 +23,7 @@ describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
     expect(report.checks.db.ok).toBe(true);
     expect(report.checks.db.error).toBeNull();
     expect(report.checks.db.latencyMs).toEqual(expect.any(Number));
+    expect(report.warnings).toEqual([]);
     expect(report.version).toBeTruthy();
     expect(new Date(report.timestamp).getTime()).not.toBeNaN();
 
@@ -36,5 +48,60 @@ describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
     expect(report.checks.db.ok).toBe(false);
     expect(report.checks.db.error).toBe("connection refused");
     expect(fake.inserts).toHaveLength(0);
+  });
+});
+
+describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
+  it("is unhealthy when no ttl_sweep trace exists (sweep never ran / schedule dead)", async () => {
+    const fake = createFakeSupabase({ rows: { traces: [] } });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.checks.db.ok).toBe(true);
+    expect(report.checks.ttlSweep.ok).toBe(false);
+    expect(report.checks.ttlSweep.lastRunAt).toBeNull();
+    expect(report.checks.ttlSweep.error).toMatch(/never run|schedule is dead/);
+    expect(report.status).toBe("unhealthy");
+  });
+
+  it("is unhealthy when the latest ttl_sweep trace is older than 2 hours", async () => {
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(121)] },
+    });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.checks.ttlSweep.ok).toBe(false);
+    expect(report.checks.ttlSweep.ageMinutes).toBeGreaterThan(120);
+    expect(report.checks.ttlSweep.error).toMatch(/121 min old/);
+    expect(report.status).toBe("unhealthy");
+  });
+
+  it("picks the newest trace when several exist", async () => {
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(300), sweepTrace(10), sweepTrace(180)] },
+    });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.checks.ttlSweep.ok).toBe(true);
+    expect(report.checks.ttlSweep.ageMinutes).toBe(10);
+    expect(report.status).toBe("healthy");
+  });
+
+  it("surfaces the coords_expiring warning without going unhealthy", async () => {
+    const fake = createFakeSupabase({
+      rows: { traces: [sweepTrace(5, { expiring_within_7d: 412 })] },
+    });
+
+    const report = await checkHealth(fake.client);
+
+    expect(report.status).toBe("healthy"); // a to-do, not an outage
+    expect(report.warnings).toEqual([
+      {
+        code: "coords_expiring",
+        message: expect.stringContaining("412 coordinates expire within 7 days"),
+      },
+    ]);
   });
 });
