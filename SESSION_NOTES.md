@@ -183,6 +183,157 @@ list, expected $0 billed.**
 2. Confirm Routes API is enabled on the GCP project holding
    `GOOGLE_MAPS_API_KEY` (Places-only enablement would 403).
 
+**CHECKPOINT 2 outcome — approved** (design + ≤$0.12 gate;
+constraint-as-law trio and founder-shadows-ORS precedence ratified).
+`ORS_API_KEY` provisioned; Routes API enablement confirmed.
+
+## Step 3 — Build + live probe (CHECKPOINT 3)
+
+Built and committed (`9fc0d99`, `3481595`): migration
+`20260807100000_travel_times.sql` (constraints-as-law + ceiling
+trigger), `ChainTravelProvider` (shared, pure), `src/server/travel/`
+(ors, google-transit, store, assemble), scripts (travel-pairs data,
+build-travel-matrix, travel-probe, travel-report), `tests/travel.test.ts`
+(chain fall-through, ceiling math incl. refresh-of-existing-pair and
+per-city independence, founder-shadows-ORS both insert orders). Four
+checks green pre-commit. Two env hiccups surfaced by script self-report
+(ORS_API_KEY name, then missing Supabase vars after the .env.local
+edit) — fixed by founder, no session reads of the file.
+
+Live results (all in production):
+
+- Migration applied via `npx supabase db push`.
+- Matrix build: trace `7d4b9381-6302-4a55-a239-53dbb4d8d0ac` — 4 ORS
+  Matrix calls (walk/cycle/drive city set + drive corridor), 21 ORS
+  rows + 8 founder tier-1 seeds, 0 unroutable, $0.
+- Probe: trace `8f590020-77e6-4335-bbaa-5189c38e13c5` — 3 Google
+  transit calls (Essentials, $0.015 list, $0 effective), departure
+  2026-08-15T18:00Z (Sat 14:00 EDT), 16 queries across 4 modes.
+- Provenance chain proven live: founder tier-1 rows shadow ORS tier-2
+  on baselined pairs; ROM→Nathan Phillips transit answered
+  `google_routes/2` (no founder row); deliberately-unstored
+  Distillery→Trinity walk fell through to `stub_haversine/3` (73 min —
+  pessimistic, safe direction).
+- 29 rows landed with full doc-003 fields (source/tier/license/
+  fetched_at): ORS rows `CC-BY-SA-4.0`-marked, founder rows license
+  null, fetched_at 2026-08-06 red-pen timestamp preserved.
+
+Engine-vs-founder comparison (founder adjudication pending at
+CHECKPOINT 3): see the checkpoint presentation table; notables —
+Beamsville→NOL ORS 44 vs founder 30 (Δ+14, biggest gap; ORS routes
+44.4 km), Harbourfront→Roundhouse ORS walk 8 vs founder 15 (0.6 km leg;
+founder time likely includes crowd/friction), transit Google 18/16 vs
+founder 15/12 (Δ+3/+4, schedule-dependent).
+
+### CHECKPOINT 3 verdicts (all founder rulings, 2026-08-08)
+
+- Engine-vs-founder table **accepted**; brisk-walk bias recorded as an
+  observation, **no global padding** applied.
+- **Beamsville→NOL — the doctrine ruling**: the founder's recalled 30
+  min was **disproven by live verification** (Maps, 39–44 min). ORS's
+  44 stands as the row of record; the founder seed was removed (the
+  build script now *reconciles* founder rows to the declared seed list,
+  so a deleted seed deletes its row). This is the **second
+  engine-corrects-founder instance** (after the January sunset), and
+  the doctrine it establishes: **tier-1 requires verified observation,
+  not memory** — verification sided with the engine, so the engine's
+  row governs.
+- Consequence — **golden-set v2.2**: Day 6's 30-min Beamsville→NOL gap
+  was infeasible against the real ~42-min drive. NOL arrival retimed
+  11:15 → 11:30 (45-min gap); document and fixture updated; exam
+  re-run **green (288 passed, was 287)** — the +1 is a new regression
+  test pinning the ruling both ways: against the engine's 44-min row,
+  the v2.1 timing trips `travel.infeasible` and the v2.2 timing is
+  clean.
+- Adjudications: all cycle rows accepted tier-2; walk NP→Rogers 23
+  accepted; **walk Kensington→ROM founder-measured at 30** (lived
+  29–30; tier-1 seed added, shadows ORS 25 — verified in the final
+  probe run); drive NOL-winery→Falls 35 accepted; transit ROM→NP 16
+  accepted.
+- Post-verdict runs: build trace `8e56b312-8beb-43c7-b23c-a5f9b16f196e`
+  (21 ORS rows refreshed, 8 founder rows, 1 stale founder row
+  reconciled away); final probe re-run confirms Kensington→ROM
+  `founder_measured/1` at 30 and Beamsville→NOL `ors_hosted/2` at 44
+  (PASS vs live-verified 42).
+
+## Step 4 — Close-out
+
+### Four checks
+
+`npm run lint` clean · `npm run typecheck` clean · `npm test` 288
+passed / 3 skipped · `npm run build` success (route table unchanged).
+All run after the final code state.
+
+### Posture of record (doc 003, ratified)
+
+(b)+(c): ORS-stored walk/cycle/drive in bounded CC-BY-SA-marked
+`travel_times` (hard 1,000 pairs/city ceiling, code + trigger, no
+override); transit request-scoped Google Routes, never stored
+(unrepresentable by constraint); founder-measured tier-1 seeds shadow
+engine rows — subject to the new verified-observation doctrine; fallback
+chain matrix → live → stub with honest tier downgrade 1/2 → 2 → 3.
+
+### Probe vs founder — final state of record
+
+| Pair | Mode | Row of record | Founder | Verdict |
+|---|---|---|---|---|
+| Kensington→Graffiti Alley | walk | founder/1 · 12 (ORS 11) | 12 | pass |
+| Harbourfront→Roundhouse | walk | founder/1 · 15 (ORS 8) | 15 | pass; brisk-walk bias noted |
+| Market→Distillery | walk | founder/1 · 20 (ORS 14) | 20 | pass; same note |
+| Kensington→ROM | walk | **founder/1 · 30** (ORS 25) | 29–30 lived | founder override |
+| NP→Rogers Centre | walk | ors/2 · 23 | — | accepted tier-2 |
+| Kensington→Trinity Bellwoods | cycle | ors/2 · 9 | — | accepted tier-2 |
+| Market→Distillery | cycle | ors/2 · 5 | — | accepted tier-2 |
+| Kensington→ROM | cycle | ors/2 · 11 | — | accepted tier-2 |
+| NP→Beamsville | drive | founder/1 · 75 (ORS 68) | 75 | pass |
+| **Beamsville→NOL** | drive | **ors/2 · 44** | recalled 30 → verified 39–44 | **engine governs; doctrine ruling** |
+| NOL winery→Falls | drive | ors/2 · 35 | — | accepted tier-2 |
+| Falls→NP | drive | founder/1 · 90 (ORS 95) | 90 | pass |
+| Graffiti Alley→Harbourfront | transit | founder/1 · 15 (Google 18) | 15 | pass |
+| Market→Distillery | transit | founder/1 · 12 (Google 16) | 12 | pass |
+| ROM→NP | transit | google/2 · 16 (request-scoped) | "subway 2 stops" | accepted |
+| Distillery→Trinity (fallthrough) | walk | stub/3 · 73 | — | honest downgrade proven |
+
+### Cost actuals
+
+- ORS: 8 Matrix requests across two build runs (quota 500/day) — $0.
+- Google Routes transit: 6 Essentials calls across two probe runs —
+  $0.03 list, **$0 billed expected** (10K/mo free cap). Verify the
+  Essentials inference on the first bill (standing trigger: if Pro,
+  cost doubles and GTFS accelerates).
+- Total session spend: **$0.03 list / $0 expected** vs the ≤$15 gate.
+- Traces: builds `7d4b9381…`, `8e56b312…`; probes `8f590020…` + final
+  run (all with per-call provider/endpoint/cost/duration events).
+
+### Forward notes
+
+- **Session 7 stub replacement point**: context assembly now calls
+  `assembleTravelProvider()` (src/server/travel/assemble.ts) — for E4
+  generation this is a one-line provider swap where the validator
+  context is built (`travel: assembled.provider` instead of
+  `new HaversineStubProvider()`). Zero validator changes, as promised.
+- **E4 cost-per-generation line item**: walk/cycle/drive $0 (stored);
+  transit ~2–4 legs/day × $0.005 = **$0.010–$0.020/generated day at
+  list, $0 inside free cap** (≈2,500–5,000 free days/mo). Feeds E8
+  unit economics.
+- **XXX-29's travel-cost model is now real**: the optimizer's
+  feasibility oracle can read stored ORS deltas for walk/cycle/drive
+  swaps at $0 marginal cost; transit deltas price at $0.005/leg —
+  request-scoped, so offer evaluation should batch transit lookups per
+  proposal round.
+- **London/Delhi source questions (flagged, not researched)**: London —
+  TfL open data license terms for its GTFS-equivalent feeds; Delhi —
+  DMRC/DTC GTFS availability and freshness (Delhi is the stress test),
+  and auto-rickshaw fare estimation as tier-2 ranges per 001's
+  ranges-not-points law. Each new city's sources get a doc-003-style
+  pass before any storage.
+- **GTFS build trigger** (standing): if transit ever bills Pro, or
+  volume escapes the free cap, the OGL-licensed TTC schedule build
+  (stored, bucketable, $0) is the recorded successor — doc 003 §4.
+- **ORS matrix freshness**: no legal ceiling; refresh policy is ours.
+  Proposed: re-run build quarterly or on OSM-drift complaints;
+  `fetched_at` carries staleness per row (E8 freshness stamps read it).
+
 # Session 7 — Day-grammar validator (XXX-5 layer 2) + golden set as fixtures (XXX-26)
 
 Branch: `session-7-day-grammar`. Status: **complete** — four checks green.
