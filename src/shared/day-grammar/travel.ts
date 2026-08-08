@@ -95,3 +95,23 @@ export class MatrixTravelProvider implements TravelTimeProvider {
     return this.matrix[MatrixTravelProvider.key(query)] ?? null;
   }
 }
+
+/**
+ * First non-null estimate wins (XXX-24 fallback chain: stored matrix →
+ * stub, with provenance downgrading honestly at each step — the answer
+ * carries whichever provider's source/tier actually produced it, and the
+ * validator's tolerance policy reads that tier). Pure composition; an
+ * empty chain answers null, which the validator already treats as
+ * honest absence.
+ */
+export class ChainTravelProvider implements TravelTimeProvider {
+  constructor(private readonly providers: readonly TravelTimeProvider[]) {}
+
+  estimate(query: TravelQuery): TravelEstimate | null {
+    for (const provider of this.providers) {
+      const estimate = provider.estimate(query);
+      if (estimate !== null) return estimate;
+    }
+    return null;
+  }
+}

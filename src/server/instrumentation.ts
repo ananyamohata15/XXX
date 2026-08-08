@@ -20,7 +20,9 @@ export type TraceKind =
   // 20260806200000), not through this module — listed in the union so
   // readers (health checks, reports) share one vocabulary of kinds.
   | "ttl_sweep"
-  | "weather_ingest";
+  | "weather_ingest"
+  | "travel_matrix"
+  | "travel_probe";
 
 export interface TraceEvent {
   provider: string;
