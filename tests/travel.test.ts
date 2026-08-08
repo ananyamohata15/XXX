@@ -12,6 +12,9 @@ import {
   MatrixTravelProvider,
 } from "@/shared/day-grammar/travel";
 import type { TravelQuery } from "@/shared/day-grammar/types";
+import { validateDay } from "@/shared/day-grammar/validate";
+import { goldenDay6 } from "@/shared/fixtures/golden/day-6-excursion";
+import { contextFor } from "@/shared/fixtures/golden/support";
 import {
   PAIR_CEILING,
   buildMatrixRecord,
@@ -146,6 +149,39 @@ describe("buildMatrixRecord", () => {
         provenance: { source: "founder_measured", tier: TIERS.verified },
       });
     }
+  });
+
+  it("pins the Beamsville→NOL doctrine ruling: engine row governs, v2.1 timing infeasible", () => {
+    // CHECKPOINT 3 (2026-08-08): the founder's recalled 30-min drive was
+    // disproven by live verification (39–44 min); golden-set v2.2 retimed
+    // NOL arrival 11:15 → 11:30. Against the engine's 44-min row, the old
+    // timing must trip travel.infeasible and the retimed day must not.
+    const beamsville = { lat: 43.165, lng: -79.475 };
+    const nol = { lat: 43.2557, lng: -79.0715 };
+    const engineRow = new MatrixTravelProvider({
+      [MatrixTravelProvider.key({ origin: beamsville, destination: nol, mode: "drive" })]: {
+        minutes: 44,
+        provenance: { source: "ors_hosted", tier: TIERS.observed },
+      },
+    });
+    const provider = new ChainTravelProvider([
+      engineRow,
+      new HaversineStubProvider(),
+    ]);
+
+    const retimed = validateDay(goldenDay6.day, contextFor(goldenDay6, provider));
+    expect(
+      retimed.filter((v) => v.ruleId === "travel.infeasible"),
+    ).toEqual([]);
+
+    const v21Day = {
+      ...goldenDay6.day,
+      slots: goldenDay6.day.slots.map((s) =>
+        s.id === "s2" ? { ...s, startTime: "11:15" } : s,
+      ),
+    };
+    const v21 = validateDay(v21Day, contextFor(goldenDay6, provider));
+    expect(v21.some((v) => v.ruleId === "travel.infeasible")).toBe(true);
   });
 
   it("keeps modes distinct — a drive row never answers a walk query", () => {

@@ -2,6 +2,16 @@
 
 Status: Days 1–6 red-penned by founder 2026-08-06. Remaining open items marked [OPEN]. Everything else is regression truth for E4.
 
+**v2.2 (2026-08-08, Session 8 CHECKPOINT 3)**: Day 6 retimed — the
+founder's recalled 30-min Beamsville→NOL drive was disproven by live
+verification (39–44 min; ORS row 44). NOL old-town arrival moves
+11:15 → 11:30 (45-min gap for the real ~42-min drive); everything
+downstream unchanged. Second engine-corrects-founder instance (after
+the January sunset), and the doctrine it established: **tier-1 requires
+verified observation, not memory** — verification sided with the
+engine, so the engine's row governs and no founder seed exists for
+this leg.
+
 ---
 
 ## Day 1 — Summer Saturday with a Jays game (ANCHORED)
@@ -82,7 +92,7 @@ Status: Days 1–6 red-penned by founder 2026-08-06. Remaining open items marked
 **Route (founder-corrected for corridor monotonicity): Toronto → Beamsville → Niagara-on-the-Lake → Falls → Toronto — no backtracking.**
 - 08:30 — depart Toronto (founder: weekend QEW okay-ish; late departure costs +20–30 min minimum)
 - 09:45–10:45 — Beamsville bench: ONE tasting stop (DD constraint active)
-- 11:15–13:00 — Niagara-on-the-Lake old town — Queen St, lake edge
+- 11:30–13:00 — Niagara-on-the-Lake old town — Queen St, lake edge (v2.2: was 11:15; Beamsville→NOL is a live-verified ~42-min drive, not the recalled 30)
 - 13:00–14:30 — winery lunch, NOL (founder: Peller/Trius/Ravine all fine — booking recommended = soft anchor)
 - 15:30–17:30 — Niagara Falls — Table Rock walk; Clifton Hill = opt-in tourist-trap tax
 - 18:00–19:15 — **falls-adjacent dinner: Napoli Ristorante (founder pick)**, then depart ~19:30, home ~21:00

@@ -117,10 +117,13 @@ const day: GrammarDay = {
   places,
   slots: [
     slot({ id: "s1", place: "beamsville", from: "09:45", to: "10:45", by: "drive" }),
-    // 12:40, not the document's 13:00: the winery is a 2.5 km drive from
-    // the old town and lunch is booked for 13:00. Adjudicated at Session 7
-    // CHECKPOINT 2.
-    slot({ id: "s2", place: "nol", from: "11:15", to: "12:40", by: "drive" }),
+    // 11:30 arrival (golden-set v2.2): the founder's recalled 30-min
+    // Beamsville→NOL drive was disproven by live verification at Session 8
+    // CHECKPOINT 3 — the real drive is 39–44 min (ORS row: 44), so the
+    // v2.1 11:15 start was infeasible. 12:40 end, not the document's
+    // 13:00: the winery is a 2.5 km drive from the old town and lunch is
+    // booked for 13:00 (Session 7 CHECKPOINT 2).
+    slot({ id: "s2", place: "nol", from: "11:30", to: "12:40", by: "drive" }),
     slot({ id: "s3", place: "peller", from: "13:00", to: "14:30", kind: "meal", by: "drive" }),
     slot({ id: "s4", place: "tablerock", from: "15:30", to: "17:30", by: "drive" }),
     slot({ id: "s5", place: "napoli", from: "18:00", to: "19:15", kind: "meal", by: "drive" }),
