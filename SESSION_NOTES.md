@@ -1,3 +1,188 @@
+# Session 8 — Travel-time licensing (doc 003) + Toronto travel capability (XXX-24)
+
+Branch: `session-8-travel-matrix`. Status: **in progress**.
+Scope: decision doc 003 (travel-time source licensing, ALL candidate
+sources), then — per its rulings — the Toronto walk/cycle/drive + transit
+capability behind Session 7's `TravelTimeProvider`, with whatever storage
+posture the doc permits. Out of scope: grammar rules; self-hosting
+build-out; London/Delhi data; any UI; any generation.
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### Prior-art reads (all done before any work)
+
+- **Doc 001** — the use-vs-access framing's origin; the non-Google-map
+  prohibition (§3); request-scoped-in-memory-is-use-not-caching
+  (ambiguity 2) — the pattern any request-scoped travel answer inherits.
+- **Doc 002** — the ODbL Derivative-vs-Collective analysis (§2) that doc
+  003's durations question starts from; the **use-vs-access standing
+  rule** (Channel Addendum) that applies to every source this session.
+- **XXX-25 comment 10288** — the flag that makes this session: "Google
+  Routes content sits under the same no-caching regime — a Routes ToS
+  pass (decision-doc treatment) is required before any travel-time
+  caching is built; CLAUDE.md's 'Google Routes (transit, cached)' line is
+  provisional until then."
+- **XXX-24 ticket text** — assumes cached matrix, ORS walk/cycle/drive +
+  Google Routes transit with time-of-day buckets. Written before docs
+  001/002 existed; likely superseded in part by doc 003 (a superseding
+  comment is planned, like XXX-22 got).
+- **Session 7's seam** (`src/shared/day-grammar/types.ts`,
+  `travel.ts`) — `TravelTimeProvider.estimate(TravelQuery) →
+  TravelEstimate | null`, synchronous by design; networked providers
+  pre-fetch and hand the validator a `MatrixTravelProvider` reader.
+  Session 8 builds behind this interface; zero validator changes is the
+  standing claim to honor.
+
+### Settings check
+
+Reviewed `.claude/settings.json` against this session's needs.
+**No changes proposed — confirmed as expected.**
+
+- `Bash(npx tsx:*)` remains **ask** — every matrix-building or
+  API-calling probe run prompts individually. That is the cost gate
+  working, not friction to remove.
+- Licensing research runs on `WebFetch`, ask-gated per new domain
+  (openrouteservice.org, TTC/Toronto open-data, Google terms pages —
+  google/developers domains already allowed from doc 001's session).
+- `.env.local` stays out of bounds (deny rules intact); any API keys
+  reach probe scripts via `--env-file` in the ask-gated command line,
+  never read by the session.
+- The four allowlisted `npx tsx scripts/*-report.ts` entries are all
+  read-only report tools; nothing this session extends that list unless
+  a new read-only report tool earns it at a checkpoint, per the
+  widen-at-proven-need principle.
+
+**CHECKPOINT 0 outcome — approved.** No settings changes; build strictly
+behind the existing `TravelTimeProvider` seam.
+
+## Step 1 — Decision doc 003 (CHECKPOINT 1)
+
+`docs/decisions/003-travel-time-licensing.md` written; research date
+2026-08-07, all sources live. Findings that decide the architecture:
+
+1. **Google Routes**: SST §19.3 grants caching for lat/lng only (30
+   days). Durations have **no storage grant of any scope** — the XXX-24
+   "cached transit with time-of-day buckets" plan is not permitted under
+   current terms. §19.1 expressly permits mapless use → durations on the
+   timeline are fine, with Google Maps attribution per the Routes
+   policies page. Transit bills as Compute Routes **Essentials**
+   ($5/1,000, 10K events/mo free) — inferred from absence in
+   Pro/Enterprise trigger lists, verify-on-first-bill flagged.
+2. **ORS hosted (HeiGIT)**: the ToS licenses "Results obtained from
+   openrouteservice in any context … under CC-BY-SA 4.0" — storage of
+   computed durations is *expressly permitted* as licensed content
+   (attribution + share-alike per work, NOT ODbL-style database
+   copyleft). No commercial-use prohibition in the ToS. Free tier:
+   Matrix 500 req/day, Directions 2,000/day. ToS text extracted from
+   the account app's JS bundles (SPA; method recorded as ambiguity 6).
+3. **ODbL-for-durations** (the deep question): OSMF guidelines don't
+   settle it; doc argues a bounded matrix of computed minutes is not a
+   Derivative Database (zero OSM Contents, not reverse-engineerable,
+   operator licenses results as content, insubstantial scale) — with a
+   hard conservative rider: **≤~1,000 stored pairs/city; bulk matrix
+   construction requires a new decision pass.**
+4. **TTC GTFS**: Open Government Licence – Toronto v1.0 — full
+   commercial grant (copy/modify/publish/adapt), one attribution line.
+   Cleanest source in the doc. Schedule-derived transit estimates we
+   compute are ours to store; quality trade vs live routing stated
+   (no real-time, no multi-agency, transfers need a real algorithm).
+5. **Self-hosted OSRM/ORS**: engines BSD-2/GPL-3 (no constraint at our
+   use); ODbL seat-swap recorded; ~$10–20/mo + ops surface; escape
+   hatch only.
+
+**Recommended posture (b)+(c)**: store ORS walk/cycle/drive in a bounded
+`travel_times` table; transit request-scoped via Google Routes (GTFS
+build recorded as successor); founder-measured golden pairs as tier-1
+seeds; fallback chain matrix → live → stub with honest tier downgrade
+(2→2→3). E4 cost: $0 walk/cycle/drive; transit $0.010–$0.020 per
+generated day at list, $0 inside the free cap.
+
+Rulings requested at CHECKPOINT 1: the ODbL-for-durations reading (+
+pair ceiling) and the storage posture.
+
+**CHECKPOINT 1 outcome — doc 003 RATIFIED, both rulings granted**, with
+hardenings recorded in the doc's Checkpoint 1 Outcome addendum: (1) the
+~1,000 pairs/city ceiling is a hard, code-enforced limit — storage layer
+refuses writes, no override flag, breach = new decision pass; no-ML rider
+carried. (2) Posture (b)+(c) ratified as specified; TRANSIT-SKU
+Essentials inference verified on first bill — if it bills Pro, cost
+doubles and the GTFS build accelerates (standing trigger). (3) E8
+forward-note: attribution is per-leg and provenance-routed (HeiGIT line
+for ORS pills, Google Maps mark for Google transit durations, nothing for
+stub guesses); credits surface gains HeiGIT + OGL–Toronto lines alongside
+FSQ and Open-Meteo. XXX-24 superseding comment at Step 4.
+
+## Step 2 — Design + cost gate (CHECKPOINT 2)
+
+### Sources per mode (per doc 003 §6)
+
+walk/cycle/drive → stored ORS matrix (bounded table); transit →
+request-scoped Google Routes, never stored; founder-measured golden
+pairs → tier-1 seed rows (may include transit — they are our own
+observations); floor → Session 7 haversine stub, tier 3.
+
+### Schema: `travel_times` (migration `20260807100000_travel_times.sql`)
+
+House provenance shape (source/tier/fetched_at), plus `license` marking
+CC-BY-SA rows. Identity = city + labeled directed coordinate pair +
+mode + source. Constraints carry the doc's rulings into the schema:
+source whitelist `('ors_hosted','founder_measured')` (a
+`google_routes` row is *unrepresentable*), ORS rows restricted to
+walk/cycle/drive, and a trigger enforcing the 1,000 distinct directed
+pairs/city ceiling with `RAISE EXCEPTION` — no override path, per the
+Checkpoint 1 ruling. Unique key includes source so a founder row and an
+ORS row coexist; reads prefer tier 1. RLS enabled, zero policies (house
+posture). Transit from Google is enforced-unstorable at the database
+layer, not just by convention.
+
+### Code layout (validator untouched — everything behind the seam)
+
+- `src/server/travel/ors.ts` — hosted ORS Matrix client (zod-parsed,
+  profiles foot-walking/cycling-regular/driving-car, traced with
+  est_cost_usd 0).
+- `src/server/travel/google-transit.ts` — request-scoped computeRoutes
+  TRANSIT (zod-parsed, minimal field mask, traced at $0.005/call,
+  returns in-memory estimates only — no write path exists).
+- `src/server/travel/store.ts` — travel_times read/write; write path
+  re-checks ceiling + whitelist (belt to the trigger's suspenders);
+  read path builds the `MatrixTravelProvider` record for a day's pairs
+  (tier-1 rows shadow tier-2 on the same pair+mode).
+- `src/shared/day-grammar/travel.ts` — add `ChainTravelProvider`
+  (~10 pure lines, first non-null estimate wins). Matrix → stub chain;
+  transit prefetch merges into the same record at assembly time.
+- `scripts/build-travel-matrix.ts` — ORS build + founder-seed
+  ingestion, idempotent upserts, traced (`travel_matrix` kind).
+- `scripts/travel-probe.ts` — CHECKPOINT 3 proof: 4 modes × probe
+  pairs through the real chain, founder-comparison table, provenance
+  shown per answer, trace with costs (`travel_probe` kind).
+
+### Probe set (~15 directed pairs, golden-set coords)
+
+City walk/transit pairs (founder lived estimates in golden-set v2):
+Kensington→Graffiti Alley (~12 walk), Graffiti Alley→Harbourfront
+(~15 streetcar), Harbourfront→Roundhouse (~15 walk), St. Lawrence
+Market→Distillery (~20 walk / ~12 via 504), ROM-area→Nathan Phillips
+(subway 2 stops), plus brief-mandated Kensington→ROM and
+downtown→Rogers Centre. Day-6 corridor drive legs: Toronto→Beamsville
+(~75), Beamsville→NOL (~30), NOL→Falls, Falls→Toronto (~90). Cycle has
+no recorded founder baselines — founder adjudicates cycle rows live at
+CHECKPOINT 3 (stated, not papered over).
+
+### Cost estimate (gate ≤$15)
+
+ORS: 3 Matrix calls + retries ≤10 requests vs 500/day free — $0.
+Google transit: ~8 pairs, ≤3 runs ≤24 Essentials calls — $0.12 list,
+$0 effective (10K/mo free cap). Founder seeds/stub: $0. **Total ≤$0.12
+list, expected $0 billed.**
+
+### Founder actions needed before Step 3
+
+1. HeiGIT/ORS account + API key → `ORS_API_KEY` in `.env.local`
+   (access gate accepted deliberately, use-vs-access rule; key stays
+   out of session bounds, reaches scripts via `--env-file`).
+2. Confirm Routes API is enabled on the GCP project holding
+   `GOOGLE_MAPS_API_KEY` (Places-only enablement would 403).
+
 # Session 7 — Day-grammar validator (XXX-5 layer 2) + golden set as fixtures (XXX-26)
 
 Branch: `session-7-day-grammar`. Status: **complete** — four checks green.
