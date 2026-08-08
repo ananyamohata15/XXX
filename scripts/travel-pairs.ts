@@ -99,12 +99,20 @@ export interface FounderSeed {
   mode: TransportMode;
   minutes: number;
   note: string;
+  /** Overrides FOUNDER_FETCHED_AT for observations made after red-pen. */
+  fetchedAt?: string;
 }
 
 /**
- * The founder's lived estimates, verbatim from golden-set v2
- * (red-penned 2026-08-06). Tier 1: a human traveled these. Stored as
- * seed rows that shadow same-pair ORS answers.
+ * The founder's lived estimates. Tier 1: a VERIFIED observation — a
+ * human traveled (or live-checked) these; memory alone does not
+ * qualify. Doctrine, from the CHECKPOINT 3 Beamsville→NOL ruling
+ * (2026-08-08): the founder's recalled 30 min was disproven by live
+ * verification (39–44), so the seed was removed and the engine's row
+ * governs — the second engine-corrects-founder instance, after the
+ * January sunset. Stored seed rows shadow same-pair ORS answers;
+ * build-travel-matrix.ts reconciles the DB to exactly this list, so
+ * deleting an entry here deletes the row.
  */
 export const FOUNDER_SEEDS: readonly FounderSeed[] = [
   { origin: "kensington", dest: "graffiti-alley", mode: "walk", minutes: 12, note: "Day 1: (walk ~12 min)" },
@@ -113,8 +121,15 @@ export const FOUNDER_SEEDS: readonly FounderSeed[] = [
   { origin: "st-lawrence-market", dest: "distillery", mode: "walk", minutes: 20, note: "Day 2: (walk ~20 min…)" },
   { origin: "st-lawrence-market", dest: "distillery", mode: "transit", minutes: 12, note: "Day 2: (…or 504 ~12)" },
   { origin: "nathan-phillips", dest: "beamsville", mode: "drive", minutes: 75, note: "Day 6: depart 08:30 → 09:45" },
-  { origin: "beamsville", dest: "nol-old-town", mode: "drive", minutes: 30, note: "Day 6: 10:45 → 11:15" },
   { origin: "falls", dest: "nathan-phillips", mode: "drive", minutes: 90, note: "Day 6: depart ~19:30, home ~21:00" },
+  {
+    origin: "kensington",
+    dest: "rom",
+    mode: "walk",
+    minutes: 30,
+    note: "CHECKPOINT 3 adjudication: founder states 29–30 lived; overrides ORS 25",
+    fetchedAt: "2026-08-08T16:30:00-04:00",
+  },
 ];
 
 /** Red-pen timestamp — the moment these observations were current. */
@@ -136,7 +151,7 @@ export const PROBE_QUERIES: readonly ProbeQuery[] = [
   { origin: "harbourfront", dest: "roundhouse", mode: "walk", founderMinutes: 15, note: "Day 1 leg" },
   { origin: "st-lawrence-market", dest: "distillery", mode: "walk", founderMinutes: 20, note: "Day 2 leg" },
   // walk — no recorded baseline (brief-mandated pairs)
-  { origin: "kensington", dest: "rom", mode: "walk", founderMinutes: null, note: "brief pair" },
+  { origin: "kensington", dest: "rom", mode: "walk", founderMinutes: 30, note: "brief pair; founder-measured 29–30 (CHECKPOINT 3)" },
   { origin: "nathan-phillips", dest: "rogers-centre", mode: "walk", founderMinutes: null, note: "brief pair (downtown→Rogers)" },
   // cycle — no founder baselines exist; live adjudication at CHECKPOINT 3
   { origin: "kensington", dest: "trinity-bellwoods", mode: "cycle", founderMinutes: null, note: "adjudicate" },
@@ -144,7 +159,7 @@ export const PROBE_QUERIES: readonly ProbeQuery[] = [
   { origin: "kensington", dest: "rom", mode: "cycle", founderMinutes: null, note: "adjudicate" },
   // drive — Day-6 corridor
   { origin: "nathan-phillips", dest: "beamsville", mode: "drive", founderMinutes: 75, note: "Day 6 leg (08:30 weekday-adjacent)" },
-  { origin: "beamsville", dest: "nol-old-town", mode: "drive", founderMinutes: 30, note: "Day 6 leg" },
+  { origin: "beamsville", dest: "nol-old-town", mode: "drive", founderMinutes: 42, note: "Day 6 leg; founder live-verified 39–44 (2026-08-08) — engine row governs, recalled 30 disproven" },
   { origin: "nol-winery", dest: "falls", mode: "drive", founderMinutes: null, note: "Day 6 leg (schedule has slack — adjudicate)" },
   { origin: "falls", dest: "nathan-phillips", mode: "drive", founderMinutes: 90, note: "Day 6 return" },
   // transit — live Google, request-scoped

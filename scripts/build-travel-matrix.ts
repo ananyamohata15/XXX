@@ -140,17 +140,55 @@ async function main() {
     source: "founder_measured",
     tier: TIERS.verified,
     license: null,
-    fetchedAt: FOUNDER_FETCHED_AT,
+    fetchedAt: seed.fetchedAt ?? FOUNDER_FETCHED_AT,
     traceId,
   }));
 
   await upsertTravelTimes(supabase, [...rows, ...seedRows]);
+
+  // Reconcile: FOUNDER_SEEDS is the declared truth for tier-1 rows. A
+  // seed removed from the list (a disproven recollection — the
+  // Beamsville→NOL doctrine ruling) is deleted here, so the engine's
+  // row governs again. Only founder rows are reconciled; ORS rows are
+  // refreshed by upsert.
+  const declaredKeys = new Set(
+    seedRows.map(
+      (s) =>
+        `${s.origin.lat},${s.origin.lng}|${s.dest.lat},${s.dest.lng}|${s.mode}`,
+    ),
+  );
+  const { data: founderRows, error: founderReadError } = await supabase
+    .from("travel_times")
+    .select("id, origin_lat, origin_lng, dest_lat, dest_lng, mode")
+    .eq("city", CITY)
+    .eq("source", "founder_measured");
+  if (founderReadError) {
+    throw new Error(`founder reconcile read failed: ${founderReadError.message}`);
+  }
+  const staleIds = (founderRows ?? [])
+    .filter(
+      (r) =>
+        !declaredKeys.has(
+          `${r.origin_lat},${r.origin_lng}|${r.dest_lat},${r.dest_lng}|${r.mode}`,
+        ),
+    )
+    .map((r) => r.id);
+  if (staleIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("travel_times")
+      .delete()
+      .in("id", staleIds);
+    if (deleteError) {
+      throw new Error(`founder reconcile delete failed: ${deleteError.message}`);
+    }
+  }
 
   await instrumentation.endTrace(traceId, {
     totalCostUsd: 0,
     metadata: {
       orsRows: rows.length,
       founderRows: seedRows.length,
+      reconciledStaleFounderRows: staleIds.length,
       skippedUnroutable: skipped,
     },
   });
@@ -162,6 +200,7 @@ async function main() {
         orsCalls: calls.length,
         orsRows: rows.length,
         founderRows: seedRows.length,
+        reconciledStaleFounderRows: staleIds.length,
         skippedUnroutable: skipped,
         estCostUsd: 0,
       },
