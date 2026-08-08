@@ -75,16 +75,33 @@ export function checkShape(day: GrammarDay, ctx: GrammarContext): Violation[] {
   if (ctx.lodging === null) {
     const required = ctx.params.structure.resetGapMinutes;
     for (let i = 1; i < slots.length; i += 1) {
-      const gap =
+      const clock =
         timeToMinutes(slots[i].startTime) - timeToMinutes(slots[i - 1].endTime);
+      // Time spent travelling is not time spent resting. A two-hour drive
+      // to Niagara is a leg, not a hotel reset, and reading it as one
+      // produced an advisory on every excursion.
+      const from = placeOf(day, slots[i - 1]);
+      const to = placeOf(day, slots[i]);
+      const travelMinutes =
+        from?.coords && to?.coords
+          ? (ctx.travel.estimate({
+              origin: from.coords,
+              destination: to.coords,
+              mode: slots[i].arriveBy,
+              departureLocal: slots[i - 1].endTime,
+            })?.minutes ?? 0)
+          : 0;
+      const gap = clock - travelMinutes;
       if (gap < required) continue;
       found.push(
         advisory(
           "structure.reset-gap-without-lodging",
           [slots[i - 1].id, slots[i].id],
-          `There is a ${Math.round(gap / 60 * 10) / 10}-hour gap after ${describePlace(placeOf(day, slots[i - 1]), slots[i - 1].placeId)}. That reads as a hotel reset, but no lodging location is known for this trip, so it cannot be confirmed as one.`,
+          `There is a ${Math.round((gap / 60) * 10) / 10}-hour gap after ${describePlace(from, slots[i - 1].placeId)} with nothing in it. That reads as a hotel reset, but no lodging location is known for this trip, so it cannot be confirmed as one.`,
           {
             gapMinutes: gap,
+            clockMinutes: clock,
+            travelMinutes,
             resetGapMinutes: required,
             afterSlotId: slots[i - 1].id,
             beforeSlotId: slots[i].id,

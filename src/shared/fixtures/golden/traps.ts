@@ -205,11 +205,14 @@ function corridorBacktrackTrap(): TrapFixture {
     places,
     slots: [
       // Trip-level departure anchor (XXX-27: arrival/departure bookend the day).
+      // Timed so the ONLY thing wrong with this day is the order: lunch
+      // still lands inside the classic window, every leg is feasible on
+      // the road matrix, and the 55-minute detour is the finding.
       slot({ id: "s0", place: "toronto", from: "08:00", to: "08:30", by: "drive", origin: "user" }),
-      slot({ id: "s1", place: "nol", from: "10:15", to: "12:00", by: "drive" }),
-      slot({ id: "s2", place: "beamsville", from: "12:30", to: "13:30", by: "drive" }),
-      slot({ id: "s3", place: "peller", from: "14:05", to: "15:30", kind: "meal", by: "drive" }),
-      slot({ id: "s4", place: "tablerock", from: "15:55", to: "17:30", by: "drive" }),
+      slot({ id: "s1", place: "nol", from: "10:15", to: "10:55", by: "drive" }),
+      slot({ id: "s2", place: "beamsville", from: "11:25", to: "12:25", by: "drive" }),
+      slot({ id: "s3", place: "peller", from: "13:00", to: "14:30", kind: "meal", by: "drive" }),
+      slot({ id: "s4", place: "tablerock", from: "14:55", to: "16:30", by: "drive" }),
       slot({ id: "s5", place: "napoli", from: "18:00", to: "19:15", kind: "meal", by: "drive" }),
     ],
   };
