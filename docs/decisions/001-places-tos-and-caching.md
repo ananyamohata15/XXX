@@ -249,3 +249,44 @@ decided at Checkpoint 2.
 5. **Billing-address regime**: Canadian billing assumed → non-EEA terms. If
    billing were ever moved into the EEA, this entire document must be
    redone against the EEA terms (different and in places stricter).
+
+---
+
+## Addendum — 2026-08-09 (Session 10, XXX-33 CP1 ruling)
+
+**Question.** XXX-33 requires every evidence row to record *the fact
+version that was displayed*, so a claim ("the price is wrong") is
+adjudicable against what the reporter actually saw. For Google-sourced
+facts (hours, business status, price) §3.2.3(a) and ambiguity 1 above
+forbid persisting the value. Recording nothing would make the claim
+unadjudicable; recording the value would breach the storage rule.
+
+**Ruling adopted.** Persist a **sha256 digest of the displayed value's
+canonical JSON** (`evidence.shown_digest`), never the value itself,
+alongside the metadata we already own outright — status, source, tier
+and `fetched_at`, which are our own observations about a fetch, not
+Google content (same reasoning as `discovered_places.coords_fetched_at`
+surviving the TTL sweep: the timestamp is Customer Data, the value is
+not).
+
+**Reasoning.** A cryptographic digest is one-way and
+non-reconstructible: it cannot be read back, decompiled into the
+original, substituted for Google content, or used to answer any question
+about a place. Its only capability is *change detection* — proving that
+what was displayed then differs from what is fetched now. That is
+strictly weaker than the "substantially transformed" test in the Derived
+content rule above, which the conservative reading already declines to
+lean on; a digest is not a derivative of the content's meaning at all,
+it is an opaque fingerprint of a byte sequence.
+
+**Scope limit.** The digest is stored only for adjudication of a
+reporter's claim. It is never used to reconstruct, compare against, or
+seed any place data; it never enters a generation, a score, or a
+training/eval dataset (the no-model-improvement rule above applies to it
+unchanged).
+
+**Cost of reversal.** If this reading is ever judged too liberal,
+dropping `shown_digest` costs only the ability to prove a value
+*changed*; the remaining `shown_*` columns still record what kind of
+fact was shown, from which source, at which tier, fetched when. One
+forward-only migration, no data model change.
