@@ -199,7 +199,574 @@ locally-set value.
 4. Secret-entry mechanism on the page (session-scoped, never in the URL).
 5. Streaming posture at the ≈8.5s seam vs honest skeleton-then-full.
 
-### CHECKPOINT 0 — awaiting ruling
+### CHECKPOINT 0 outcome — approved
+
+Secret confirmed set (Vercel Production + Preview + Development,
+Sensitive) and present in `.env.local`; presence to be confirmed by
+script self-report (name only) at first use. The fact-flip gap finding
+accepted and **elevated**: CP1 must design all three pieces, argue the
+override as boots-on-the-ground doctrine applied to generation, and
+state explicitly **how a founder correction ages against future fresher
+Google answers** — pinned-forever is not acceptable without argument.
+Pipeline change lands with a Tier-1 fixture test + Tier-2 live proof.
+
+## Step 1 — Design proposal (CHECKPOINT 1)
+
+### 1.1 Evidence + taste schema (XXX-33 — the load-bearing half)
+
+Three tables, in one forward-only migration
+`20260809000000_evidence_and_taste.sql`. RLS enabled, **zero policies**
+— server-only via service role, identical posture to `traces` and the
+core domain. XXX-17 adds policies when there is a user to add them for.
+
+**Table 1 — `reporters`: the authority ladder, from migration one.**
+
+```sql
+create table reporters (
+  id uuid primary key default gen_random_uuid(),
+  handle text not null unique,          -- 'founder' today; friends get theirs
+  authority text not null,              -- founder | trusted | user
+  -- XXX-17 has not happened: there is no auth.users row for the founder
+  -- yet. Identity is a handle we own; user_id is the seam that binds a
+  -- reporter to a real account when auth lands. NULL is honest today.
+  user_id uuid references auth.users (id) on delete set null,
+  granted_by uuid references reporters (id) on delete restrict,
+  granted_at timestamptz,
+  revoked_at timestamptz,               -- revoke without deleting history
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint reporters_authority_valid
+    check (authority in ('founder', 'trusted', 'user')),
+  -- 10297: appointment is audited. 'trusted' is APPOINTED and must say by
+  -- whom and when; 'founder' is the root of trust and has no granter (an
+  -- operator who appointed themselves is the honest description); 'user'
+  -- is unappointed by definition.
+  constraint reporters_grant_audited check (
+    (authority = 'trusted' and granted_by is not null and granted_at is not null)
+    or (authority <> 'trusted' and granted_by is null and granted_at is null)
+  )
+);
+```
+
+Recorded limitation, deliberately not built: this holds the **current**
+grant, not a grant history — a revoke-then-regrant overwrites the
+earlier audit. A `reporter_grants` history table is the right answer
+**when a second person exists**; building it for a circle of one is the
+speculative abstraction CLAUDE.md forbids. Named here so it is a
+decision, not an oversight; it lands with trusted-circle onboarding.
+
+**Table 2 — `evidence`: fact-scoped claims only.**
+
+```sql
+create table evidence (
+  id uuid primary key default gen_random_uuid(),
+
+  -- WHAT is claimed, about what
+  place_id uuid not null references places (id) on delete cascade,
+  claim text not null,   -- hours_wrong|price_wrong|permanently_closed|not_as_described
+  fact_key text,         -- the disputed fact; NULL only for not_as_described
+
+  -- WHO claims it. reporter_authority is DENORMALIZED on purpose: it is
+  -- the authority AT THE TIME OF THE REPORT. If a trusted reporter is
+  -- later revoked, their old rows must not silently restate themselves at
+  -- a new weight — evidence is a historical record, not a live view.
+  reporter_id uuid not null references reporters (id) on delete restrict,
+  reporter_authority text not null,
+
+  -- WHAT WAS SHOWN when the claim was made (adjudicability). No fact
+  -- VALUE is stored: request-time hours/status/price are Google content
+  -- and may not be persisted (decision 001). A sha256 of the displayed
+  -- value's canonical JSON is a one-way integrity token, not content —
+  -- it cannot be read back, and it still proves "what you saw then
+  -- differs from what we fetch now". That is the whole adjudication need.
+  trace_id uuid references traces (id) on delete set null,
+  slot_id text,                  -- the card within that generation
+  shown_status text,             -- present | absent
+  shown_source text,             -- google_places | founder_groundtruth | ...
+  shown_tier smallint,
+  shown_fetched_at timestamptz,
+  shown_digest text,             -- sha256 hex of the canonical JSON shown
+
+  -- 10296: free text is first-class, and the corpus must be MINABLE by
+  -- place / persona / rule-adjacency / date. place_id, persona_key,
+  -- adjacent_rule_ids and day_date are those four query axes, indexed.
+  free_text text,
+  persona_key text,
+  day_date date,
+  adjacent_rule_ids text[] not null default '{}',
+
+  -- 10297: trusted evidence is flagged for IMMEDIATE VERIFICATION rather
+  -- than corroboration-queueing. Nothing consumes the queue in v1 — it
+  -- accumulates and a report lists it. XXX-34 owns the consumer.
+  verification_state text not null,  -- bypassed | queued | not_queued
+
+  -- WHAT IT DID. NULL = flipped nothing. The CHECK below is XXX-34's
+  -- never-poison invariant 1 enforced by the DATABASE, not by discipline:
+  -- a non-founder row physically cannot record a fact flip.
+  flip_fact_key text,
+  flip_value jsonb,
+  flipped_at timestamptz,
+
+  created_at timestamptz not null default now(),
+
+  constraint evidence_claim_valid check (claim in
+    ('hours_wrong', 'price_wrong', 'permanently_closed', 'not_as_described')),
+  constraint evidence_authority_valid
+    check (reporter_authority in ('founder', 'trusted', 'user')),
+  constraint evidence_verification_valid
+    check (verification_state in ('bypassed', 'queued', 'not_queued')),
+  constraint evidence_fact_key_present check (
+    (claim = 'not_as_described' and fact_key is null)
+    or (claim <> 'not_as_described' and fact_key is not null)
+  ),
+  constraint evidence_flip_all_or_none check (
+    (flip_fact_key is not null and flip_value is not null and flipped_at is not null)
+    or (flip_fact_key is null and flip_value is null and flipped_at is null)
+  ),
+  -- The invariant, in the schema: only founder authority may flip.
+  constraint evidence_only_founder_flips check (
+    flip_fact_key is null or reporter_authority = 'founder'
+  ),
+  constraint evidence_tier_valid check (shown_tier is null or shown_tier in (1,2,3))
+);
+
+create index evidence_place_id_idx      on evidence (place_id);
+create index evidence_trace_id_idx      on evidence (trace_id);
+create index evidence_persona_date_idx  on evidence (persona_key, day_date);
+create index evidence_rules_idx         on evidence using gin (adjacent_rule_ids);
+create index evidence_verification_idx  on evidence (verification_state)
+  where verification_state = 'queued';
+```
+
+**Table 3 — `taste_signals`: taste, and structurally nothing else.**
+
+```sql
+create table taste_signals (
+  id uuid primary key default gen_random_uuid(),
+  -- NULL place_id = a day-level verdict (10296 level 2).
+  place_id uuid references places (id) on delete cascade,
+  signal text not null,   -- wouldnt_recommend | not_for_me | day_verdict
+  reporter_id uuid not null references reporters (id) on delete restrict,
+  reporter_authority text not null,
+  trace_id uuid references traces (id) on delete set null,
+  slot_id text,
+  free_text text,
+  persona_key text,
+  day_date date,
+  created_at timestamptz not null default now(),
+  constraint taste_signal_valid check (signal in
+    ('wouldnt_recommend', 'not_for_me', 'day_verdict')),
+  constraint taste_authority_valid
+    check (reporter_authority in ('founder', 'trusted', 'user')),
+  constraint taste_day_verdict_shape check (
+    (signal = 'day_verdict' and place_id is null and slot_id is null)
+    or (signal <> 'day_verdict' and place_id is not null)
+  )
+);
+
+create index taste_signals_place_id_idx     on taste_signals (place_id);
+create index taste_signals_persona_date_idx on taste_signals (persona_key, day_date);
+```
+
+**How the no-cross-contamination rule is ENFORCED, not promised.** Three
+independent layers, and the strongest is structural:
+
+1. **Structural**: `taste_signals` has **no `fact_key`, no `shown_*`
+   columns, and no `flip_*` columns**. There is no column in which a
+   taste signal could name a fact, cite a displayed value, or record a
+   flip. And `evidence.claim` and `taste_signals.signal` are **disjoint
+   CHECK enums** — `not_for_me` is not a spellable evidence claim and
+   `hours_wrong` is not a spellable taste signal. Contamination is not
+   forbidden; it is unrepresentable.
+2. **Type**: `src/server/feedback/` exports exactly two write functions,
+   `recordEvidence(input: EvidenceInput)` and
+   `recordTasteSignal(input: TasteInput)`, over two disjoint Zod schemas
+   and two disjoint TypeScript unions. No function accepts both. No
+   shared table, no shared row builder.
+3. **Transport**: two routes — `POST /api/tasting/evidence` and
+   `POST /api/tasting/taste`. The split is visible in the network tab,
+   which makes CP2 proof (d) ("'not for me' provably absent from
+   evidence") a thing a reviewer can watch happen, not just a query
+   result they must trust.
+
+**What XXX-34 will need, and why each column is absent today.** Read
+for shape, not built — but the shape has to still fit:
+
+| XXX-34 needs | Not stored now because | Arrives as |
+|---|---|---|
+| reporter trust score | it is *derived* (verified-correct minus verified-wrong, decayed); storing a number nothing computes is a fact with no owner | a column on `reporters` + a recompute job; every input it needs is already in `evidence` |
+| evidence weight | weight = f(trust, stakes, plausibility) — all three are XXX-34's; a v1 weight column would be a lie with a type | a generated/derived column or a view over `evidence`; the authority rung it keys off is already stored |
+| independence / sybil fingerprint (device, IP, time signature) | v1 has one reporter and no user traffic; collecting device/IP data for a population of one is surveillance with no purpose | a nullable `reporter_fingerprint` column or a side table; nothing about the current rows blocks it |
+| verification outcome (report → check → confirmed/refuted) | nothing verifies yet; `verification_state` already carries the *flag*, and the outcome has no producer | `verification_state` gains `confirmed`/`refuted` values + a `verified_at`; the CHECK widens, no rewrite |
+| decay clock | `created_at` is the clock; decay is a read-time function of it | a pure function over `created_at`, no column at all |
+
+Every one of these is an additive column or a widened CHECK. Nothing in
+this schema has to be rebuilt for the engine to land — which is the
+whole point of comment 10289's "cheap to design early, miserable to
+retrofit".
+
+**Licensing judgment worth flagging for the ruling**: I treat a sha256
+digest of a displayed Google-sourced value as *not* Google content — it
+is non-reconstructible and exists solely to detect change. I believe
+this is right and it dissolves the "store the fact version shown"
+requirement without a single stored Google value. If you'd rather not
+carry the judgment at all, dropping `shown_digest` costs us only the
+ability to prove a value *changed* (we keep source/tier/fetched_at/
+status, which still says what kind of thing was shown and when).
+
+### 1.2 The fact-flip machinery (the elevated CP0 finding)
+
+**Piece 1 — founder-owned fact keys.** Two additions to
+`factValueSchemas` (`src/server/domain/schemas.ts`):
+
+- `business_status`: `z.enum(BUSINESS_STATUSES)` — the same vocabulary
+  the grammar already uses (`operational | closed_temporarily |
+  closed_permanently`).
+- `hours_corrections`: a **sparse** per-weekday override —
+  `Partial<Record<Weekday, OpenInterval[]>>`, at least one weekday
+  present. Sparse because founder knowledge is sparse: standing at a
+  door on a Tuesday tells you about Tuesday. A full `HoursByWeekday`
+  key would force us to invent six weekdays to record one — the exact
+  silent-fallback constraint 4 forbids. An empty array for a weekday is
+  meaningful: "closed that day".
+
+Both keys are **founder-only by construction**, enforced twice:
+
+```sql
+-- in the migration, on facts
+alter table facts add constraint facts_founder_only_keys check (
+  fact_key not in ('business_status', 'hours_corrections')
+  or (source = 'founder_groundtruth' and tier = 1)
+);
+```
+
+plus the same rule in the Zod write schema. This is the licensing fence
+made structural: a Google-sourced hours value cannot be persisted into
+these keys even by a future careless caller.
+
+**Piece 2 — the runtime groundtruth write path.** A Postgres function
+`record_founder_evidence(...)` doing three statements in **one
+transaction**: insert the evidence row → upsert the `facts` row (on
+constraint `facts_place_key_unique`, source `founder_groundtruth`, tier
+1, `fetched_at = now()`) → update the evidence row's `flip_*` audit.
+Called through `writeFounderGroundtruth()` in
+`src/server/feedback/groundtruth.ts`.
+
+Why SQL and not three client calls: supabase-js has no cross-statement
+transaction, and a half-applied flip (a fact with no evidence behind it,
+or evidence claiming a flip that did not happen) is precisely the "it
+works but I'm not sure why" state this codebase refuses. XXX-34's
+invariant 4 — *every fact flip records its full evidence + verification
+audit trail* — is only true if the two are atomic. If you'd rather keep
+plpgsql out of the repo, the fallback is evidence-first then fact then
+update, with a loud throw on the middle step and an evidence row that
+honestly reads "claimed, flipped nothing" — say the word and I'll take
+that instead.
+
+**Piece 3 — the engine override stage.** New pure module
+`src/server/generation/groundtruth.ts`:
+
+```
+applyFounderGroundtruth(candidates, founderFacts, now) → {
+  candidates,                     // facts superseded in memory
+  applied:  { placeId, factKey }[],
+  expired:  { placeId, factKey, ageDays }[],
+}
+```
+
+Called in `generateDay` **after** the Details batch and **before**
+`hardFilter` — one indexed query on `facts (place_id in shortlist,
+source='founder_groundtruth')`, milliseconds, free. `applied` and
+`expired` both ride the trace.
+
+**The doctrine argument (the ruling asked for it).** Constraint 3 says
+APIs own facts; comment 10289 exempts the founder channel as
+"unconditional tier 1 — operator trust". The override is that exemption
+applied at the only place it can bite. Concretely: Google's hours for a
+small Toronto restaurant come from a merchant listing that the merchant
+maintains badly — trap class 2 exists because of it, and trap class 1
+(permanently-closed places still listed) is the canonical trust-killer
+this whole project was rebuilt around. The founder stood at the door.
+Between two tier-1 facts the tie is broken **by channel doctrine, not
+by timestamp** — which is exactly why the naive freshness policy fails
+below. And note what the override does *not* do: it supersedes a Google
+value **in memory, for one generation**, and stores nothing Google-
+derived. Decision 001 is untouched.
+
+**Staleness policy — how a founder correction ages.** Two obvious
+policies, both rejected, then the one I propose:
+
+- **Freshest-wins — rejected, and it is the trap.** Google is re-fetched
+  on *every single generation*, so its `fetched_at` is always newer than
+  any founder fact by minutes. Freshest-wins means the override is
+  overridden on the very next generation and **never once governs**. It
+  looks principled and is silently useless. Naming it explicitly because
+  it is the policy one reaches for first.
+- **Pinned forever — rejected as a blanket rule** (per your ruling), for
+  one arm only kept and argued below. A correction is an observation at
+  an instant; the world moves and the founder will not revisit every
+  venue annually.
+- **Proposed: founder governs within a per-claim-class horizon, then
+  expires LOUDLY.** Horizons argued from how the underlying world
+  actually changes:
+
+| founder fact | governs for | on expiry | argument |
+|---|---|---|---|
+| `business_status = closed_permanently` | **no expiry** | retraction only | Asymmetric stakes, 10289's own word. A permanent closure is a fact about a discontinued thing, not a perishable observation. Cost of pinning wrongly = one venue missing from a 31,377-place pool ≈ zero. Cost of un-pinning wrongly = recommending a shuttered restaurant, the trust-killer. If a new business opens at that address it is a different identity (new `google_place_id`); if it is genuinely the same one reopening, the founder retracts. |
+| `business_status = operational` (founder overruling a Google "closed") | 180 d | expires → Google governs; place listed for re-verification | A reopening *is* a perishable observation, and here the stakes point the other way: a wrong "it's open" is the trust-killer. |
+| `hours_corrections` | 180 d | expires → Google governs; listed | Seasonal hours turn over roughly twice a year (the golden set's own FIKA/MOCA/Winter-Village traps are all seasonal or weekday-shaped). A correction older than a season is likelier stale than the API. |
+| `price_range` (founder-sourced) | 90 d | expires → Google governs; listed | Menu prices drift continuously and Delhi's cash-economy ranges drift faster. |
+
+"Expires **loudly**" is constraint 4 applied to our own data: an expired
+founder fact does **not** silently vanish. It stops governing, the trace
+records `founder_override_expired` with place + key + age, and a report
+query (`scripts/groundtruth-report.ts`, read-only and free — allowlist
+candidate at CP4 on its own merits) lists expirations as a
+re-verification worklist. The founder learns that a correction aged out;
+the system never quietly reverts to the answer the founder rejected.
+
+**Retraction, honestly scoped**: the flip is an upsert on
+`(place_id, fact_key)`, so a later founder write supersedes an earlier
+one — the mechanism exists. A *UI affordance* for retraction is not in
+v1 (XXX-33's quick-picks have no "actually it's open" verb). Retraction
+in v1 is one ask-gated script call. Stated so it is a known edge, not a
+surprise.
+
+**Tests.** Tier 1 (fixtures, always): precedence within horizon;
+expiry-boundary arithmetic per claim class (day-before / day-after);
+sparse `hours_corrections` merging over Google hours with untouched
+weekdays preserved; `closed_permanently` reaching `hardFilter` as a
+drop; digest stability across key order; evidence/taste type disjointness.
+Tier 2 (live, required — this touches the live pipeline): the six CP2
+proofs, ~6 generations ≈ $2.40 list.
+
+### 1.3 The route
+
+**`POST /api/tasting/session`** — exchange the secret for a session.
+Body `{ secret }`, compared to `TASTING_ROOM_SECRET` with a
+constant-time compare. On success sets an **httpOnly, Secure,
+SameSite=Strict, Path=/, 12-hour** cookie whose value is a stateless
+HMAC token `base64url(expiry) + "." + hmac_sha256(TASTING_ROOM_SECRET,
+expiry)`. The raw secret exists in the browser for exactly one request
+and never in JS-readable storage; the shared secret itself never leaves
+the server. No DB table, no session store.
+
+**`POST /api/tasting/generate`** — gated by that cookie **or** an
+`x-tasting-secret` header (so the CP2 curl proofs need no browser).
+Order of operations, deliberately: **gate → 401 before a single DB read
+or env-dependent branch** → Zod-parse the body
+(`{ personaKey, date, budgetMax?, seed? }`) → self-cap check → generate.
+Missing env var → **503** (misconfiguration is its own loud failure,
+distinct from bad auth — the `CRON_SECRET` route's precedent). Returns
+the mapped `TimelineDay` + headline + advisories + dayNotes + unfilled +
+the meter. `export const dynamic = "force-dynamic"`, `maxDuration = 60`
+(generation is 9.8–14.8s; 60 is an honest bound, not the 300s default).
+
+**`POST /api/tasting/evidence`** and **`POST /api/tasting/taste`** —
+same gate. Body carries `{ traceId, slotId, claim|signal, freeText? }`
+and **nothing else that matters**: `place_id`, `persona_key`,
+`day_date`, and the whole `shown_*` block are derived **server-side from
+the trace**, not accepted from the client. The generate route writes a
+per-slot fact-fingerprint block into the trace metadata (status, source,
+tier, fetched_at, digest — no values, so nothing licensing-relevant
+lands there), and the verdict routes read it back by `traceId`. The
+client cannot forge what it claims to have seen, which is what makes
+"adjudicable against what was displayed" mean something.
+
+**Self-cap N — the arithmetic.** The binding constraint is **not** the
+GCP quota (raised to ≈250 generations/day; nowhere near). It is the
+Google Places **Enterprise free cap: 1,000 Details events/month**, and
+generations use 11–22 Details calls (~18 typical). Sustained monthly
+cost, list basis, at ~18 events/generation:
+
+| N/day | gens/mo | Details events | billable (over 1,000) | Google $/mo | + Anthropic | **total $/mo** |
+|---|---|---|---|---|---|---|
+| 3 | 90 | 1,620 | 620 | $12.40 | ~$2.70 | **~$15** |
+| 5 | 150 | 2,700 | 1,700 | $34.00 | ~$4.50 | **~$39** |
+| **12** | **360** | **6,480** | **5,480** | **$109.60** | **~$10.80** | **~$120** |
+| 20 | 600 | 10,800 | 9,800 | $196.00 | ~$18.00 | **~$214** |
+
+**Recommendation: N = 12/day, and I want to be precise about what it
+is.** A self-cap is a **runaway guard, not a budget** — it stops a page
+that regenerates on mount, a stuck retry loop, or an enthusiastic
+evening; it does not stop sustained daily use from costing $120/month.
+12 fits three review sittings of 3–4 generations plus mistakes, which
+is what a daily driver actually looks like. The *budget* control is the
+on-page meter (the founder watches every dollar as it is spent) plus the
+existing GCP budget alert. If you would rather the cap also be the
+budget, 5/day (~$39/mo) is the number and I will set it there instead —
+this one is genuinely your call, so the table is the proposal.
+
+Counting: `traces` where `kind='day_generation'` and
+`metadata->>'surface'='tasting_room'` and `started_at >=` Toronto-local
+midnight. Aborted generations count — they spent the money. This needs
+one small instrumentation change: `startTrace(kind, metadata?)`, so the
+surface tag is written **at start** (a cap checked against metadata
+written at `endTrace` would miss in-flight and crashed runs). Refusal is
+**429** with a JSON body naming the cap, the count, and the reset time —
+never a silent no-op.
+
+### 1.4 The page
+
+`/tasting`, client component, `robots: { index: false, follow: false }`
+in the segment metadata (the gate protects the data; noindex keeps the
+URL out of search results).
+
+- **Gate screen**: a password input, POST to `/api/tasting/session`,
+  then the app. Never in the URL — no query param, no path segment;
+  URLs leak into server logs, `Referer` headers and screenshots.
+- **Controls**: persona picker (the six `GOLDEN_PERSONAS` keys +
+  **Random**), date picker (default: a random date 3–45 days out),
+  optional budget band, **Generate**.
+- **The real timeline**: `<InteractiveTimeline day={mapped}
+  interactivity="review" renderSlotFooter={...} />`. Same components as
+  `/`, no fork.
+- **Day header**: `narrated.headline`, the concierge `dayNotes`, and the
+  advisory lines with their ruleIds.
+- **Meter, always visible**: est cost (list), total latency + stage
+  breakdown, Details calls, validation passes + `repairLog`, Anthropic
+  calls/tokens/retries, seed, traceId, and `unfilled` intents with cause.
+- **Verdicts**: per card ✓ / ✗. ✗ opens quick-picks — hours wrong /
+  price wrong / permanently closed / not as described route to
+  `/evidence`; **wouldn't recommend / not for me route to `/taste`** —
+  plus a free-text note on either. ✓ is a taste signal too (recorded, no
+  claim). A day-level verdict box posts `day_verdict` to `/taste`.
+
+**The `GrammarDay → TimelineDay` mapping** lives in
+`src/shared/timeline-mapping.ts` — pure, dependency-free, both sides may
+import it, unit-testable against the golden fixtures. Three real gaps
+between the domain shape and the E2 view model, each with an honest
+answer rather than a bend:
+
+1. **`hoursToday`**: `HoursByWeekday` → the day's weekday intervals →
+   `"10:00–18:00"` / `"Closed today"`; provenance carries through
+   unchanged (this is where a founder override becomes *visible* — the
+   chip reads `founder_groundtruth · Verified`).
+2. **Never-fetched facts have no view.** `factView` today is
+   present-or-absent-with-provenance, but the domain is three-valued and
+   live output hits the third state constantly (`vibe` is never fetched
+   by the engine at all; `hours` is never-fetched for any candidate
+   without a Google link). **Proposal: add an `unknown` arm** —
+   `{ status: "unknown" }`, no provenance, because there is none — and
+   render it "Not recorded" distinctly from "not published". This is
+   constraint 4 arriving in the view layer; it is additive (the fixture
+   never produces it, `/` is unaffected) and ~20 lines across the schema
+   and `SlotCard`.
+3. **Reasons and travel legs.** `fixtureDaySchema` requires a reason on
+   every concierge slot; live narration can legitimately produce none.
+   And `GrammarDay` carries no travel *minutes* — `composeDay` computes
+   them and throws them away. So: export a looser **`timelineDaySchema`**
+   the components accept (`reason` nullable; the page renders an honest
+   "no reason recorded" line), with `fixtureDaySchema` staying strict on
+   top of it — the fixture satisfies the looser type structurally, so
+   nothing at `/` changes. And **`composeDay` returns `legs`**
+   (`{ toSlotId, minutes, mode, source, tier }`), surfaced on
+   `GenerationOutcome`, so the travel pills show real numbers with real
+   provenance instead of a hand-wave. Doc 003 permits *displaying*
+   Routes durations (mapless use, §19.1) with Google Maps attribution —
+   the page footer carries it, replacing the fixture's placeholder line.
+
+### 1.5 Gesture policy for v1 — recommendation: **read-only timeline**
+
+Keep tap-to-expand (provenance is the entire point of the page). Disable
+long-press lift/reorder and flick-swap, with a visible line: *"Reordering
+and swapping arrive with E5 — this page shows the day exactly as the
+engine produced it."* Alternates stay **listed** (they are real engine
+output and worth seeing) but are not swappable.
+
+The argument is not "gestures imply persistence that isn't there" —
+that is true but it is the weaker point. The decisive one: `reflowDay`
+is **explicitly naive** ("what it ignores — opening hours, meal windows,
+pacing — is E5's job"). On a page whose entire purpose is judging
+whether a day is *correct*, a drag that produces a grammar-violating
+arrangement renders it with the same authority as the validated one, and
+the founder would then be vetting a day **the engine never produced and
+would have rejected**. That corrupts the instrument itself. Local-only
+gestures with honest labels do not fix it — the label says "not saved",
+which is the wrong warning; the real problem is "not valid".
+
+Implementation: `interactivity: "gestures" | "review"` on
+`InteractiveTimeline`/`InteractiveCard` (a discriminated prop, not a
+boolean flag). E5's unlock point is exactly this prop plus a real
+reflow.
+
+### 1.6 Streaming — recommendation: **honest skeleton, then full**
+
+The repair stats cut *for* streaming on correctness and I will say so
+plainly: ~90% of days ship on validation pass 1, and the partial-return
+point sits **after** the grammar loop, so a streamed structure is
+final-by-construction whenever it is sent. Partial return would be
+**sound**. What the stats do not establish is that it is **needed**.
+
+Against building it here: it is one reviewer on a phone, deliberately
+generating, not a user bouncing at 3s. Latency is predictable
+(9.8–14.8s) and the trade is real — a streaming response means partial
+render states to debug on a device, on the session where the founder is
+also judging the *content*. And XXX-20 owns streaming as a story;
+building half of it here means XXX-20 inherits a half-shape rather than
+a clean seam.
+
+So: one JSON response, and a skeleton that is **itself an instrument** —
+a live elapsed counter with the real stage labels ("retrieving
+candidates… fetching hours from Google… validating the day… writing the
+reasons"), which shows the founder the pipeline working. The ≈8.5s seam
+is preserved and untouched in the engine; XXX-20 lands it for real
+users. This is a taste-about-what-not-to-build call and I would rather
+argue it at the checkpoint than assume it.
+
+### 1.7 The founder-flip loop, exactly
+
+1. Founder taps **✗ → hours wrong** on a card. Client POSTs
+   `{ traceId, slotId, claim: 'hours_wrong', freeText? }`.
+2. Route derives `place_id`, `persona_key`, `day_date`,
+   `adjacent_rule_ids` and the whole `shown_*` block **from the trace**.
+3. `recordEvidence` sees `reporter_authority='founder'` → calls
+   `record_founder_evidence(...)`: evidence row (authority founder,
+   verification `bypassed`) **+** `facts` upsert
+   (`hours_corrections`, source `founder_groundtruth`, tier 1) **+**
+   flip audit written back — one transaction.
+4. Founder taps **Regenerate**, same persona + same date + same seed.
+5. `applyFounderGroundtruth` supersedes the Google hours in memory; the
+   card either **re-windows** (visit moved inside the corrected hours)
+   or the venue **drops** (`hardFilter`, "hours cannot hold the visit").
+   Chip reads `founder_groundtruth · Verified`.
+6. Both traces shown side by side: before (`google_places`), after
+   (`founder_override_applied`). That is the circle.
+
+The `permanently_closed` variant is the same loop with **zero typing**
+and the cleanest possible proof — venue present → tap → venue gone —
+so I will run that one as the headline proof and `hours_wrong` as the
+re-windowing proof.
+
+### 1.8 Deploy posture
+
+Page + routes ship to **production** (the point is vetting from a phone
+anywhere) and are **inert without the secret**. Confirmed at CP2 by
+proof (e): unauthenticated → 401 with a body containing no pool data, no
+persona list, no counts — and the gate returns **before any DB access**,
+so an unauthenticated request cannot even cause a query. `/tasting`
+itself is a static shell with no data in it. **Preview deployments carry
+the identical gate** because the env var is set for Preview (Vercel
+Deployment Protection may also cover previews — noted, not relied on;
+the route's own gate is the guarantee). Nothing about the route is
+reachable from `/` or linked anywhere.
+
+### 1.9 Rulings requested at CHECKPOINT 1
+
+1. **Schema** (§1.1) — three tables; the `evidence_only_founder_flips`
+   CHECK as XXX-34 invariant 1 in the database; the `shown_digest`
+   licensing judgment; the deliberately-absent XXX-34 columns.
+2. **Self-cap N** (§1.3) — **12/day recommended** as a runaway guard,
+   with 5/day if you want the cap to double as the budget. Table given.
+3. **Gesture policy** (§1.5) — **read-only** recommended, argued from
+   `reflowDay`'s naivety corrupting the instrument.
+4. Fact-flip machinery incl. the **staleness horizons** (§1.2) —
+   especially the no-expiry arm for `closed_permanently`.
+5. Streaming (§1.6) — **skeleton-then-full** recommended.
+6. Three smaller ones I would rather have ruled than assume: the
+   `plpgsql` transaction vs three fail-loud client calls (§1.2); the
+   `unknown` fact arm in the timeline view model (§1.4); surfacing
+   `legs` from `composeDay` (§1.4).
 
 # Session 9 — Generation engine: generateDay(request) → GrammarDay + reasons (XXX-5)
 
