@@ -661,7 +661,127 @@ generate ~20–25 days/day.** Founder decision at CP3: raise the quota in
 the GCP console (self-serve) and run the variety proof today, or run
 it tomorrow on the reset quota. Flagged for E8 ops either way.
 
-### CHECKPOINT 3 — presented; awaiting rulings (variety-proof path + narration eyeball).
+### CHECKPOINT 3 outcome — approved
+
+Quota raised in GCP (founder-confirmed); run the variety proof today.
+The daily-ceiling finding recorded as operational fact (new ceiling
+≈250 generations/day, cost-fenced by budget alerts). Distinctiveness
+PASS accepted with the persona-keyed jitter + lens-floor recalibration
+as structural fixes — the 0.67→0.00 corners case is the regression
+story of record. Category-sequence 0.693 recorded observed/non-gating.
+Injection containment accepted at both layers. Tone accepted, zero
+retries. Cost/latency accepted including the thinking-off trade; the
+narration-effort lever stands.
+
+## Step 4 — Close-out
+
+### Architecture of record (as built; §1.1 ratified at CP1, deltas below)
+
+`generateDay(request) → GrammarDay + reasons`, server-side, one
+`day_generation` trace per call. Layers and owners exactly as ruled:
+retrieval (pool × zone, code) → link-on-demand (Session 5 thresholds
+verbatim, free IDs-only search, name discarded in-memory) →
+request-time Details (Enterprise mask, $0.020/candidate, in-memory
+GrammarFacts, never persisted) → hard filters (day-grammar predicates,
+re-exported never reimplemented) → deterministic scoring + persona-
+keyed seeded jitter (the only variety source) → selection seam (LLM
+picks from legal menus; deterministic selector is stand-in, seeded
+path, and fallback) → composition (code owns all structure: pattern
+meals, pace, anchors with buffers, wanderer 3-anchor branch, hours-
+aware starts, dusk-capped outdoor, menu-alternate reseating) → grammar
+loop (strike/slack/priciest routing, 3 passes, honest failure) →
+narration (card-fact-citing reasons + advisory-derived notes behind
+the mechanical tone gate, describeViolations fallback voice).
+
+Build deltas from the CP1 proposal, all argued at their checkpoints:
+menu-alternate fallback at composition; evening-category restriction;
+category-preference-ordered menus; absent-hours seats as honest
+absence; persona-fingerprinted jitter at ±4% with lens 0.20 (CP3
+regression story); thinking disabled on both Sonnet calls (latency);
+`messages.create` + safeParse instead of `.parse` (a schema miss is a
+counted retry, never a thrown loss of usage accounting).
+
+The engine is a library (`src/server/generation`); **no API route
+exists** — that arrives with XXX-17's auth/RLS session, by design.
+
+### Budget actuals (session, list basis; billed expectation in notes)
+
+| Line | CP1 budget | Actual |
+|---|---|---|
+| Cost/generation | ≤$0.55 nominal / $0.70 cap | $0.27–0.48 (Details 18–22 × $0.02 ≈ 90% of it; Anthropic $0.019–0.042; transit $0.005–0.01) |
+| Latency/generation | <15s | deterministic 2.8–3.3s; LLM path 9.8–14.8s |
+| Session exam gate | ≤$25 | **≈$9.7 list / ≈$0.45 expected billed** (~29 generations incl. dev iterations + the variety runs; Google $0 billed inside free caps, Anthropic at intro pricing) |
+| Details events (the canary) | 24 nominal / 30 cap | 11–22 per generation; cap never hit; per-generation count in every trace summary |
+
+### Distinctiveness matrix of record (2026-08-15, exam seed 42, LLM path)
+
+Venue overlap (|∩|/min, anchors excluded): **mean 0.024 (AC ≤0.35),
+max 0.20 (AC ≤0.50) — PASS**; the only nonzero pairs are
+day-2×day-3 (0.20, shared AGO-adjacent core) and day-4×day-6 (0.17).
+Category-sequence overlap mean **0.693 — observed, non-gating** (meal
+patterns share structure; identity lives in venues). 6/6 days
+validated clean; zero violations shipped anywhere in the exam.
+Regression story of record: the first matrix ran jitter keyed only by
+(seed, venue) and two corners personas collapsed to **0.67**; persona-
+keyed jitter + the lens floor took that pair to **0.00** without
+losing seeded reproducibility.
+
+### Repair-loop statistics (shapes XXX-20's streaming story)
+
+Across ~29 session generations: **~90% shipped on validation pass 1**.
+Repair engaged only on budget-banded days (`budget.over-band` → strike
+priciest venue): pass counts 3, 2, 2 on the three engaged runs, all
+landing legal; **zero repair-exhaustion failures**; zero place-caused
+or travel-caused strikes needed live (composition's hours/dusk/buffer
+awareness prevents them upstream). Each repair pass costs one
+re-selection (~6s + ~$0.012) plus recompose+revalidate (<1s).
+`repairLog` (per-pass ruleIds) and `unfilled` (with cause) ride every
+trace and the stats object — XXX-20 can stream structure at the
+partial-return point (post-validation, ~8.5s in) and narrate while
+repairs, if any, have already resolved.
+
+### Forward notes
+
+- **XXX-20** consumes `generateDay` as-is. Partial-return point:
+  post-grammar-loop / pre-narration (structure final ≈8.5s; narration
+  ≈6s more, streamable). First-slots <3s remains XXX-20's problem, as
+  ruled honestly at CP1.
+- **E5** shares `validateDay`, the chain travel provider, AND the new
+  candidate predicates + `Selector` seam (re-selection on edit is the
+  same contract).
+- **E6** replaces the `Persona` source, not the shape —
+  `src/shared/persona.ts` is the contract; `GOLDEN_PERSONAS` are its
+  first six instances. The persona-fingerprint jitter already gives
+  per-user divergence a mechanism (10294 point 3).
+- **XXX-16/17** unblock the user-facing flow; the generation API route
+  is XXX-17's (auth/RLS first). No route was built this session.
+- **XXX-31 (new, E3)**: pool quality signal — the elevated backlog
+  story, filed with candidate sources and licensing caveats.
+- **Ops facts**: GCP `GetPlaceRequest` per-day quota governs
+  generations/day (was 500/day ≈ 20–25 days; raised founder-side →
+  ≈250/day; cost-fenced by budget alerts). Anthropic intro pricing
+  ends 2026-08-31 — list-basis budgets already assume the full price.
+  Standing due date unchanged: paid coords re-discovery Sep 1–3
+  (XXX-25 comment 10292).
+- **Link-on-demand telemetry to watch**: this session minted 11
+  verified links and recorded 16 honest non-matches; each verified
+  link permanently cheapens future generations (later runs needed 7
+  searches where the first needed 12). identity_matches is quietly
+  becoming a coverage map of FSQ↔Google agreement.
+
+### Allowlist proposal — `scripts/generation-report.ts` (source readable)
+
+Stated plainly for the review: unlike the four allowlisted `*-report`
+tools, this one is **not read-only and not free** — every run spends
+$0.27–0.48 list (Google Details + Anthropic), writes a trace, and
+mints links via link-on-demand. **Recommendation: do NOT allowlist
+it.** The ask-gate on `npx tsx` is the standing cost control (Session
+8 doctrine: the prompt IS the cost gate), and this session's own
+quota trip shows why per-run deliberateness matters. If a free
+inspection mode is ever wanted, a future `--replay <traceId>` (pure DB
+read) could earn a scoped allowlist entry on its own merits.
+
+### Four checks + variety proof
 
 Branch: `session-8-travel-matrix`. Status: **in progress**.
 Scope: decision doc 003 (travel-time source licensing, ALL candidate
