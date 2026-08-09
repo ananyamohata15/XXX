@@ -24,14 +24,10 @@ export const TASTING_DAILY_CAP = 12;
 /** Google Places Enterprise SKU: 1,000 free events per calendar month. */
 export const DETAILS_FREE_EVENTS_PER_MONTH = 1000;
 
-export interface QuotaStatus {
-  generationsToday: number;
-  dailyCap: number;
-  /** City-local midnight the count resets at, as an instant. */
-  resetsAt: string;
-  detailsThisMonth: number;
-  detailsFreeCap: number;
-}
+import type { TastingQuota } from "@/shared/tasting";
+
+/** The wire shape lives in src/shared so the page can read it too. */
+export type QuotaStatus = TastingQuota;
 
 /** The instant of the most recent midnight in the city's own timezone. */
 export function cityDayStart(nowIso: string, city: "toronto"): string {

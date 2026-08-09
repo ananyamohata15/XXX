@@ -44,6 +44,13 @@ export const tastingContextSchema = z.strictObject({
   persona_key: z.string(),
   day_date: z.string(),
   cards: z.record(z.string(), shownCardSchema),
+  /**
+   * A fabricated day over real pool places (the synthetic preview). The
+   * claim is still recorded — the founder's words are worth keeping —
+   * but no fact write may follow from a card that was never generated.
+   * Defaulted so traces written before this field parse unchanged.
+   */
+  synthetic: z.boolean().default(false),
 });
 export type TastingContext = z.infer<typeof tastingContextSchema>;
 export type ShownCard = z.infer<typeof shownCardSchema>;
@@ -58,6 +65,7 @@ export function buildTastingContext(input: {
   day: GrammarDay;
   findings: Violation[];
   personaKey: string;
+  synthetic?: boolean;
 }): TastingContext {
   const cards: Record<string, ShownCard> = {};
   for (const slot of input.day.slots) {
@@ -96,6 +104,7 @@ export function buildTastingContext(input: {
     persona_key: input.personaKey,
     day_date: input.day.date,
     cards,
+    synthetic: input.synthetic ?? false,
   };
 }
 

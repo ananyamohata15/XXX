@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   gateResponse,
+  isSecureRequest,
   mintForRequest,
   sessionCookie,
   verifySecret,
@@ -26,6 +27,14 @@ export async function POST(request: Request) {
 
   return Response.json(
     { ok: true },
-    { status: 200, headers: { "set-cookie": sessionCookie(mintForRequest()) } },
+    {
+      status: 200,
+      headers: {
+        "set-cookie": sessionCookie(
+          mintForRequest(),
+          isSecureRequest(request),
+        ),
+      },
+    },
   );
 }

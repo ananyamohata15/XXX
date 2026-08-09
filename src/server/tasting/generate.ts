@@ -18,10 +18,10 @@ import { LlmSelector } from "../generation/select-llm";
 import type { GenerationRequest } from "../generation/types";
 import { getServerSupabase } from "../supabase";
 import { buildTastingContext, TASTING_SURFACE } from "../feedback/shown";
+import { buildSyntheticDay } from "./synthetic";
 import { toTimelineDay } from "@/shared/timeline-mapping";
-import type { TimelineDay } from "@/shared/timeline";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
-import { capReached, readQuota, type QuotaStatus } from "./quota";
+import { capReached, readQuota } from "./quota";
 
 export const NARRATION_SOURCE = "anthropic:claude-sonnet-5";
 
@@ -30,53 +30,106 @@ export interface TastingRequest {
   date: string;
   budgetMax: number | null;
   seed: number | null;
+  /**
+   * A canned day through the real view-model path, for feeling the page
+   * while Google Details quota is unavailable. Costs nothing, spends no
+   * quota, and cannot write ground truth (see synthetic.ts).
+   */
+  synthetic?: boolean;
 }
 
-export interface TastingMeter {
-  traceId: string;
-  seed: number;
-  estCostUsd: number;
-  totalMs: number;
-  stageMs: Record<string, number>;
-  detailsCalls: number;
-  searchTextCalls: number;
-  linksMinted: number;
-  transitCalls: number;
-  validationPasses: number;
-  repairLog: { pass: number; ruleIds: string[] }[];
-  founderOverrides: number;
-  founderExpired: number;
-  anthropic: {
-    calls: number;
-    inputTokens: number;
-    outputTokens: number;
-    estCostUsd: number;
-    contractRetries: number;
-    toneRetries: number;
+export type { TastingMeter, TastingOutcome } from "@/shared/tasting";
+import type { TastingMeter, TastingOutcome } from "@/shared/tasting";
+
+/**
+ * The preview path. Same mapping, same components, same verdict
+ * round-trip; a trace is written so verdicts have somewhere to attach,
+ * marked synthetic so no fact write can follow from a fabricated card.
+ */
+async function runSyntheticDay(
+  input: TastingRequest,
+  nowIso: string,
+): Promise<TastingOutcome> {
+  const supabase = getServerSupabase();
+  const built = await buildSyntheticDay(supabase, input.date, nowIso);
+  const instrumentation = createInstrumentation(supabase);
+  const traceId = await instrumentation.startTrace("day_generation", {
+    surface: TASTING_SURFACE,
+    synthetic: true,
+    tasting: buildTastingContext({
+      day: built.day,
+      findings: [],
+      personaKey: input.personaKey,
+      synthetic: true,
+    }),
+  });
+  await instrumentation.endTrace(traceId, {
+    totalCostUsd: 0,
+    metadata: {
+      surface: TASTING_SURFACE,
+      synthetic: true,
+      outcome: "ok",
+      tasting: buildTastingContext({
+        day: built.day,
+        findings: [],
+        personaKey: input.personaKey,
+        synthetic: true,
+      }),
+    },
+  });
+
+  const day = toTimelineDay({
+    day: built.day,
+    legs: built.legs,
+    reasons: built.reasons,
+    reasonSource: "synthetic_preview",
+    generatedAt: nowIso,
+  });
+  const sources = new Set<string>();
+  for (const place of Object.values(day.places)) {
+    for (const fact of [place.priceRange, place.hoursToday, place.vibe]) {
+      if (fact.status !== "unknown") sources.add(fact.source);
+    }
+  }
+  for (const leg of Object.values(day.travel)) {
+    if (leg.source !== undefined) sources.add(leg.source);
+  }
+
+  return {
+    status: "ok",
+    synthetic: true,
+    day,
+    headline: built.headline,
+    advisories: built.advisories,
+    dayNotes: built.dayNotes,
+    unfilled: [],
+    sources: [...sources].sort(),
+    meter: {
+      traceId,
+      seed: 0,
+      estCostUsd: 0,
+      totalMs: 0,
+      stageMs: {},
+      detailsCalls: 0,
+      searchTextCalls: 0,
+      linksMinted: 0,
+      transitCalls: 0,
+      validationPasses: 0,
+      repairLog: [],
+      founderOverrides: 0,
+      founderExpired: 0,
+      anthropic: {
+        calls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        estCostUsd: 0,
+        contractRetries: 0,
+        toneRetries: 0,
+      },
+      quota: await readQuota(supabase, nowIso),
+    },
   };
-  quota: QuotaStatus;
 }
-
-export type TastingOutcome =
-  | {
-      status: "ok";
-      day: TimelineDay;
-      headline: string;
-      advisories: { ruleId: string; text: string }[];
-      dayNotes: string[];
-      unfilled: { label: string; cause: string }[];
-      /** Distinct fact/travel sources on this day — attribution keys off it. */
-      sources: string[];
-      meter: TastingMeter;
-    }
-  | {
-      /** Grammar-loop exhaustion. Surfaced honestly; a founder should see it. */
-      status: "failed";
-      headline: string;
-      violations: { ruleId: string; text: string }[];
-      meter: TastingMeter;
-    }
-  | { status: "capped"; quota: QuotaStatus };
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -93,7 +146,11 @@ export async function runTastingGeneration(
   const supabase = getServerSupabase();
 
   const quota = await readQuota(supabase, nowIso);
-  if (capReached(quota)) return { status: "capped", quota };
+  // The synthetic day spends nothing, so the runaway guard does not
+  // apply to it: capping a free preview would be theatre.
+  if (!input.synthetic && capReached(quota)) return { status: "capped", quota };
+
+  if (input.synthetic === true) return runSyntheticDay(input, nowIso);
 
   const persona = GOLDEN_PERSONAS[input.personaKey];
   if (persona === undefined) {
@@ -223,6 +280,7 @@ export async function runTastingGeneration(
 
   return {
     status: "ok",
+    synthetic: false,
     day,
     headline: outcome.narrated.headline,
     advisories: outcome.narrated.advisories.map((a) => ({

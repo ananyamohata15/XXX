@@ -66,8 +66,26 @@ export function sessionTokenValid(
   return Number(expiry) > nowMs;
 }
 
-export const sessionCookie = (token: string): string =>
-  `${TASTING_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}`;
+/**
+ * `Secure` is conditional, and deliberately so. Browsers REJECT a Secure
+ * cookie served over plain http (localhost excepted), which would make
+ * the gate un-openable on the phone-over-LAN review loop — a
+ * device-specific failure of exactly the kind Session 3 taught us to
+ * catch before the founder does. Production and preview on Vercel are
+ * always https, so the flag is always set where it matters.
+ */
+export const sessionCookie = (token: string, secure: boolean): string =>
+  `${TASTING_COOKIE}=${token}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}`;
+
+/** Is this request already on https? Vercel terminates TLS upstream. */
+export function isSecureRequest(request: Request): boolean {
+  if (request.headers.get("x-forwarded-proto") === "https") return true;
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function cookieValue(header: string | null, name: string): string | null {
   if (header === null) return null;

@@ -24,6 +24,7 @@ const bodySchema = z.strictObject({
   date: z.iso.date(),
   budgetMax: z.number().positive().nullable().default(null),
   seed: z.number().int().nullable().default(null),
+  synthetic: z.boolean().default(false),
 });
 
 export async function POST(request: Request) {

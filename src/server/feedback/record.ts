@@ -99,6 +99,7 @@ interface TraceContext {
   personaKey: string;
   dayDate: string;
   card: ShownCard;
+  synthetic: boolean;
 }
 
 /**
@@ -126,7 +127,12 @@ async function loadTraceContext(
   if (slotId !== null && card === null) {
     throw new Error(`trace ${traceId} has no card "${slotId}"`);
   }
-  return { personaKey: context.persona_key, dayDate: context.day_date, card };
+  return {
+    personaKey: context.persona_key,
+    dayDate: context.day_date,
+    card,
+    synthetic: context.synthetic,
+  };
 }
 
 /**
@@ -168,6 +174,8 @@ export interface EvidenceResult {
   verificationState: "bypassed" | "queued" | "not_queued";
   /** null = nothing flipped, which is every non-founder row by law. */
   flippedFactKey: string | null;
+  /** Why a founder claim flipped nothing, when it otherwise would have. */
+  note?: string;
 }
 
 export async function recordEvidence(
@@ -175,7 +183,7 @@ export async function recordEvidence(
   reporter: Reporter,
   input: EvidenceInput,
 ): Promise<EvidenceResult> {
-  const { personaKey, dayDate, card } = await loadTraceContext(
+  const { personaKey, dayDate, card, synthetic } = await loadTraceContext(
     client,
     input.traceId,
     input.slotId,
@@ -187,7 +195,9 @@ export async function recordEvidence(
 
   if (reporter.authority === "founder") {
     const flipKey = CLAIM_FLIPS_FACT[input.claim];
-    const flipValue = flipValueFor(input, dayDate);
+    // A fabricated card must never write ground truth about a real
+    // venue. The claim is recorded; only the fact write is withheld.
+    const flipValue = synthetic ? null : flipValueFor(input, dayDate);
     const { data, error } = await client.rpc("record_founder_evidence", {
       p_place_id: card.place_id,
       p_claim: input.claim,
@@ -213,6 +223,9 @@ export async function recordEvidence(
       authority: "founder",
       verificationState: "bypassed",
       flippedFactKey: flipValue === null ? null : flipKey,
+      ...(synthetic
+        ? { note: "synthetic day — recorded, but no fact was written" }
+        : {}),
     };
   }
 
