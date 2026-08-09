@@ -31,8 +31,17 @@ const provenanceFields = {
 };
 
 /**
- * A displayed fact: present with a value, or absent-with-provenance (we
- * looked, it is not published). Never-fetched is the field not existing.
+ * A displayed fact, three-valued exactly as the domain stores it:
+ *   present  — a value, with provenance
+ *   absent   — we looked and it is not published, with provenance
+ *   unknown  — never fetched, so there IS no provenance to state
+ *
+ * The third arm arrived with live output (XXX-32): the fixture always had
+ * values, but a generated day hits never-fetched constantly — `vibe` is
+ * never fetched by the engine at all, and `hours` is never fetched for a
+ * candidate with no Google link. Collapsing it into "absent" would claim
+ * we looked when we did not, which is the silent fallback constraint 4
+ * forbids at the point the user actually reads.
  */
 const factView = <T extends z.ZodType>(value: T) =>
   z.discriminatedUnion("status", [
@@ -42,12 +51,14 @@ const factView = <T extends z.ZodType>(value: T) =>
       ...provenanceFields,
     }),
     z.strictObject({ status: z.literal("absent"), ...provenanceFields }),
+    z.strictObject({ status: z.literal("unknown") }),
   ]);
 
 /** The displayed-fact shape, as a plain type for component props. */
 export type FactView<T> =
   | { status: "present"; value: T; source: string; tier: Tier; fetchedAt: string }
-  | { status: "absent"; source: string; tier: Tier; fetchedAt: string };
+  | { status: "absent"; source: string; tier: Tier; fetchedAt: string }
+  | { status: "unknown" };
 
 export const priceRangeSchema = z
   .strictObject({
@@ -91,7 +102,11 @@ export const slotViewSchema = z
     startTime: timeOfDaySchema,
     endTime: timeOfDaySchema,
     placeId: z.string().min(1),
-    /** null on anchor slots — the user placed it; the concierge claims no credit. */
+    /**
+     * null on anchor slots — the user placed it; the concierge claims no
+     * credit. Also null on a live concierge slot whose narration produced
+     * no reason: the card says so rather than inventing one.
+     */
     reason: reasonSchema.nullable(),
     alternates: z.array(alternateViewSchema),
   })
@@ -101,13 +116,27 @@ export type SlotView = z.infer<typeof slotViewSchema>;
 export const travelLegSchema = z.strictObject({
   mode: z.enum(TRANSPORT_MODES),
   minutes: z.number().int().positive(),
+  /**
+   * Per-leg provenance. Optional because the hand-authored fixture
+   * carries one provenance for the whole matrix (travelProvenance); a
+   * live day's legs come from different providers — stored matrix, live
+   * transit, haversine stub — and averaging that into one line would be
+   * the kind of tidy lie this codebase does not tell.
+   */
+  source: z.string().min(1).optional(),
+  tier: tierSchema.optional(),
 });
 export type TravelLeg = z.infer<typeof travelLegSchema>;
 
 /** Keys are canonical unordered pairs — build them with travelKey(). */
 export type TravelMatrix = Record<string, TravelLeg>;
 
-export const fixtureDaySchema = z
+/**
+ * The day shape the timeline components render. The hand-authored
+ * fixture and a live generation both satisfy it; `fixtureDaySchema`
+ * below adds the stricter rules that only make sense for authored data.
+ */
+export const timelineDaySchema = z
   .strictObject({
     city: z.enum(CITIES),
     date: z.iso.date(),
@@ -144,13 +173,6 @@ export const fixtureDaySchema = z
           path: ["slots", i],
         });
       }
-      if (s.origin === "concierge" && s.reason === null) {
-        ctx.addIssue({
-          code: "custom",
-          message: "concierge slots must state their reason",
-          path: ["slots", i, "reason"],
-        });
-      }
       if (i > 0 && s.startTime < d.slots[i - 1].endTime) {
         ctx.addIssue({
           code: "custom",
@@ -170,6 +192,24 @@ export const fixtureDaySchema = z
       }
     }
   });
+export type TimelineDay = z.infer<typeof timelineDaySchema>;
+
+/**
+ * The hand-authored fixture, which is held to one rule a live day cannot
+ * be: an authored concierge slot with no reason is an authoring mistake,
+ * whereas a generated one is honest absence the card renders as such.
+ */
+export const fixtureDaySchema = timelineDaySchema.superRefine((d, ctx) => {
+  d.slots.forEach((s, i) => {
+    if (s.origin === "concierge" && s.reason === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "concierge slots must state their reason",
+        path: ["slots", i, "reason"],
+      });
+    }
+  });
+});
 export type FixtureDay = z.infer<typeof fixtureDaySchema>;
 
 // ---------------------------------------------------------------------------

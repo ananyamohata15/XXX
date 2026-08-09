@@ -356,6 +356,13 @@ grant execute on function public.record_founder_evidence(
   text, text, text, date, text[], text, jsonb
 ) to service_role;
 
+-- The root of trust, seeded here because the tasting room needs a
+-- reporter to attribute to and there is no auth.users row to derive one
+-- from yet (XXX-17). Idempotent: a re-push must not duplicate the founder.
+insert into reporters (handle, authority)
+values ('founder', 'founder')
+on conflict on constraint reporters_handle_unique do nothing;
+
 create trigger reporters_set_updated_at before update on reporters
   for each row execute function extensions.moddatetime (updated_at);
 
