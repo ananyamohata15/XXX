@@ -783,6 +783,33 @@ read) could earn a scoped allowlist entry on its own merits.
 
 ### Four checks + variety proof
 
+**Four checks green** (run after the final code state): `npm run lint`
+clean · `npm run typecheck` clean · `npm test` **325 passed / 3
+skipped** · `npm run build` success.
+
+**Variety proof (CP3 a, unseeded): PENDING the quota window — stated
+honestly.** The founder-confirmed quota raise did not take effect
+within today's window (three attempts across ~45 minutes, including a
+15-minute-delayed retry, all 429 on `GetPlaceRequest per day`; GCP
+per-day limit increases commonly apply only from the next daily reset,
+midnight Pacific). The engine hard-stopped each time without spinning
+(Session 4 law). The proof is one ask-gated command, ≈$1.4 list, and
+self-grades against the ruled AC [0.40, 0.85]:
+
+```
+npx tsx --env-file=.env.local scripts/generation-report.ts \
+  --persona day-2-old-town --date 2026-08-15 --variety 3
+```
+
+Run it as the first action once the quota window resets. Every other
+CP3 proof (matrix, exam, injection, tone, cost/latency) passed and is
+of record above. The exploration mechanism the proof exercises is the
+same persona-keyed jitter the passing matrix already exercised —
+pending is the measurement, not the machinery.
+
+### Session status: complete pending the one deferred measurement.
+Branch `session-9-generation-engine`, 9 commits, not pushed (per spec).
+
 Branch: `session-8-travel-matrix`. Status: **in progress**.
 Scope: decision doc 003 (travel-time source licensing, ALL candidate
 sources), then — per its rulings — the Toronto walk/cycle/drive + transit
