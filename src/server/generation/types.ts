@@ -94,15 +94,26 @@ export interface Menu {
 export interface Selection {
   intentId: string;
   placeId: string;
+  /** The selector's one-clause why — seeds narration; absent on the
+   * deterministic path. */
+  reasonSeed?: string;
 }
 
 /**
  * The selection seam. Step 2's deterministic selector and Step 3's LLM
  * selector implement the same contract; the grammar loop strikes
- * candidates by excluding them from the menus it re-offers.
+ * candidates by excluding them from the menus it re-offers, and passes
+ * the violation messages as `feedback` (regenerationFeedback's block) so
+ * a taste-driven selector can avoid repeating the mistake, not just the
+ * venue.
  */
 export interface Selector {
-  select(menus: Menu[], persona: Persona, seed: number): Promise<Selection[]>;
+  select(
+    menus: Menu[],
+    persona: Persona,
+    seed: number,
+    feedback?: string,
+  ): Promise<Selection[]>;
 }
 
 export interface StageTimings {
@@ -130,6 +141,16 @@ export interface GenerationStats {
   repairLog: { pass: number; ruleIds: string[] }[];
   /** Intents the final day could not seat, and why — never silent. */
   unfilled: { intentId: string; label: string; cause: "empty-menu" | "unschedulable" }[];
+  anthropic: {
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    /** List price ($3/$15 per MTok, Sonnet 5); intro billing runs lower. */
+    estCostUsd: number;
+    /** Contract rejections: parse failures + out-of-menu ids, per stage. */
+    contractRetries: number;
+    toneRetries: number;
+  };
   /** The 87% canary (CP1 ruling 4): Details events are first-class. */
   estCostUsd: number;
   timings: StageTimings;

@@ -9,7 +9,10 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describeViolations } from "@/shared/day-grammar/describe";
+import {
+  describeViolations,
+  regenerationFeedback,
+} from "@/shared/day-grammar/describe";
 import {
   hasViolations,
   validateDay,
@@ -29,6 +32,8 @@ import {
   fetchEnvironment,
   type Environment,
 } from "./context";
+import type { UsageRecorder } from "./llm";
+import type { NarrateResult } from "./narrate-llm";
 import { applyDetails } from "./details";
 import { hardFilter } from "./filters";
 import {
@@ -50,6 +55,7 @@ import { scoreAll } from "./score";
 import { MENU_SIZE } from "./select";
 import type {
   Candidate,
+  CardReason,
   GenerationOutcome,
   GenerationRequest,
   GenerationStats,
@@ -69,6 +75,19 @@ export interface EngineDeps {
   googleApiKey: string;
   instrumentation: Instrumentation;
   selector: Selector;
+  /**
+   * The narration stage (Step 3). Absent → reasons/dayNotes stay empty
+   * (the deterministic path). The engine hands it only what lower
+   * layers already decided.
+   */
+  narrator?: (input: {
+    day: Parameters<typeof validateDay>[0];
+    advisories: Violation[];
+    persona: GenerationRequest["persona"];
+    reasonSeeds: Map<string, string>;
+  }) => Promise<NarrateResult>;
+  /** Shared with the LLM stages; the engine drains it into the trace. */
+  llmUsage?: UsageRecorder;
   now?: () => Date;
   /**
    * Exam/test seam ONLY: overrides the fetched weather/daylight
@@ -129,6 +148,40 @@ export async function generateDay(
 
   const repairLog: { pass: number; ruleIds: string[] }[] = [];
   let unfilledFinal: GenerationStats["unfilled"] = [];
+  const anthropic = {
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    estCostUsd: 0,
+    contractRetries: 0,
+    toneRetries: 0,
+  };
+  /** Drain the LLM stages' usage into the trace + the stats. */
+  const drainLlmUsage = async (): Promise<void> => {
+    for (const event of deps.llmUsage?.drain() ?? []) {
+      anthropic.calls++;
+      anthropic.inputTokens += event.inputTokens;
+      anthropic.outputTokens += event.outputTokens;
+      anthropic.estCostUsd += event.estCostUsd;
+      if (event.contractRetry) anthropic.contractRetries++;
+      if (event.toneRetry) anthropic.toneRetries++;
+      estCostUsd += event.estCostUsd;
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "anthropic",
+        endpoint: `messages(${event.stage})`,
+        estCostUsd: event.estCostUsd,
+        durationMs: event.durationMs,
+        metadata: {
+          model: "claude-sonnet-5",
+          input_tokens: event.inputTokens,
+          output_tokens: event.outputTokens,
+          contract_retry: event.contractRetry,
+          tone_retry: event.toneRetry,
+          pricing_basis: "list",
+        },
+      });
+    }
+  };
   const finishStats = (
     poolCandidates: number,
     shortlisted: number,
@@ -145,6 +198,7 @@ export async function generateDay(
     validationPasses,
     repairLog,
     unfilled: unfilledFinal,
+    anthropic: { ...anthropic },
     estCostUsd,
     timings: { ...timings, totalMs: now().getTime() - t0 },
   });
@@ -258,6 +312,7 @@ export async function generateDay(
     let repair: RepairPlan | undefined;
     let passes = 0;
     let lastViolations: Violation[] = [];
+    let feedback: string | undefined;
 
     // Phase A provider: stored matrix → stub. Transit joins in phase B.
     const baseTravel = await assembleTravelProvider(
@@ -277,8 +332,10 @@ export async function generateDay(
         menus,
         request.persona,
         seed,
+        feedback,
       );
       timings.selectMs += now().getTime() - tSelect;
+      await drainLlmUsage();
 
       const alternates = new Map(
         menus.map((m) => [m.intent.id, m.options.map((o) => o.place.id)]),
@@ -362,6 +419,27 @@ export async function generateDay(
       const violations = violationsOnly(findings);
 
       if (!hasViolations(findings)) {
+        const advisories = advisoriesOnly(findings);
+        let reasons: CardReason[] = [];
+        let dayNotes: string[] = [];
+        if (deps.narrator !== undefined) {
+          const tNarrate = now().getTime();
+          const reasonSeeds = new Map(
+            selections
+              .filter((s) => s.reasonSeed !== undefined)
+              .map((s) => [`s-${s.intentId}`, s.reasonSeed!]),
+          );
+          const narration = await deps.narrator({
+            day: composed.day,
+            advisories,
+            persona: request.persona,
+            reasonSeeds,
+          });
+          timings.narrateMs = now().getTime() - tNarrate;
+          await drainLlmUsage();
+          reasons = narration.reasons;
+          dayNotes = narration.dayNotes;
+        }
         const stats = finishStats(pool.length, shortlist.length, passes);
         await deps.instrumentation.endTrace(traceId, {
           totalCostUsd: estCostUsd,
@@ -371,15 +449,16 @@ export async function generateDay(
         return {
           status: "ok",
           day: composed.day,
-          findings: advisoriesOnly(findings),
+          findings: advisories,
           narrated: describeViolations(findings),
-          reasons: [], // Step 3 fills these
-          dayNotes: [],
+          reasons,
+          dayNotes,
           stats,
         };
       }
 
       lastViolations = violations;
+      feedback = regenerationFeedback(violations);
       repairLog.push({ pass: passes, ruleIds: violations.map((v) => v.ruleId) });
       const capturedDay = composed.day;
       repair = planRepair(
