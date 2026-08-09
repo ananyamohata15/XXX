@@ -26,7 +26,8 @@
       "Bash(cat:*)",
       "Bash(npx tsx scripts/pool-report.ts:*)",
       "Bash(npx tsx scripts/base-layer-report.ts:*)",
-      "Bash(npx tsx scripts/health-report.ts:*)"
+      "Bash(npx tsx scripts/health-report.ts:*)",
+      "Bash(npx tsx scripts/grammar-report.ts:*)"
     ],
     "ask": [
       "Bash(rm:*)",
