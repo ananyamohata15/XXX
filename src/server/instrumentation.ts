@@ -22,7 +22,8 @@ export type TraceKind =
   | "ttl_sweep"
   | "weather_ingest"
   | "travel_matrix"
-  | "travel_probe";
+  | "travel_probe"
+  | "day_generation";
 
 export interface TraceEvent {
   provider: string;

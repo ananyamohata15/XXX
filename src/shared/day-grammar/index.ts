@@ -20,6 +20,16 @@ export type {
 export { HaversineStubProvider, MatrixTravelProvider, haversineKm } from "./travel";
 
 export {
+  businessStatusVerdict,
+  canHoldVisit,
+  earliestVisitStart,
+  openIntervalsOn,
+  readFact,
+  seasonallyValidOn,
+} from "./predicates";
+export type { Span } from "./predicates";
+
+export {
   advisoriesOnly,
   assertWellFormed,
   hasViolations,
