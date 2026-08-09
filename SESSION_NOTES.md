@@ -768,6 +768,120 @@ reachable from `/` or linked anywhere.
    `unknown` fact arm in the timeline view model (§1.4); surfacing
    `legs` from `composeDay` (§1.4).
 
+### CHECKPOINT 1 outcome — all rulings granted
+
+Schema ratified including `evidence_only_founder_flips` as a CHECK; the
+sha256-digest reading recorded as a **dated addendum against decision
+001** (written: `docs/decisions/001-places-tos-and-caching.md`,
+"Addendum — 2026-08-09"). Staleness policy ratified in full. **N = 12**
+as a runaway guard, with the meter gaining a **month-to-date Details
+gauge against the 1,000 free events**. `startTrace(kind, metadata?)`
+approved. Gestures **read-only** per the validity argument — policy of
+record, E5 is the unlock. Skeleton-then-full with a stage-labeled
+elapsed counter; XXX-20 inherits streaming whole. `unknown` fact-view
+arm approved. `legs` surfaced with provenance approved — **and
+attribution obligations activate now**: a Google Maps mark in-container
+wherever Google-fetched facts or durations display, a HeiGIT line
+wherever ORS legs display (docs 001/003).
+
+## Step 2 — Schema + write paths + route (CHECKPOINT 2)
+
+### What was built
+
+| Piece | Where | Note |
+|---|---|---|
+| Migration | `supabase/migrations/20260809000000_evidence_and_taste.sql` | `reporters` + `evidence` + `taste_signals`, the `facts_founder_only_keys` CHECK, `record_founder_evidence()`, founder reporter seeded idempotently. **Applied to production** (`supabase db push`, 2026-08-09). |
+| Precedence + staleness | `src/shared/founder-groundtruth.ts` | pure; horizons, `isGoverning`, sparse-hours merge. Freshest-wins rejected **in the module note**, not just in these notes — the next reader meets the argument at the code. |
+| Override stage | `src/server/generation/groundtruth.ts` + engine stage 3b | one indexed read after Details, before `hardFilter`; `applied`/`skipped` both ride the trace |
+| Founder fact keys | `src/server/domain/schemas.ts` | `business_status`, `hours_corrections` (sparse), founder-only at the Zod boundary and again as a DB CHECK |
+| Write paths | `src/server/feedback/{record,shown,digest}.ts` | two functions, disjoint schemas, no shared row builder |
+| Gate + quota | `src/server/tasting/{gate,quota}.ts` | HMAC session cookie; cap counts traces tagged at start |
+| Routes | `src/app/api/tasting/{session,generate,evidence,taste}` | gate first, before body parse and before any DB access |
+| View model | `src/shared/timeline.ts`, `timeline-mapping.ts` | `unknown` arm; `timelineDaySchema` (live) vs `fixtureDaySchema` (authored) |
+| Travel legs | `composeDay` → `GenerationOutcome.travel` | with each provider's own provenance |
+
+### Two design points worth the reviewer's attention
+
+**1. `hours_corrections` governs nothing when there are no base hours.**
+A founder correction names one weekday. If Google gave us no hours at
+all, merging would mean building a seven-day map out of one known day —
+inventing six days of closure, since `openIntervalsOn` reads a missing
+weekday as closed. The correction is therefore skipped with reason
+`no-base-hours`, recorded in the trace. It costs little (the composer
+already seats unknown-hours venues by window) and it keeps constraint 4
+honest at a place where the shortcut would never have been noticed.
+
+**2. Provenance on a merged hours fact.** When the founder's correction
+does apply, the fact's provenance becomes `founder_groundtruth`/tier 1.
+The untouched weekdays ride along from Google. This is defensible
+because the projection exists for exactly one date and nothing reads
+another weekday from it — but it is a judgment, stated here rather than
+buried, and it is why the fact is never persisted.
+
+### CHECKPOINT 2 proofs — 33 checks, all passed
+
+Run: `npx tsx --env-file=.env.local scripts/tasting-proof.ts --base
+http://localhost:3000 --synthetic`, against **the production Supabase
+database** with the app served locally (the routes cannot be exercised
+against the deployed app until the founder merges and deploys — the
+`vercel:*` deny is deliberate and unchanged).
+
+| Proof | Result |
+|---|---|
+| (e) unauthenticated → 401 | **PASS.** Body is exactly `{"error":"unauthorized"}` — no pool data, no counts, no persona list. A wrong secret is also 401. Evidence and taste routes gated identically. **And the trace count was unchanged across all four refusals: a rejected request causes no database work at all**, because the gate runs before the body is parsed. |
+| (a) founder ✗ → tier-1 evidence + flip | **PASS on the write half.** Evidence row: authority founder, `verification_state=bypassed`, `fact_key=business_status`, `shown_source=google_places`, `shown_tier=1`, `shown_digest` a 64-hex sha256, flip audited with `flipped_at`, keyed by persona + date + `adjacent_rule_ids`. Fact row: `closed_permanently`, source `founder_groundtruth`, **tier 1**. **The governing half is BLOCKED — see below.** |
+| (b) simulated user | **PASS.** `verification_state=not_queued`, `flippedFactKey=null`, and no founder fact exists for that place. |
+| (c) simulated trusted | **PASS.** `verification_state=queued` (flagged for immediate verification, 10297), `flippedFactKey=null`. The appointment audit carries `granted_by` + `granted_at`. |
+| (b)(c) the invariant, at the database | **PASS.** A hand-crafted insert of a `reporter_authority='user'` row carrying a flip was refused: *"new row for relation "evidence" violates check constraint "evidence_only_founder_flips""*. XXX-34's never-poison invariant 1 is not a promise in a write path; it is a constraint. |
+| (d) taste never touches evidence | **PASS.** `not_for_me` and a day verdict both landed in `taste_signals`; the evidence count for that trace was unchanged (3 → 3). The day verdict carries `place_id=null` and `slot_id=null`. **Both crossings were rejected 400**: `not_for_me` is not a spellable evidence claim, `hours_wrong` is not a spellable taste signal. |
+| (f) self-cap | **PASS.** 429 with `{"status":"capped","quota":{"generationsToday":14,"dailyCap":12,...}}` — the refusal names the cap, the count and the reset instant. Note `generationsToday=14` included **two aborted runs**: the tag written at `startTrace` did its job, and a generation that spent money and then died still counts. |
+
+**Data hygiene**: the harness writes a real tier-1 founder fact against
+a real venue, so it deletes it again at the end and says so
+(`removed the harness founder fact on Professional Bakery Co —
+production carries no fabricated closure`). A fabricated closure left in
+production would be exactly the poisoned ground truth this design
+exists to prevent. Evidence rows are kept, with `free_text` naming them
+harness artifacts.
+
+### BLOCKER — the GCP quota raise from Session 9 never took effect
+
+The live half of proof (a) — regenerate and watch the flipped fact
+govern — could not run. First generation attempt returned:
+
+> `places.get(engine) HTTP 429: Quota exceeded for quota metric
+> 'GetPlaceRequest' and limit 'GetPlaceRequest per day'`
+
+Evidence from the traces, not inference:
+
+- **515 `places.get(engine)` events today**, all between 12:47 and
+  13:31 UTC, then a hard stop. That is the **500/day default**, not the
+  ≈5,000/day the Session 9 close-out recorded as "raised founder-side".
+  The raise did not apply.
+- Those 515 were not this session's: they are the deferred Session 9
+  variety/matrix runs, executed this morning. This session's two
+  attempts aborted without spinning (Session 4 law, working).
+- **Month-to-date Details events: 515 of the 1,000 free.** Over half a
+  month's free allowance consumed on day 9, by one afternoon of proof
+  runs. The gauge ruled at CP1 has already earned itself.
+
+What is affected: the second half of proof (a), and **Step 3's phone
+review entirely** — the tasting room cannot generate a day without
+Details quota.
+
+**Founder action needed** (GCP console → APIs & Services → Places API
+(New) → Quotas → `GetPlaceRequest` "per day"): confirm the request was
+submitted *and approved* — a submitted-but-pending increase shows in
+the console but does not raise the limit, which is consistent with what
+Session 9 saw and with what happened today. Otherwise the daily reset
+(midnight Pacific) restores 500 and the pending work costs ~40 Details
+events (~$0.80 list): one command, given in the close-out.
+
+### Four checks after Step 2
+
+`npm run lint` clean · `npm run typecheck` clean · `npm test` **358
+passed / 3 skipped** (33 new) · `npm run build` success.
+
 # Session 9 — Generation engine: generateDay(request) → GrammarDay + reasons (XXX-5)
 
 Branch: `session-9-generation-engine`. Status: **in progress**.
