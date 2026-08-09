@@ -1,3 +1,206 @@
+# Session 10 — Founder tasting room + evidence/taste schema (XXX-32, XXX-33)
+
+Branch: `session-10-tasting-room`. Status: **in progress**.
+Scope: the evidence + taste schema (XXX-33, authority-aware from migration
+one), the founder-gated generation route, the `/tasting` page rendering
+real `generateDay` output in the real Session-3 timeline, and the
+founder→fact-flip loop proven end to end against production. Out of
+scope: XXX-34's trust engine (thresholds, reputation, sybil), any
+public/user access, real auth (XXX-17), E5 edit persistence, E6
+consumption of the taste store, London/Delhi.
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### Prior-art reads (all done before any work)
+
+- **XXX-32** (tasting room) + **comment 10296**: free-text is
+  first-class at **two levels** — per-card notes alongside ✓/✗ +
+  quick-pick, and a per-DAY verdict box. Text persists with
+  authority=founder, linked to trace + card/fact context, and must be
+  **queryable by place, persona, rule-adjacency, and date** (it is a
+  minable corpus for a future session, not a comment field).
+- **XXX-33** (feedback capture) + **comment 10297**: the authority
+  ladder is **three rungs — founder | trusted | user** — and the v1
+  schema must carry it. `trusted` is founder-appointed (per-person
+  flag, grantable/revocable, no algorithm), stores at high weight and
+  is flagged for immediate verification, **writes no facts**. Founder
+  overrides trusted on conflict. Schema records **who granted and
+  when** (audit).
+- **XXX-5 comment 10289** (evidence-rows doctrine): user observations
+  are EVIDENCE attached to facts, never fact-writes. Thresholds are
+  governed by corroboration / reputation / plausibility / asymmetric
+  stakes — all later. **Founder ground-truth channel is exempt
+  (unconditional tier 1 — operator trust).** "Schema implication to
+  honor when the time comes: a signals/evidence table shape, cheap to
+  design early, miserable to retrofit."
+- **XXX-34** (trust engine — read for shape, NOT built): verify-don't-
+  believe; reports are petitions that trigger cheap verification;
+  reporter trust score starting ≈0, earned slowly, lost fast; weight =
+  f(trust, stakes, plausibility); sybil clustering on
+  device/IP/time/account-age/velocity; **shadow semantics — reporters
+  never see their own weight**; decay on both trust and evidence; every
+  flip records a full evidence + verification audit trail. The five
+  never-poison invariants. What this means for me: XXX-33's rows must
+  be able to carry a weight, a verification outcome, an independence
+  fingerprint, and a decay clock **later** without a rewrite — I design
+  the columns' *absence* deliberately and say where each one lands.
+- **Session 9 forward notes**: partial-return seam is
+  post-grammar-loop / pre-narration (**structure final ≈8.5s**,
+  narration ≈6s more and streamable); **~90% of days ship on validation
+  pass 1**, repair engaged only on budget-banded days (3 runs, passes
+  3/2/2, zero exhaustion); `Persona` (`src/shared/persona.ts`) is the
+  contract E6 replaces the *source* of, not the shape; generation
+  costs **$0.27–0.48 list** and takes **9.8–14.8s** on the LLM path;
+  GCP `GetPlaceRequest` quota raised founder-side to **≈250
+  generations/day**; Anthropic intro pricing ends 2026-08-31.
+- **Session 3 timeline components** (`src/components/timeline/`): the
+  E2 kill-gate survivors. `InteractiveTimeline` (state: order,
+  rotations, times; all recomputation via the pure `reflowDay`),
+  `InteractiveCard` (the pointer state machine — long-press lift,
+  flick-swap, tap-expand, anchor refusal, non-passive touchmove for
+  touch ownership), `SlotCard` (provenance chips + expanded fact rows),
+  `TravelSegment`, `ProvenanceChip`. **They consume `FixtureDay` from
+  `src/shared/timeline.ts`, not `GrammarDay`** — that gap is a named
+  CP1 item.
+- **Session 3 process lesson, binding on Step 3**: a gesture/UI
+  verification claim must **name the device + input method**; "works"
+  without a named device reads as unverified. (Also in memory as the
+  feel-gate protocol.)
+
+### Module inventory — what exists, and the two things that do not
+
+| Capability | Module | State |
+|---|---|---|
+| `generateDay(deps, request) → GenerationOutcome` | `src/server/generation/engine.ts` | **exists, library only — no route** (Session 9 left the route to XXX-17 by design). Deps: supabase, Google client, googleApiKey, instrumentation, selector, optional narrator, optional `llmUsage`. |
+| Wiring precedent for those deps | `scripts/generation-report.ts` | the exact composition the route needs (`createEngineGoogleClient`, `createAnthropic`, `LlmSelector` + `DeterministicSelector` fallback, `narrateDay`, `UsageRecorder`) |
+| Trace + cost/latency meter data | `GenerationStats` (`generation/types.ts`) | traceId, seed, detailsCalls, anthropic{calls,tokens,estCostUsd,retries}, validationPasses, `repairLog`, `unfilled`, `timings` — everything the on-page meter needs is already returned |
+| Instrumentation | `src/server/instrumentation.ts` | `day_generation` TraceKind exists; `startTrace/logEvent/endTrace` |
+| Timeline components | `src/components/timeline/*` | exist; consume `FixtureDay` |
+| View-model + pure reflow | `src/shared/timeline.ts` | `FixtureDay`/`SlotView`/`PlaceView`/`FactView`, `reflowDay`, `travelKey` |
+| Personas | `src/shared/persona.ts` | `GOLDEN_PERSONAS` — the six, keyed |
+| Fact write primitive | `createFact()` (`src/server/domain/repo.ts`) + `newFactSchema` | exists — generic, provenance-required, per-key Zod registry |
+| Server Supabase (service role) | `src/server/supabase.ts` | exists |
+| Route auth precedent | `src/app/api/jobs/ingest-weather/route.ts` | the CRON_SECRET pattern: missing secret → 503 (misconfiguration ≠ bad auth), wrong secret → 401 |
+| API-first boundary | `eslint.config.mjs` | `src/app/**` + `src/components/**` (except `src/app/api/**`) may not import `@/server/**` — enforced, and it shapes the page/route split |
+
+**Two things the brief assumes exist that do NOT. Stated plainly now
+because they are the session's real design problem, not a detail:**
+
+1. **There is no `founder_groundtruth` write path — and no channel it
+   could write through.** `founder_groundtruth` is a *source string*
+   used by the golden-set fixtures (`src/shared/fixtures/golden/support.ts`)
+   and two test rows. Nothing writes it at runtime.
+2. **More load-bearing: the `facts` table cannot currently hold the
+   fact a founder ✗(hours_wrong) would flip.** The fact-key registry
+   (`factValueSchemas`, `domain/schemas.ts`) is exactly four keys —
+   `website`, `price_range`, `vibe`, `categories`. There is **no
+   `hours` and no `business_status` key**, and by deliberate licensing
+   design there never can be one sourced from Google: hours and
+   business status are fetched request-time by `applyDetails()`
+   (`generation/details.ts`) into **in-memory** `GrammarFact`s and are
+   never persisted (decision 001 ambiguity 2). The engine's hard
+   filters (`generation/filters.ts`) read those in-memory facts only.
+
+   So "a founder hours_wrong flips the fact and the next generation
+   reflects it" requires, concretely: (a) new **founder-owned** fact
+   keys in the registry, (b) a founder-groundtruth **write path**, and
+   (c) a new **override stage in the engine** that lets a stored
+   tier-1 founder fact supersede the request-time Google fact before
+   `hardFilter` runs. (c) is a change to the live pipeline and is the
+   part I will argue carefully at CP1 — it is also, I think, the
+   correct place for it: founder ground-truth outranking an API is
+   exactly what "operator trust, unconditional tier 1" means, and
+   Google-sourced hours can be *overridden in memory* without being
+   *stored*, which keeps decision 001 intact.
+
+   This is the fact-flip loop's actual machinery. I am not treating it
+   as discovered scope creep — it is XXX-33's AC — but the CP1
+   proposal will show it as a pipeline change, with its own Tier-1
+   fixture test and a Tier-2 live proof.
+
+### Settings check — no changes proposed (expected: none; confirmed)
+
+Reviewed `.claude/settings.json` against this session's needs.
+
+- `Bash(npx tsx:*)` stays **ask**: the loop proof and any live
+  generation run costs money ($0.27–0.48/generation) and burns
+  `GetPlaceRequest` quota. The prompt is the cost gate (Session 8
+  doctrine); Session 9's own quota trip is the argument for keeping
+  per-run deliberateness. `scripts/generation-report.ts` remains
+  **deliberately un-allowlisted** (Session 9's own recommendation).
+- `Bash(npx supabase:*)` stays **ask** — the migration push prompts.
+- `Bash(curl:*)` stays **ask** — the route proofs (401, self-cap,
+  evidence POSTs) are curl calls against production and each should
+  prompt.
+- `.env.local` stays out of bounds (deny rules intact). The new secret
+  is never read by me: presence is confirmed by **script self-report**
+  (set/MISSING, name only), exactly as `ANTHROPIC_API_KEY` was in
+  Session 9.
+- **`npm install`: none anticipated.** Every dependency this session
+  needs is already in `package.json` (`@anthropic-ai/sdk`, `zod`,
+  `motion`, `@supabase/supabase-js`). If one proves necessary I will
+  raise it at the checkpoint before running it; the pre-approval for
+  its ask-prompt is noted and unused unless that happens.
+- **Vercel CLI is not installed** (session hook flagged it) and
+  `Bash(vercel:*)` / `Bash(npx vercel:*)` are **deny** — deliberate,
+  and unchanged. Consequence: I cannot pull env vars, deploy, or read
+  deployment logs. Anything needing the Vercel CLI or dashboard is a
+  founder action, and I will hand over exact steps rather than ask for
+  the deny rule to be relaxed.
+
+### The route gate secret — proposed name and the founder's exact steps
+
+**Proposed env var: `TASTING_ROOM_SECRET`.** Reasons: it names the
+surface it gates (not the mechanism), it sits alongside `CRON_SECRET`
+in the same vocabulary, and it carries no `NEXT_PUBLIC_` prefix — a
+name that could never be accidentally correct on the client.
+
+Founder steps (run these; nothing ships until you confirm):
+
+```
+# 1. Generate the secret (64 hex chars).
+openssl rand -hex 32
+
+# 2. Add it to Vercel — Production, Preview AND Development, marked Sensitive.
+#    Dashboard: Project xxx → Settings → Environment Variables → Add New
+#      Key:          TASTING_ROOM_SECRET
+#      Value:        <the hex string from step 1>
+#      Environments: Production, Preview, Development  (all three)
+#      Sensitive:    yes
+#    Or, if you install the CLI (npm i -g vercel):
+#      vercel env add TASTING_ROOM_SECRET production
+#      vercel env add TASTING_ROOM_SECRET preview
+#      vercel env add TASTING_ROOM_SECRET development
+
+# 3. Pull it locally so `next dev` and the proof scripts see it.
+vercel env pull .env.local        # merges into the existing file
+#    (No CLI? Append the line by hand to .env.local — I never read it.)
+
+# 4. Confirm to me: "TASTING_ROOM_SECRET is set in Vercel (all three) and
+#    pulled locally." I will verify presence by script self-report only.
+```
+
+All three environments deliberately: **preview deployments get the same
+gate** (XXX-32's "zero access without the gate" has no exception for
+previews), and Development so the phone-on-LAN review loop works
+against `next dev` without a second code path.
+
+**I will not ship the route to any environment before that
+confirmation.** Until then I build and test it against fixtures and a
+locally-set value.
+
+### Questions carried into CHECKPOINT 1 (not decided here)
+
+1. The fact-flip machinery above — new founder fact keys + write path +
+   engine override stage. Design and cost argued at CP1.
+2. Self-cap N (generations/day on the route) — proposed with arithmetic
+   at CP1 against the ≈250/day quota ceiling and the $0.27–0.48 cost.
+3. Gesture policy (read-only vs local-only-with-honest-labels).
+4. Secret-entry mechanism on the page (session-scoped, never in the URL).
+5. Streaming posture at the ≈8.5s seam vs honest skeleton-then-full.
+
+### CHECKPOINT 0 — awaiting ruling
+
 # Session 9 — Generation engine: generateDay(request) → GrammarDay + reasons (XXX-5)
 
 Branch: `session-9-generation-engine`. Status: **in progress**.
