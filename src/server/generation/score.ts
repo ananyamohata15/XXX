@@ -14,15 +14,24 @@ import type { PriceRange } from "@/shared/timeline";
 import type { Candidate } from "./types";
 
 export const SCORE_WEIGHTS = {
-  ratingQuality: 0.35,
+  /** Slightly under lens+affinity: rating volume partly double-counts
+   * fame, and fame must not drown the persona axes. */
+  ratingQuality: 0.3,
   personaAffinity: 0.25,
   priceFit: 0.15,
-  lensFit: 0.15,
+  /** The icons-vs-corners identity axis — 10294 demands it materially
+   * reorders, so its ceiling must exceed the jitter's maximum swing. */
+  lensFit: 0.2,
   freshness: 0.1,
 } as const;
 
-/** Exploration bound: at most ±8% of the score range (CP1 §1.6). */
-export const JITTER_BOUND = 0.08;
+/**
+ * Exploration bound (CP1 §1.6, recalibrated at CP3): ±4%, so the
+ * maximum pairwise swing (0.08) stays below a strong lens signal
+ * (~0.12 on a famous-vs-hidden pair) — jitter breaks long-tail ties,
+ * it never inverts a preference the persona actually expressed.
+ */
+export const JITTER_BOUND = 0.04;
 
 /** Bayesian shrinkage prior: a place with few ratings drifts to 4.0. */
 const PRIOR_COUNT = 25;
@@ -95,6 +104,20 @@ function lensFit(candidate: Candidate, persona: Persona): number {
 const freshness = (c: Candidate): number =>
   c.detailsFetched ? 1 : c.googlePlaceId !== null ? 0.6 : 0.4;
 
+/**
+ * The exploration term is persona-local (10294 point 3: users who start
+ * identical should diverge): the jitter PRNG is keyed by persona as well
+ * as seed and venue, so two similar personas on the same date break
+ * their long-tail ties differently instead of in lockstep. Found the
+ * hard way — the first CP3 matrix ran a fixed exam seed and two
+ * corners personas collapsed to 0.67 venue overlap.
+ */
+export function personaFingerprint(persona: Persona): number {
+  return fnv1a(
+    `${persona.pace}|${persona.gravity.join(",")}|${persona.foodCourage}|${persona.structure}|${persona.lens}`,
+  );
+}
+
 export function scoreCandidate(
   candidate: Candidate,
   persona: Persona,
@@ -109,7 +132,10 @@ export function scoreCandidate(
     w.lensFit * lensFit(candidate, persona) +
     w.freshness * freshness(candidate);
   const jitter =
-    (mulberry32(seed ^ fnv1a(candidate.place.id))() * 2 - 1) * JITTER_BOUND;
+    (mulberry32(seed ^ fnv1a(candidate.place.id) ^ personaFingerprint(persona))() *
+      2 -
+      1) *
+    JITTER_BOUND;
   return base + jitter;
 }
 
