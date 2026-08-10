@@ -877,6 +877,35 @@ Session 9 saw and with what happened today. Otherwise the daily reset
 (midnight Pacific) restores 500 and the pending work costs ~40 Details
 events (~$0.80 list): one command, given in the close-out.
 
+### Self-cap raised 12 → 20 (Step 3, deliberate)
+
+Founder ruling after the first real review session: 12 is a short
+evening. Raised in one place —
+`src/server/tasting/quota.ts (TASTING_DAILY_CAP)`.
+
+The arithmetic, restated so the raise is on the record as a decision
+rather than a drift:
+
+| | 12/day | **20/day** |
+|---|---|---|
+| Runaway worst case at the wall | ~$4.80 list/day | **~$8.00 list/day** |
+| Sustained, per month (600 gens × ~18 Details events) | ~$120 | **~$214** |
+| Billable Details events/month past the 1,000 free | 5,480 | 9,800 |
+
+The doctrine is unchanged and worth repeating because the number moved:
+**the cap is a runaway guard, not a budget.** It stops a page that
+regenerates on mount or a stuck retry; it cannot stop deliberate use
+from costing $214/month. The budget controls are the on-page meter
+(month-to-date Details against the 1,000 free events) and the GCP
+billing alerts.
+
+Refinement shipped with it: **the refusal names its own switch.** The
+429 body carries `raiseAt` and a `note`, and the on-page message renders
+them — a guard nobody can find is a guard that gets disabled in anger
+rather than raised on purpose. The proof harness reads
+`TASTING_DAILY_CAP` rather than a literal, so the cap proof cannot drift
+from the cap.
+
 ### Four checks after Step 2
 
 `npm run lint` clean · `npm run typecheck` clean · `npm test` **358

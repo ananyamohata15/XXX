@@ -363,12 +363,17 @@ export function TastingRoom() {
 
       {outcome?.status === "capped" && (
         <div className="mx-auto mt-6 w-full max-w-md px-4">
-          <p className="rounded-2xl border border-amber-300 p-4 text-sm text-amber-700 dark:border-amber-800 dark:text-amber-400">
-            Daily cap reached: {outcome.quota.generationsToday} of{" "}
-            {outcome.quota.dailyCap}. Resets{" "}
-            {new Date(outcome.quota.resetsAt).toLocaleString()}. The cap is a
-            runaway guard — raise it deliberately, not reflexively.
-          </p>
+          <div className="rounded-2xl border border-amber-300 p-4 text-sm text-amber-700 dark:border-amber-800 dark:text-amber-400">
+            <p>
+              Daily cap reached: {outcome.quota.generationsToday} of{" "}
+              {outcome.quota.dailyCap}. Resets{" "}
+              {new Date(outcome.quota.resetsAt).toLocaleString()}.
+            </p>
+            <p className="mt-1.5 text-xs">
+              {outcome.note} Raise it at{" "}
+              <code className="font-mono">{outcome.raiseAt}</code>.
+            </p>
+          </div>
         </div>
       )}
 

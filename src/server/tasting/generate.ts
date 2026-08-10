@@ -21,7 +21,11 @@ import { buildTastingContext, TASTING_SURFACE } from "../feedback/shown";
 import { buildSyntheticDay } from "./synthetic";
 import { toTimelineDay } from "@/shared/timeline-mapping";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
-import { capReached, readQuota } from "./quota";
+import {
+  capReached,
+  readQuota,
+  TASTING_CAP_CONFIG_LOCATION,
+} from "./quota";
 
 export const NARRATION_SOURCE = "anthropic:claude-sonnet-5";
 
@@ -148,7 +152,14 @@ export async function runTastingGeneration(
   const quota = await readQuota(supabase, nowIso);
   // The synthetic day spends nothing, so the runaway guard does not
   // apply to it: capping a free preview would be theatre.
-  if (!input.synthetic && capReached(quota)) return { status: "capped", quota };
+  if (!input.synthetic && capReached(quota)) {
+    return {
+      status: "capped",
+      quota,
+      raiseAt: TASTING_CAP_CONFIG_LOCATION,
+      note: "A runaway guard, not a budget. Raise it deliberately; the budget lives on the meter and the GCP billing alerts.",
+    };
+  }
 
   if (input.synthetic === true) return runSyntheticDay(input, nowIso);
 

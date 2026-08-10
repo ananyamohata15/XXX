@@ -18,8 +18,25 @@ import { CITY_GEO } from "@/shared/vocabulary";
 import { localToUtcIso } from "../generation/engine";
 import { TASTING_SURFACE } from "../feedback/shown";
 
-/** Ruled at CP1: three review sittings of 3–4 generations, plus mistakes. */
-export const TASTING_DAILY_CAP = 12;
+/**
+ * The per-day runaway guard. **This constant is the switch** — the
+ * refusal message points founders here on purpose, because a guard that
+ * cannot be found is a guard that gets disabled in anger.
+ *
+ * Raised 12 → 20 (Session 10 Step 3, deliberate per the CP1 doctrine)
+ * after the first real review session showed 12 is a short evening.
+ * Worst case at the wall: 20 × ~$0.40 ≈ $8 list per day.
+ *
+ * It is NOT a budget and must not be treated as one. Sustained 20/day is
+ * ~$214/month once past Google's 1,000 free Details events. The budget
+ * controls are the on-page meter and the GCP billing alerts; this only
+ * stops a loop.
+ */
+export const TASTING_DAILY_CAP = 20;
+
+/** Named in the refusal so the guard tells its owner how to raise it. */
+export const TASTING_CAP_CONFIG_LOCATION =
+  "src/server/tasting/quota.ts (TASTING_DAILY_CAP)";
 
 /** Google Places Enterprise SKU: 1,000 free events per calendar month. */
 export const DETAILS_FREE_EVENTS_PER_MONTH = 1000;

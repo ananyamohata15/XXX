@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { factDigest } from "../src/server/feedback/digest";
+import { TASTING_DAILY_CAP } from "../src/server/tasting/quota";
 
 /**
  * Tasting-room proof harness (XXX-32/XXX-33, Session 10 CHECKPOINT 2).
@@ -628,7 +629,7 @@ async function main() {
 
   // ---------------------------------------------------------------------
   head("(f) the per-day self-cap refuses");
-  const synthetic = Array.from({ length: 12 }, () => ({
+  const synthetic = Array.from({ length: TASTING_DAILY_CAP }, () => ({
     kind: "day_generation",
     metadata: { surface: "tasting_room", proof: "self-cap-refusal" },
   }));
@@ -649,11 +650,18 @@ async function main() {
       status?: string;
       quota?: { dailyCap: number; generationsToday: number };
     };
-    check("the refusal names the cap", body.quota?.dailyCap === 12);
+    check(
+      "the refusal names the cap",
+      body.quota?.dailyCap === TASTING_DAILY_CAP,
+    );
     check("and it is not a silent no-op", body.status === "capped");
     check(
       "the refusal spent nothing",
-      (body.quota?.generationsToday ?? 0) >= 12,
+      (body.quota?.generationsToday ?? 0) >= TASTING_DAILY_CAP,
+    );
+    check(
+      "and it names where to raise the guard",
+      typeof (capped.body as { raiseAt?: string }).raiseAt === "string",
     );
   } finally {
     const ids = (inserted ?? []).map((r) => r.id);

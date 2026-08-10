@@ -68,7 +68,13 @@ export type TastingOutcome =
       violations: NarratedLineView[];
       meter: TastingMeter;
     }
-  | { status: "capped"; quota: TastingQuota };
+  | {
+      status: "capped";
+      quota: TastingQuota;
+      /** Where to raise the guard. A guard should name its own switch. */
+      raiseAt: string;
+      note: string;
+    };
 
 export interface EvidenceResultView {
   evidenceId: string;
