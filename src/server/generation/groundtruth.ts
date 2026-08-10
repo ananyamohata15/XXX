@@ -73,24 +73,39 @@ export async function applyFounderGroundtruth(
   date: string,
   nowIso: string,
 ): Promise<GroundtruthOutcome> {
-  const placeIds = candidates.map((c) => c.place.id);
-  if (placeIds.length === 0) {
+  if (candidates.length === 0) {
     return { candidates, applied: [], skipped: [] };
   }
 
+  // Deliberately NOT filtered by place id. The candidate pool is 150–250
+  // rows and a place_id `in` list that long builds a GET URL PostgREST
+  // rejects outright (live-reproduced: "Bad Request", Session 10 Step 3).
+  // Founder facts are the rarest rows in the database — one operator,
+  // hand-made — so fetching them all through the (fact_key, fetched_at)
+  // index and joining in memory is both cheaper and shorter. Revisit if
+  // the founder channel ever holds more than a few thousand rows: the
+  // fix then is chunked place_id batches, not a longer URL.
   const { data, error } = await client
     .from("facts")
     .select("place_id, fact_key, value, fetched_at")
-    .in("place_id", placeIds)
     .eq("source", FOUNDER_SOURCE)
     .eq("status", "present")
     .in("fact_key", [...FOUNDER_FACT_KEYS]);
   if (error) {
-    throw new Error(`founder groundtruth read failed: ${error.message}`);
+    // Carry the whole PostgREST error: a bare "Bad Request" cost this
+    // session a debugging round trip.
+    throw new Error(
+      `founder groundtruth read failed: ${error.message}` +
+        `${error.code ? ` [${error.code}]` : ""}` +
+        `${error.details ? ` — ${error.details}` : ""}` +
+        `${error.hint ? ` (hint: ${error.hint})` : ""}`,
+    );
   }
 
+  const wanted = new Set(candidates.map((c) => c.place.id));
   const byPlace = new Map<string, FounderFact[]>();
   for (const row of data ?? []) {
+    if (!wanted.has((row as { place_id: string }).place_id)) continue;
     const parsed = rowSchema.safeParse(row);
     if (!parsed.success) continue; // a malformed stored fact governs nothing
     const fact = {

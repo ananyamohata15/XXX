@@ -291,8 +291,9 @@ export function TastingRoom() {
         <div className="mt-4 space-y-2.5">
           <select
             value={personaKey}
+            disabled={synthetic}
             onChange={(e) => setPersonaKey(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
           >
             {PERSONA_KEYS.map((k) => (
               <option key={k} value={k}>
@@ -305,13 +306,15 @@ export function TastingRoom() {
             <input
               type="date"
               value={date}
+              disabled={synthetic}
               onChange={(e) => setDate(e.target.value)}
-              className="flex-1 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="flex-1 rounded-xl border border-zinc-200 bg-white p-3 text-sm disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
             />
             <button
               type="button"
+              disabled={synthetic}
               onClick={() => setDate(randomNearFutureDate())}
-              className="rounded-xl border border-zinc-200 px-3 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+              className="rounded-xl border border-zinc-200 px-3 text-sm text-zinc-500 disabled:cursor-not-allowed disabled:text-zinc-300 dark:border-zinc-700 dark:text-zinc-400 dark:disabled:text-zinc-600"
             >
               Random
             </button>
@@ -320,17 +323,26 @@ export function TastingRoom() {
             type="number"
             inputMode="numeric"
             value={budget}
+            disabled={synthetic}
             onChange={(e) => setBudget(e.target.value)}
             placeholder="Budget cap in CAD (optional)"
-            className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
           />
+          {/* Inert controls must LOOK inert. A picker that silently does
+              nothing reads as a broken page, whatever the design says. */}
+          {synthetic && (
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              Persona, date and budget are disabled: the test pattern is a
+              fixed set of cards and does not compose a day from them.
+            </p>
+          )}
           <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
             <input
               type="checkbox"
               checked={synthetic}
               onChange={(e) => setSynthetic(e.target.checked)}
             />
-            Synthetic day (free, spends no quota)
+            Display test pattern (free, spends no quota)
           </label>
           <button
             type="button"
@@ -382,12 +394,18 @@ export function TastingRoom() {
         <>
           {outcome.synthetic && (
             <div className="mx-auto mt-6 w-full max-w-md px-4">
-              <p className="rounded-2xl border-2 border-dashed border-amber-400 p-3 text-sm text-amber-700 dark:text-amber-400">
-                <strong>Synthetic day.</strong> Real venues from the pool,
-                fabricated facts and times. Nothing was fetched or validated,
-                and a verdict here records your words but writes no ground
-                truth.
-              </p>
+              <div className="rounded-2xl border-2 border-dashed border-amber-400 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <p>
+                  <strong>Display test pattern — not a composed itinerary.</strong>{" "}
+                  Uncheck &ldquo;Display test pattern&rdquo; above to generate a
+                  real day.
+                </p>
+                <p className="mt-1.5 text-xs">
+                  Real venues from the pool wearing fabricated facts and times,
+                  here to exercise every rendering path at once. Verdicts are
+                  recorded but write no ground truth.
+                </p>
+              </div>
             </div>
           )}
 
@@ -416,6 +434,13 @@ export function TastingRoom() {
                 Unfilled: {u.label} ({u.cause}) — a thinner day, said out loud.
               </p>
             ))}
+          </div>
+
+          <div className="mx-auto mt-5 w-full max-w-md px-4">
+            <p className="rounded-xl border border-zinc-200 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+              Read-only view — this page is for judging days, not arranging
+              them. Tap a card for provenance; editing unlocks with E5.
+            </p>
           </div>
 
           <InteractiveTimeline

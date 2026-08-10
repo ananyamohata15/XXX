@@ -319,8 +319,26 @@ async function main() {
         name: before!.day.places[s.placeId].name,
       }));
   }
-  const target = cards[0];
-  const other = cards[1] ?? cards[0];
+  // Which cards actually had a fact on screen? A candidate with no Google
+  // link is shown with hours/status never fetched — and a founder report
+  // is MOST valuable exactly there ("I walked past, it is shut"). Both
+  // paths get proved: the digest path on a card that showed a fact, the
+  // honest-null path on one that showed none.
+  const { data: traceRow } = await client
+    .from("traces")
+    .select("metadata")
+    .eq("id", traceId)
+    .single();
+  const contextCards =
+    ((traceRow?.metadata as { tasting?: { cards?: Record<string, { facts: Record<string, unknown> }> } })
+      ?.tasting?.cards) ?? {};
+  const showedFact = (slotId: string): boolean =>
+    Object.keys(contextCards[slotId]?.facts ?? {}).length > 0;
+
+  const target = cards.find((c) => showedFact(c.slotId)) ?? cards[0];
+  const other =
+    cards.find((c) => c.slotId !== target.slotId) ?? cards[0];
+  const blind = cards.find((c) => !showedFact(c.slotId)) ?? null;
   line(`  target card: ${target.slotId} → ${target.name} (${target.placeId})`);
 
   const flip = await post(
@@ -362,6 +380,10 @@ async function main() {
     "the shown value is fingerprinted, not stored",
     typeof evidenceRow?.shown_digest === "string" &&
       /^[0-9a-f]{64}$/.test(evidenceRow.shown_digest as string),
+  );
+  check(
+    "the shown block is all-or-nothing",
+    (evidenceRow?.shown_source === null) === (evidenceRow?.shown_digest === null),
   );
   check("the flip is audited on the row", evidenceRow?.flipped_at !== null);
   check(
@@ -411,6 +433,47 @@ async function main() {
         "  override reaching hardFilter is covered by Tier-1 fixtures\n" +
         "  (tests/founder-groundtruth.test.ts); the live half is deferred.",
     );
+  }
+
+  if (blind !== null) {
+    head("(a2) a claim against a card that showed nothing");
+    line(
+      `  ${blind.slotId} → ${blind.name}: no Google link, so hours and status were never fetched.`,
+    );
+    const blindClaim = await post(
+      "/api/tasting/evidence",
+      {
+        traceId,
+        slotId: blind.slotId,
+        claim: "permanently_closed",
+        freeText: "HARNESS ARTIFACT — report against an unverified card.",
+      },
+      { "x-tasting-secret": secret },
+    );
+    check("accepted", blindClaim.status === 200, JSON.stringify(blindClaim.body));
+    const { data: blindRow } = await client
+      .from("evidence")
+      .select("shown_status, shown_source, shown_tier, shown_digest, flip_fact_key")
+      .eq("id", (blindClaim.body as { evidenceId: string }).evidenceId)
+      .single();
+    line(`  evidence row: ${JSON.stringify(blindRow)}`);
+    check(
+      "the row says nothing was shown, rather than guessing",
+      blindRow?.shown_status === null &&
+        blindRow?.shown_source === null &&
+        blindRow?.shown_digest === null,
+    );
+    check(
+      "and the founder claim still flips the fact",
+      blindRow?.flip_fact_key === "business_status",
+    );
+    // Undo immediately: this one is not the headline proof.
+    await client
+      .from("facts")
+      .delete()
+      .eq("place_id", blind.placeId)
+      .eq("fact_key", "business_status")
+      .eq("source", "founder_groundtruth");
   }
 
   // ---------------------------------------------------------------------
