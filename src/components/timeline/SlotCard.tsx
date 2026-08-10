@@ -46,14 +46,47 @@ function FactRow<T>({
       <span className="font-medium text-zinc-600 dark:text-zinc-300">
         {label}:
       </span>{" "}
-      {fact.status === "present" ? render(fact.value) : "not published"}
-      <span className="text-zinc-400 dark:text-zinc-500">
-        {" · "}
-        {fact.source} · {TIER_LABELS[fact.tier]} · fetched{" "}
-        {formatAgo(fact.fetchedAt)}
-      </span>
+      {fact.status === "unknown"
+        ? "not recorded"
+        : fact.status === "present"
+          ? render(fact.value)
+          : "not published"}
+      {/* Never fetched, so there is nothing to cite — saying "we looked"
+          would be the claim the three-valued shape exists to avoid. */}
+      {fact.status !== "unknown" && (
+        <span className="text-zinc-400 dark:text-zinc-500">
+          {" · "}
+          {fact.source} · {TIER_LABELS[fact.tier]} · fetched{" "}
+          {formatAgo(fact.fetchedAt)}
+        </span>
+      )}
     </p>
   );
+}
+
+/** One collapsed-card chip, three-valued like the fact behind it. */
+function FactChip<T>({
+  fact,
+  render,
+  absentLabel,
+  unknownLabel,
+}: {
+  fact: FactView<T>;
+  render: (value: T) => string;
+  absentLabel: string;
+  unknownLabel: string;
+}) {
+  if (fact.status === "present") {
+    return <ProvenanceChip tier={fact.tier}>{render(fact.value)}</ProvenanceChip>;
+  }
+  if (fact.status === "absent") {
+    return (
+      <ProvenanceChip tier={fact.tier} absent>
+        {absentLabel}
+      </ProvenanceChip>
+    );
+  }
+  return <ProvenanceChip tier={null}>{unknownLabel}</ProvenanceChip>;
 }
 
 export function SlotCard({
@@ -117,24 +150,18 @@ export function SlotCard({
       </p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {place.priceRange.status === "present" ? (
-          <ProvenanceChip tier={place.priceRange.tier}>
-            {formatPriceRange(place.priceRange.value)}
-          </ProvenanceChip>
-        ) : (
-          <ProvenanceChip tier={place.priceRange.tier} absent>
-            Price not published
-          </ProvenanceChip>
-        )}
-        {place.hoursToday.status === "present" ? (
-          <ProvenanceChip tier={place.hoursToday.tier}>
-            {place.hoursToday.value}
-          </ProvenanceChip>
-        ) : (
-          <ProvenanceChip tier={place.hoursToday.tier} absent>
-            Hours not published
-          </ProvenanceChip>
-        )}
+        <FactChip
+          fact={place.priceRange as FactView<PriceRange>}
+          render={formatPriceRange}
+          absentLabel="Price not published"
+          unknownLabel="Price not recorded"
+        />
+        <FactChip
+          fact={place.hoursToday as FactView<string>}
+          render={(v) => v}
+          absentLabel="Hours not published"
+          unknownLabel="Hours not recorded"
+        />
       </div>
 
       {reason && (

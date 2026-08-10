@@ -23,6 +23,7 @@ import type {
   City,
   PlaceCategory,
   SlotKind,
+  Tier,
   TransportMode,
 } from "@/shared/vocabulary";
 
@@ -141,6 +142,10 @@ export interface GenerationStats {
   repairLog: { pass: number; ruleIds: string[] }[];
   /** Intents the final day could not seat, and why — never silent. */
   unfilled: { intentId: string; label: string; cause: "empty-menu" | "unschedulable" }[];
+  /** Founder ground-truth facts that governed this generation (XXX-33). */
+  founderOverrides: number;
+  /** Founder facts past their horizon: they governed nothing and said so. */
+  founderExpired: number;
   anthropic: {
     calls: number;
     inputTokens: number;
@@ -156,6 +161,21 @@ export interface GenerationStats {
   timings: StageTimings;
 }
 
+/**
+ * One priced hop between consecutive stops, with the provider's own
+ * provenance. Surfaced so the timeline can show real travel numbers with
+ * a real source (doc 003 permits displaying durations, mapless, with
+ * attribution) instead of a hand-wave.
+ */
+export interface ComposedLeg {
+  fromPlaceId: string;
+  toPlaceId: string;
+  minutes: number;
+  mode: TransportMode;
+  source: string;
+  tier: Tier;
+}
+
 export interface CardReason {
   slotId: string;
   /** One concierge sentence citing lower-layer facts. Empty in Step 2. */
@@ -166,6 +186,8 @@ export type GenerationOutcome =
   | {
       status: "ok";
       day: GrammarDay;
+      /** The hops the scheduler priced, with provenance. */
+      travel: ComposedLeg[];
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];
       narrated: NarratedDay;

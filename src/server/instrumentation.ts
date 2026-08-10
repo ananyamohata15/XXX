@@ -42,17 +42,24 @@ export interface TraceSummary {
 }
 
 export interface Instrumentation {
-  startTrace(kind: TraceKind): Promise<string>;
+  /**
+   * `metadata` is written at START, not at endTrace, so facts a caller
+   * needs before the work finishes are already durable. The tasting
+   * room's per-day self-cap counts traces by their surface tag: a tag
+   * written at endTrace would miss in-flight and crashed runs, which are
+   * exactly the runs that spent the money.
+   */
+  startTrace(kind: TraceKind, metadata?: Record<string, unknown>): Promise<string>;
   logEvent(traceId: string, event: TraceEvent): Promise<void>;
   endTrace(traceId: string, summary?: TraceSummary): Promise<void>;
 }
 
 export function createInstrumentation(client: SupabaseClient): Instrumentation {
   return {
-    async startTrace(kind) {
+    async startTrace(kind, metadata) {
       const { data, error } = await client
         .from("traces")
-        .insert({ kind })
+        .insert(metadata === undefined ? { kind } : { kind, metadata })
         .select("id")
         .single();
       if (error) throw new Error(`startTrace failed: ${error.message}`);

@@ -1,15 +1,15 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Reorder } from "motion/react";
 import {
   lookupTravel,
   reflowDay,
   timeToMinutes,
-  type FixtureDay,
   type PlaceView,
   type Reason,
   type SlotView,
+  type TimelineDay,
 } from "@/shared/timeline";
 import { CITY_LABELS } from "@/shared/vocabulary";
 import { FREE_TIME_THRESHOLD_MINUTES } from "./constants";
@@ -32,7 +32,24 @@ interface SlotTimes {
  *   the authored day keeps its buffers until the user touches it)
  * All recomputation is the pure reflowDay; this component only holds state.
  */
-export function InteractiveTimeline({ day }: { day: FixtureDay }) {
+export function InteractiveTimeline({
+  day,
+  interactivity = "gestures",
+  renderSlotFooter,
+  footerNote,
+}: {
+  day: TimelineDay;
+  /** "review" = tap-expand only; see InteractiveCard for the argument. */
+  interactivity?: "gestures" | "review";
+  /**
+   * A rendering seam, not a vocabulary one: the tasting room hangs its
+   * verdict controls here so src/components/timeline never learns the
+   * words "evidence" or "taste".
+   */
+  renderSlotFooter?: (slot: SlotView) => ReactNode;
+  /** Replaces the prototype's provenance line (attribution lives here). */
+  footerNote?: ReactNode;
+}) {
   const slotById = useMemo(
     () => new Map(day.slots.map((s) => [s.id, s])),
     [day],
@@ -126,7 +143,9 @@ export function InteractiveTimeline({ day }: { day: FixtureDay }) {
           {day.slots.length} stops · {first?.startTime}–{last?.endTime}
         </p>
         <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-          Hold to move · flick sideways to swap · tap for provenance
+          {interactivity === "gestures"
+            ? "Hold to move · flick sideways to swap · tap for provenance"
+            : "Tap a card for provenance · reordering and swapping arrive with E5 — this is the day exactly as the engine produced it"}
         </p>
       </header>
 
@@ -178,6 +197,8 @@ export function InteractiveTimeline({ day }: { day: FixtureDay }) {
                 onSwap={(dir) => handleSwap(slotId, dir)}
                 onDragSettled={() => commitReflow(orderIds, rotations)}
                 swapDir={swapDirs[slotId] ?? 1}
+                interactivity={interactivity}
+                footer={renderSlotFooter?.(s)}
               />
               {nextId && (
                 <li className="list-none">
@@ -216,10 +237,12 @@ export function InteractiveTimeline({ day }: { day: FixtureDay }) {
             Judgment
           </span>
         </p>
-        <p>
-          Travel times: Google Routes (fixture). Prototype — hand-authored
-          data, nothing fetched.
-        </p>
+        {footerNote ?? (
+          <p>
+            Travel times: Google Routes (fixture). Prototype — hand-authored
+            data, nothing fetched.
+          </p>
+        )}
       </footer>
     </div>
   );

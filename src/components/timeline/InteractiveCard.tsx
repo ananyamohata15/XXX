@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, Reorder, motion, useDragControls } from "motion/react";
 import type { PlaceView, Reason, SlotView } from "@/shared/timeline";
 import {
@@ -32,6 +32,14 @@ import { SlotCard, type AlternateDetail } from "./SlotCard";
  *
  * The anchor never lifts and never swaps: both attempts get the refusal
  * wiggle + Booked-chip pulse. Refusal must read in under 300 ms.
+ *
+ * `interactivity: "review"` keeps tap-expand and stands the other two
+ * down entirely (Session 10 policy of record). Not because a local-only
+ * reorder would imply persistence it lacks — because `reflowDay` is
+ * deliberately naive about hours, meal windows and pacing, so a drag can
+ * produce a grammar-VIOLATING day that renders with the same authority
+ * as the validated one. On a page whose whole purpose is judging whether
+ * a day is correct, that corrupts the instrument. E5 is the unlock.
  */
 export function InteractiveCard({
   slot,
@@ -45,6 +53,8 @@ export function InteractiveCard({
   onSwap,
   onDragSettled,
   swapDir,
+  interactivity = "gestures",
+  footer,
 }: {
   slot: SlotView;
   occupant: PlaceView;
@@ -57,8 +67,12 @@ export function InteractiveCard({
   onSwap: (dir: 1 | -1) => void;
   onDragSettled: () => void;
   swapDir: 1 | -1;
+  interactivity?: "gestures" | "review";
+  /** Rendered under the card; the timeline stays feedback-agnostic. */
+  footer?: ReactNode;
 }) {
   const isAnchor = slot.origin === "user";
+  const review = interactivity === "review";
   const reorderControls = useDragControls();
   const flickControls = useDragControls();
   const [lifted, setLifted] = useState(false);
@@ -95,6 +109,7 @@ export function InteractiveCard({
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (review) return; // tap still fires; nothing else arms
     downPoint.current = { x: e.clientX, y: e.clientY };
     slopPx.current =
       e.pointerType === "touch"
@@ -120,6 +135,7 @@ export function InteractiveCard({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (review) return;
     if (liftArmed.current && !reorderStarted.current) {
       reorderStarted.current = true;
       reorderControls.start(e.nativeEvent);
@@ -201,7 +217,7 @@ export function InteractiveCard({
           animate="center"
           exit="exit"
           transition={{ type: "spring", stiffness: 420, damping: 40 }}
-          drag={isAnchor ? "x" : lifted ? false : "x"}
+          drag={review ? false : isAnchor ? "x" : lifted ? false : "x"}
           dragListener={false}
           dragControls={flickControls}
           dragSnapToOrigin
@@ -245,6 +261,7 @@ export function InteractiveCard({
             expanded={expanded}
             refusing={refusing}
           />
+          {footer}
         </motion.div>
       </AnimatePresence>
     </Reorder.Item>

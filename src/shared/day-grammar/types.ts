@@ -63,6 +63,15 @@ export interface OpenInterval {
 /** Empty array = closed that weekday. Trap class 2 lives or dies here. */
 export type HoursByWeekday = Record<Weekday, OpenInterval[]>;
 
+/**
+ * A founder's SPARSE hours correction (XXX-33). Only the weekdays the
+ * founder actually knows appear; an empty interval array means "closed
+ * that weekday". Deliberately not a `HoursByWeekday`: standing at a door
+ * on a Tuesday tells you about Tuesday, and a full map would force
+ * inventing six weekdays to record one.
+ */
+export type HoursCorrections = Partial<Record<Weekday, OpenInterval[]>>;
+
 export const BUSINESS_STATUSES = [
   "operational",
   "closed_temporarily",

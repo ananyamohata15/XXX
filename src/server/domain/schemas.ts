@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { BUSINESS_STATUSES } from "@/shared/day-grammar/types";
+import { FOUNDER_SOURCE } from "@/shared/founder-groundtruth";
 import {
   CITIES,
   PLACE_CATEGORIES,
@@ -7,6 +9,7 @@ import {
   TIERS,
   TIER_VALUES,
   TRANSPORT_MODES,
+  WEEKDAYS,
 } from "@/shared/vocabulary";
 
 /**
@@ -43,6 +46,9 @@ const provenanceFields = {
 const timeOfDaySchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, "expected HH:MM time");
+
+/** A closing time, which may be the midnight boundary "24:00". */
+const openCloseSchema = z.union([timeOfDaySchema, z.literal("24:00")]);
 
 export const newPlaceSchema = z.strictObject({
   city: citySchema,
@@ -87,8 +93,41 @@ export const factValueSchemas = {
       .refine((a) => new Set(a).size === a.length, "mapped must be unique"),
     source_labels: z.array(z.string().min(1)).nonempty(),
   }),
+  /**
+   * Founder-only (XXX-33). Google's businessStatus is fetched
+   * request-time and never persisted (decision 001); the only
+   * business_status that can live in this table is one the founder
+   * verified in person. FOUNDER_ONLY_FACT_KEYS enforces it here, and
+   * the facts_founder_only_keys CHECK enforces it in the database.
+   */
+  business_status: z.enum(BUSINESS_STATUSES),
+  /**
+   * Founder-only (XXX-33). A SPARSE weekday map: only the weekdays the
+   * founder actually knows, with an empty array meaning "closed that
+   * weekday". Sparse because founder knowledge is sparse — a full week
+   * would force inventing six days to record one.
+   */
+  hours_corrections: z
+    .record(
+      z.enum(WEEKDAYS),
+      z.array(
+        z.strictObject({ open: timeOfDaySchema, close: openCloseSchema }),
+      ),
+    )
+    .refine((c) => Object.keys(c).length > 0, "at least one weekday required"),
 } as const;
 export type FactKey = keyof typeof factValueSchemas;
+
+/**
+ * Keys the founder ground-truth channel owns outright. A Google-sourced
+ * value must be unable to reach them even through a careless future
+ * caller — so the rule is stated at the Zod boundary and again as a DB
+ * CHECK (migration 20260809000000).
+ */
+export const FOUNDER_ONLY_FACT_KEYS = [
+  "business_status",
+  "hours_corrections",
+] as const satisfies readonly FactKey[];
 const factKeySchema = z.enum(
   Object.keys(factValueSchemas) as [FactKey, ...FactKey[]],
 );
@@ -126,6 +165,16 @@ export const newFactSchema = z
         code: "custom",
         message: `value does not match the ${f.factKey} schema`,
         path: ["value"],
+      });
+    }
+    if (
+      (FOUNDER_ONLY_FACT_KEYS as readonly string[]).includes(f.factKey) &&
+      (f.source !== FOUNDER_SOURCE || f.tier !== 1)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${f.factKey} is founder-only: source must be ${FOUNDER_SOURCE} at tier 1`,
+        path: ["source"],
       });
     }
   });

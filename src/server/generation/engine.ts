@@ -47,8 +47,10 @@ import {
   composeDay,
   defaultMealPattern,
   modeFor,
+  type ComposedLeg,
   type Skeleton,
 } from "./compose";
+import { applyFounderGroundtruth } from "./groundtruth";
 import { retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 import { scoreAll } from "./score";
@@ -96,6 +98,14 @@ export interface EngineDeps {
    * callers must never set it — the trace records when it is used.
    */
   examEnvironmentOverride?: Environment;
+  /**
+   * Written into the trace AT START and carried into the end summary, so
+   * a caller's own tags survive a crash. The tasting room tags its
+   * surface here: the per-day self-cap counts traces by that tag, and a
+   * tag written only at endTrace would miss the runs that spent money and
+   * then died.
+   */
+  traceMetadata?: Record<string, unknown>;
 }
 
 /** Local wall-clock → UTC instant, via the city's IANA zone. */
@@ -139,12 +149,18 @@ export async function generateDay(
     narrateMs: 0,
     totalMs: 0,
   };
-  const traceId = await deps.instrumentation.startTrace("day_generation");
+  const traceId = await deps.instrumentation.startTrace(
+    "day_generation",
+    deps.traceMetadata,
+  );
   let detailsCalls = 0;
   let searchTextCalls = 0;
   let linksMinted = 0;
   let transitCalls = 0;
   let estCostUsd = 0;
+  let founderOverrides = 0;
+  let founderExpired = 0;
+  let legs: ComposedLeg[] = [];
 
   const repairLog: { pass: number; ruleIds: string[] }[] = [];
   let unfilledFinal: GenerationStats["unfilled"] = [];
@@ -198,6 +214,8 @@ export async function generateDay(
     validationPasses,
     repairLog,
     unfilled: unfilledFinal,
+    founderOverrides,
+    founderExpired,
     anthropic: { ...anthropic },
     estCostUsd,
     timings: { ...timings, totalMs: now().getTime() - t0 },
@@ -283,8 +301,49 @@ export async function generateDay(
     });
     timings.detailsMs = now().getTime() - tDetails;
 
+    // -- founder ground-truth override (stage 3b) --------------------------
+    // Boots-on-the-ground beats the listing: between two tier-1 facts the
+    // tie is broken by channel, not by timestamp. In memory, for this
+    // request only — nothing Google-derived is written anywhere.
+    const groundtruth = await applyFounderGroundtruth(
+      deps.supabase,
+      [...byId.values()],
+      request.date,
+      now().toISOString(),
+    );
+    founderOverrides = groundtruth.applied.length;
+    founderExpired = groundtruth.skipped.filter(
+      (s) => s.reason === "expired",
+    ).length;
+    for (const entry of groundtruth.applied) {
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "founder_groundtruth",
+        endpoint: "override_applied",
+        estCostUsd: 0,
+        metadata: { place_id: entry.placeId, fact_key: entry.factKey },
+      });
+    }
+    // Expiry is never silent: a correction that aged out is re-verification
+    // work, not a quiet reversion to the answer the founder rejected.
+    for (const entry of groundtruth.skipped) {
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "founder_groundtruth",
+        endpoint:
+          entry.reason === "expired"
+            ? "override_expired"
+            : "override_not_applicable",
+        estCostUsd: 0,
+        metadata: {
+          place_id: entry.placeId,
+          fact_key: entry.factKey,
+          reason: entry.reason,
+          age_days: entry.ageDays,
+        },
+      });
+    }
+
     // -- hard filters + re-score ------------------------------------------
-    const withFacts = [...byId.values()];
+    const withFacts = groundtruth.candidates;
     const { kept } = hardFilter(
       withFacts,
       request.date,
@@ -388,6 +447,7 @@ export async function generateDay(
         }
         transitFetched = true;
       }
+      legs = composed.legs;
       timings.composeMs += now().getTime() - tCompose;
 
       // An intent can miss the day two ways: no legal option left to
@@ -444,11 +504,15 @@ export async function generateDay(
         await deps.instrumentation.endTrace(traceId, {
           totalCostUsd: estCostUsd,
           fullDayMs: stats.timings.totalMs,
-          metadata: traceSummary(stats, "ok", request, findings.length),
+          metadata: {
+            ...deps.traceMetadata,
+            ...traceSummary(stats, "ok", request, findings.length),
+          },
         });
         return {
           status: "ok",
           day: composed.day,
+          travel: legs,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,
@@ -488,7 +552,10 @@ export async function generateDay(
     await deps.instrumentation.endTrace(traceId, {
       totalCostUsd: estCostUsd,
       fullDayMs: stats.timings.totalMs,
-      metadata: traceSummary(stats, "failed", request, lastViolations.length),
+      metadata: {
+        ...deps.traceMetadata,
+        ...traceSummary(stats, "failed", request, lastViolations.length),
+      },
     });
     return {
       status: "failed",
@@ -501,6 +568,7 @@ export async function generateDay(
       .endTrace(traceId, {
         totalCostUsd: estCostUsd,
         metadata: {
+          ...deps.traceMetadata,
           outcome: "aborted",
           error: err instanceof Error ? err.message : String(err),
         },
@@ -621,6 +689,8 @@ function traceSummary(
     links_minted: stats.linksMinted,
     transit_calls: stats.transitCalls,
     validation_passes: stats.validationPasses,
+    founder_overrides: stats.founderOverrides,
+    founder_overrides_expired: stats.founderExpired,
     repair_log: stats.repairLog,
     findings: findingCount,
     est_cost_usd: stats.estCostUsd,

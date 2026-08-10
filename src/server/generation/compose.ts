@@ -38,10 +38,12 @@ import {
 import type {
   AnchorInput,
   Candidate,
+  ComposedLeg,
   GenerationRequest,
   Selection,
   SlotIntent,
 } from "./types";
+export type { ComposedLeg } from "./types";
 
 /** Variety within a day is code-enforced (10294 point 4). */
 export const MAX_SLOTS_PER_CATEGORY = 2;
@@ -300,6 +302,14 @@ export interface ComposedDay {
   day: GrammarDay;
   anchorBaseline: Record<string, AnchorBaseline> | null;
   unfilled: string[];
+  /**
+   * The travel the scheduler actually priced between consecutive stops,
+   * with the provider's own provenance. The composer used to compute
+   * these and throw them away; the timeline needs real numbers with real
+   * sources rather than a hand-wave, and doc 003 permits displaying
+   * durations (mapless use) with attribution.
+   */
+  legs: ComposedLeg[];
 }
 
 /**
@@ -342,10 +352,18 @@ export function composeDay(input: ComposeInput): ComposedDay {
   let prevCoords: LatLng | null = request.lodging ?? null;
   let anchorCount = 0;
 
-  const travelMinutes = (from: LatLng | null, to: LatLng | null): number => {
-    if (from === null || to === null) return 0;
+  /**
+   * The priced leg between two points, or null when there is nothing to
+   * price (same spot, missing coordinates) or no estimate is obtainable.
+   * null is honest absence and costs zero minutes — never a guessed number.
+   */
+  const travelLeg = (
+    from: LatLng | null,
+    to: LatLng | null,
+  ): { minutes: number; mode: TransportMode; source: string; tier: 1 | 2 | 3 } | null => {
+    if (from === null || to === null) return null;
     const km = haversineKm(from, to);
-    if (km <= params.travel.negligibleDistanceKm) return 0;
+    if (km <= params.travel.negligibleDistanceKm) return null;
     const mode = modeFor(km, request.transport);
     const estimate = travel.estimate({
       origin: from,
@@ -353,8 +371,26 @@ export function composeDay(input: ComposeInput): ComposedDay {
       mode,
       departureLocal: minutesToTime(Math.min(cursor, 1439)),
     });
-    if (estimate === null) return 0;
-    return Math.ceil(estimate.minutes) + (input.slackMinutes ?? 0);
+    if (estimate === null) return null;
+    return {
+      minutes: Math.ceil(estimate.minutes) + (input.slackMinutes ?? 0),
+      mode,
+      source: estimate.provenance.source,
+      tier: estimate.provenance.tier,
+    };
+  };
+
+  const travelMinutes = (from: LatLng | null, to: LatLng | null): number =>
+    travelLeg(from, to)?.minutes ?? 0;
+
+  const legs: ComposedLeg[] = [];
+  let prevPlaceId: string | null = null;
+  const recordLeg = (toCoords: LatLng | null, toPlaceId: string): void => {
+    const leg = prevPlaceId === null ? null : travelLeg(prevCoords, toCoords);
+    if (leg !== null && prevPlaceId !== null) {
+      legs.push({ fromPlaceId: prevPlaceId, toPlaceId, ...leg });
+    }
+    prevPlaceId = toPlaceId;
   };
 
   const snap5 = (m: number): number => Math.ceil(m / 5) * 5;
@@ -385,11 +421,15 @@ export function composeDay(input: ComposeInput): ComposedDay {
         } else {
           slots.pop();
           delete places[last.placeId];
+          // The leg that was priced INTO the dropped slot goes with it —
+          // a leg to a stop that is no longer in the day is not a fact.
+          if (legs.length > 0 && legs[legs.length - 1].toPlaceId === last.placeId) {
+            legs.pop();
+          }
           cursor = slots.length > 0 ? timeToMinutes(slots[slots.length - 1].endTime) : skeleton.daySpan.start;
-          prevCoords =
-            slots.length > 0
-              ? (places[slots[slots.length - 1].placeId]?.coords ?? null)
-              : (request.lodging ?? null);
+          const previous = slots.length > 0 ? slots[slots.length - 1] : null;
+          prevCoords = previous ? (places[previous.placeId]?.coords ?? null) : (request.lodging ?? null);
+          prevPlaceId = previous ? previous.placeId : null;
         }
       }
       anchorCount++;
@@ -406,6 +446,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
         },
       };
       const slotId = `s-anchor-${anchorCount}`;
+      recordLeg(anchor.coords, placeId);
       slots.push({
         id: slotId,
         origin: "user",
@@ -495,6 +536,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
       if (seat === null) continue;
       const place = candidate.place;
       places[place.id] = place;
+      recordLeg(place.coords, place.id);
       slots.push({
         id: `s-${intent.id}`,
         origin: "concierge",
@@ -530,6 +572,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
     anchorBaseline:
       Object.keys(anchorBaseline).length > 0 ? anchorBaseline : null,
     unfilled,
+    legs,
   };
 }
 
