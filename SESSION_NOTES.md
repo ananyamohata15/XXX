@@ -906,10 +906,246 @@ rather than raised on purpose. The proof harness reads
 `TASTING_DAILY_CAP` rather than a literal, so the cap proof cannot drift
 from the cap.
 
+### Trace audit of the two founder-reviewed days (XXX-35 intake)
+
+Run free and read-only via `scripts/trace-audit.ts` — no Google, no
+Anthropic. Everything the deterministic layers consumed is in the trace
+(persona, date, seed) and every rule they consulted is pure, so the
+skeleton, the pattern and the retrieval mix re-derive exactly. Both
+reconstructions reproduced the recorded `pool_candidates` figure to the
+row (1050 and 1407), so the numbers below are the runs, not a model of
+them.
+
+| | day-3-winter | day-6-excursion |
+|---|---|---|
+| trace | `a825417a` | `d9935541` |
+| date / seed | 2026-09-15 / 416117931 | 2026-09-15 / 625971101 |
+| passes · findings · repairs | 1 · 6 · none | 1 · 10 · none |
+
+**(a) Meal pattern, and the 11:30 lunch — legal, and NOT a shipped
+violation.** Both days selected **`classic`**, whose lunch window is
+**11:30–14:30**. An 11:30 lunch sits on the window's exact opening
+edge: inside it, so `meal.outside-pattern-window` correctly did not
+fire. **No grammar-loop bug, and no trap fixture is owed.** A violation
+could not have shipped in any case — the loop returns `failed` rather
+than a day, and both traces show one clean pass.
+
+The mechanism behind the bad feel is sharper than "tuning", and it is
+worth XXX-35 item 2 having: `composeDay` is documented as seating each
+slot "at the earliest legal minute after travel". So the composer does
+not *occasionally* land on a window edge — it **systematically hugs
+window openings by design**. Add the relaxed-pace breakfast window
+(09:30–11:00, 45-minute dwell): breakfast can finish at 10:15 and lunch
+legally opens 75 minutes later. Every day this composer builds will
+tend to the earliest legal shape. The fix belongs in the seat-choice
+objective, not only in params.
+
+**(b) The four-meal day — grazing was never involved, and the rule
+never saw the fourth stop.** Pattern was `classic` with **3 meal
+intents**. No persona input earned grazing, and none could:
+`defaultMealPattern` returns `coffee_then_brunch` for wanderers and
+`classic` for everyone else — **`grazing` is unreachable from
+selection today**, dead from the caller's side though the params and
+rules for it exist.
+
+The fourth "meal" was **Scotland Yard Pub**, seated into `i6 evening
+activity` from a `nightlife_bars` menu — and our pool categorises it
+`restaurants`. Now the part that matters: `pacing.food-stops-exceeded`
+counts `slot.kind === "meal"`, so it saw **3** food stops against a
+ceiling of 4. The day was not legal-at-the-ceiling; **the fourth food
+stop was invisible to the rule that exists to bound food stops.** A
+food venue seated into an activity slot is currently unbounded. That is
+a different defect from XXX-35 item 2's "cap meal-slot COUNT per
+pattern hard" — the count is fine, the **predicate** is wrong.
+
+**(c) Weather — an unchecked rule gap AND, for these two days, no data
+at all.** Both days are 2026-09-15. `weather_days` holds **16 rows,
+2026-08-07 → 2026-08-22** — the forecast horizon. There was no row, so
+the grammar ran with `windows = null` and emitted `weather.unknown`.
+
+So the founder's inference is right about the rule and incomplete about
+these runs, and both halves need saying:
+
+1. **Leg-exposure is genuinely an unchecked gap.** Every weather and
+   daylight rule reads slot spans; **no rule reads a travel leg at
+   all**. A 35-minute walk at any temperature passes, and would have
+   passed even with a weather row present. XXX-35 item 1 stands
+   unchanged.
+2. **For these two days it was also a data miss.** No temperature
+   existed to check. The audit could not confirm "-8°C was held and
+   ignored" because nothing was held.
+
+A third thing falls out: the tasting room offers dates up to **+45
+days** while weather covers **+16**. A founder vetting a day five weeks
+out is systematically vetting weather-blind days and the page does not
+say so. Cheap fix, worth doing with XXX-35 item 1: surface the
+`weather.unknown` advisory prominently, or bound the date picker to the
+horizon.
+
+**(d) Menu composition — the 61%-pool premise does not survive contact
+with the traces.**
+
+| | day-3-winter | day-6-excursion |
+|---|---|---|
+| pool for its zones | 1050 | 1407 |
+| pool mix | museums 35% · restaurants 33% · cafes 32% | nightlife 26% · restaurants 26% · cafes 25% · parks 24% |
+| dealt to the selector | 20 cards, **12 food (60%)** | 24 cards, **12 food (50%)** |
+| shortlist fetched | 12 | 18 |
+
+Every intent was dealt exactly 4 cards, **all from its own category
+list** — menus are category-pure and do not over-deal food into
+non-food slots. And the whole-pool 61% restaurant skew **does not
+propagate**: retrieval queries per requested category with a
+per-category cap, so the day-6 draw came out 26/26/25/24.
+
+The food share is therefore set by the **skeleton**, not by retrieval
+or menus: 3 of 5 intents (60%) and 3 of 6 (50%) are meal intents. So
+**XXX-35 item 4's stated lever — retrieval quotas — would have changed
+neither of these days.** The real levers are how many meal intents
+`buildSkeleton` creates, and how activity intents pick categories.
+
+That last one also explains the founder's verbatim "meal, gallery,
+meal, gallery, meal" precisely: `takeCategory` ranks activity
+categories by persona affinity, day-3-winter's top gravity is `art`, and
+`MAX_SLOTS_PER_CATEGORY = 2` **permits exactly two** — so both activity
+slots drew `museums_galleries` legally. The A-B-A-B monotony is
+produced by that interaction, not by the pool. XXX-35 item 3 has its
+mechanism.
+
+**Recorded for XXX-35, not fixed here** (next-session work by ruling):
+the food-stop predicate defect (b), the greedy-earliest seat objective
+(a), the retrieval-premise correction (d), the skeleton-shape lever
+(d), the +45/+16 date-horizon mismatch (c), and `grazing` being
+unreachable from pattern selection (b).
+
 ### Four checks after Step 2
 
 `npm run lint` clean · `npm run typecheck` clean · `npm test` **358
 passed / 3 skipped** (33 new) · `npm run build` success.
+
+## Step 4 — Close-out
+
+### Schema of record
+
+Three tables in `20260809000000_evidence_and_taste.sql`, applied to
+production 2026-08-09. `reporters` (founder | trusted | user, with
+grant audit), `evidence` (fact-scoped claims, adjudicable against what
+was displayed), `taste_signals` (fit claims, structurally incapable of
+naming a fact). Plus `facts_founder_only_keys` fencing
+`business_status` and `hours_corrections` to the founder channel, and
+`record_founder_evidence()` making the evidence row and the fact write
+one transaction.
+
+The two invariants that are load-bearing and enforced by the database
+rather than by discipline:
+
+- `evidence_only_founder_flips` — XXX-34's never-poison invariant 1. A
+  non-founder row physically cannot record a flip. **Demonstrated live**
+  by a hand-crafted insert that Postgres refused.
+- `taste_signals` has no `fact_key`, no `shown_*`, no `flip_*` columns,
+  and the claim/signal enums are disjoint. Contamination is not
+  forbidden; it is unrepresentable, in both directions (both crossings
+  rejected 400).
+
+### Loop-proof traces (the full circle, live)
+
+```
+88608982  day-1-jays 2026-08-15 seed 4242  $0.388  14.2s  overrides 0
+          card s-i4 → Kensington Flea Market
+   ✗ permanently_closed (founder)
+          evidence  authority=founder verification=bypassed
+                    shown google_places/tier 1 digest 10d074ca…
+                    flip business_status audited at 00:01:36Z
+          fact      closed_permanently · founder_groundtruth · tier 1
+e5bcbdec  day-1-jays 2026-08-15 seed 4242  $0.387  14.3s  overrides 1
+          trace_event founder_groundtruth/override_applied
+          → the venue is absent from the regenerated day
+```
+
+Same persona, same date, same seed; the only difference is the founder's
+verdict. Proof (a2) additionally files a claim against a card whose
+candidate had no Google link: the `shown_*` block is honestly all-null
+(never fetched, so nothing to record) and the founder claim still flips
+the fact — which is the case that matters most, because "I walked past,
+it is shut" is worth most where we have no data.
+
+Production carries **0** `founder_groundtruth` facts: the harness
+removes what it writes. Standing corpus: 11 evidence rows, 6 taste
+rows, **3 trusted reports queued for verification with nothing
+consuming them** — v1 storing correctly and flipping nothing, exactly
+as XXX-33 scoped it.
+
+### Self-cap and quota posture
+
+`TASTING_DAILY_CAP = 20` (raised 12 → 20 deliberately; arithmetic above).
+It is a **runaway guard, not a budget**, and the refusal now names its
+own switch (`raiseAt` in the 429 body and on-page). Counting is by trace
+tagged at `startTrace`, so runs that spent money and then died still
+count — demonstrated, the cap proof saw two aborted runs in its total.
+
+The budget controls are the **on-page month-to-date Details gauge**
+against Google's 1,000 free Enterprise events, plus GCP billing alerts.
+The gauge justified itself the day it was ruled: 515/1,000 consumed by
+day 9 of the month, ending the session at ~640.
+
+**GCP quota**: the Session 9 "raise" had not taken effect — 500/day was
+still in force at 13:31 UTC (515 events, then hard 429s). Founder
+confirmed and corrected mid-session; **1,000/day effective** from the
+same evening, which is what let the live proofs run.
+
+### Gesture policy of record
+
+`/tasting` renders the real Session-3 timeline with
+`interactivity="review"`: tap-expand for provenance, **no lift-drag, no
+flick-swap**. The argument is not that gestures imply persistence — it
+is that `reflowDay` is deliberately naive about hours, meal windows and
+pacing, so a drag would render a grammar-violating arrangement with the
+same authority as the validated one, on the page whose entire purpose is
+judging validity. Alternates are listed, not swappable.
+
+**E5 is the unlock point, and it is one prop**: `interactivity` plus a
+reflow that consults the validator. Nothing else on the page changes.
+
+### Forward notes
+
+- **XXX-34 schema-compatibility: confirmed.** Every column the trust
+  engine needs is additive or a widened CHECK — trust score (a column on
+  `reporters`, derived from rows `evidence` already holds), weight (a
+  view), sybil fingerprint (a nullable column), verification outcome
+  (`verification_state` gains `confirmed`/`refuted` + `verified_at`),
+  decay (a pure function of `created_at`, no column). Nothing needs
+  rebuilding. The `queued` rows are already accumulating for it.
+- **XXX-20 seam decision**: unchanged and untouched. The partial-return
+  point (post-grammar-loop, ≈8.5s) is exactly where Session 9 left it.
+  The tasting room ships one whole JSON response with a stage-labelled
+  elapsed counter, explicitly **not** live telemetry. XXX-20 inherits
+  streaming whole rather than half-built.
+- **E5 gesture unlock**: the `interactivity` prop above.
+- **Trusted-circle onboarding is a flag flip**: insert a `reporters` row
+  with `authority='trusted'`, `granted_by` = the founder's id,
+  `granted_at` = now. The write path, the queueing semantics and the
+  no-flip guarantee already work — proven live with `sim_trusted`. The
+  known gap, deliberately unbuilt: a revoke-then-regrant overwrites the
+  earlier audit; a `reporter_grants` history table lands when a second
+  person actually exists.
+- **XXX-35** is the next session's work: composition quality. The trace
+  audit above revises two of its premises (retrieval quotas are not the
+  lever; the food-stop rule's predicate, not its ceiling, is the
+  defect) and hands it three concrete mechanisms.
+- **Founder action carried forward** (XXX-35's own process note): the
+  two reviewed days' verdicts still live in chat, not in the corpus.
+  The instrument exists now — recording them in the tasting room is
+  what makes them minable.
+- **Ops**: paid coords re-discovery due **Sep 1–3** (XXX-25 comment
+  10292) — ~3 weeks out. Anthropic intro pricing ends **2026-08-31**;
+  all figures here are list basis already.
+
+### Four checks (final)
+
+`npm run lint` clean · `npm run typecheck` clean · `npm test` **358
+passed / 3 skipped** · `npm run build` success.
+
+### Session status: complete. Branch `session-10-tasting-room`, not pushed (per spec).
 
 # Session 9 — Generation engine: generateDay(request) → GrammarDay + reasons (XXX-5)
 
