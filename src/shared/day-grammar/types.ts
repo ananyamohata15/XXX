@@ -20,6 +20,7 @@ import type {
   PlaceCategory,
   SlotKind,
   SlotOrigin,
+  SlotRole,
   Tier,
   TransportMode,
   Weekday,
@@ -153,6 +154,15 @@ export interface GrammarSlot {
    * Matched against the place's `offerings` by label.
    */
   requiresOffering?: string;
+  /**
+   * What this stop is FOR in the day's arc (XXX-35). Tier-3 judgment, so
+   * only ever present on `origin: "concierge"` slots — a user's own
+   * commitment is the day's centre by definition and needs no election.
+   * Absent = the day was built without an arc (every day before Session
+   * 11, and every hand-authored fixture): the arc rules then report what
+   * they can see from categories alone rather than assuming a shape.
+   */
+  role?: SlotRole;
 }
 
 export const DAY_ARCHETYPES = ["city", "excursion"] as const;
@@ -288,6 +298,9 @@ export const RULE_IDS = [
   "pacing.no-breather",
   "pacing.wanderer-overscheduled",
   "pacing.long-gap-without-food",
+  // arc / rhythm — texture, and endings that land
+  "rhythm.alternating-texture",
+  "rhythm.ending-without-landing",
   // meals
   "meal.outside-pattern-window",
   "meal.pattern-unknown",

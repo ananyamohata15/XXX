@@ -541,4 +541,44 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
       g.day.places.distillery.coords = null;
     },
   ),
+  broken(
+    goldenDay6,
+    {
+      key: "trap-alternating-texture",
+      title: "Outdoor, table, outdoor, table — in a day that holds nothing else",
+      expect: "rhythm.alternating-texture",
+      trapClass: null,
+      why: "The founder's headline complaint, as a fixture: 'Food Park Food Park Food Food' and 'Meal gallery meal gallery meal', recorded independently on two different days. The old max-2-per-category rule permitted both — two parks and three meals IS two per category — so nothing in the grammar could see the rhythm the founder saw immediately.",
+    },
+    (g) => {
+      // ONE edit: the old town stops being a historic site and becomes
+      // another green space. That is deliberately the smallest possible
+      // break — it removes the day's third texture without touching a
+      // time, a venue or a distance, so the run and the poverty of texture
+      // arrive together and nothing else moves. Dwell stays legal (70 min
+      // sits inside parks' 20-150 band), the stop was already tagged
+      // outdoor, and the geometry is untouched.
+      g.day.places.nol.category = present("parks", CONCIERGE, TIERS.observed);
+    },
+  ),
+  broken(
+    goldenDay6,
+    {
+      key: "trap-ending-without-landing",
+      title: "A 75-minute hole, and then dinner",
+      expect: "rhythm.ending-without-landing",
+      trapClass: null,
+      why: "The founder's '2hr13 mins wasted in between' and 'too much free time; that too in the middle of nowhere', at the one place it hurts most — the end of the day. ADVISORY on purpose: 'dinner last' is usually exactly right, and the defect is the dead gap in front of it, not the dinner. A violation here would also threaten loop termination on a thin evening.",
+    },
+    (g) => {
+      // Dinner slides 45 minutes later and keeps its 75-minute dwell. The
+      // gap after Table Rock becomes 75 min: past the 60-minute ending
+      // threshold, and deliberately short of structure.resetGapMinutes
+      // (90), so the ending rule is the only one in the frame. Napoli is
+      // open 16:00-22:00 and the day already ran to 21:00, so nothing
+      // about the seating becomes illegal — it just stops landing.
+      g.day.slots[4].startTime = "18:45";
+      g.day.slots[4].endTime = "20:00";
+    },
+  ),
 ];

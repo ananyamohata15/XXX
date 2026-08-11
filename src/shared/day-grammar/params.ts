@@ -191,6 +191,54 @@ export const GRAMMAR_PARAMS = {
     /** Longer than this between food stops earns an advisory. */
     maxFoodGapMinutes: 300,
     /**
+     * What counts as a FOOD STOP for the pattern's ceiling — by the
+     * venue's category, not by the slot's kind (XXX-35 comment 10299
+     * item 3). The Session-10 defect: a `restaurants` venue seated as an
+     * evening activity (Scotland Yard Pub, off the nightlife menu) was
+     * invisible to the rule whose whole job is bounding food stops.
+     *
+     * `markets` is a place you walk through and `nightlife_bars` is a
+     * drink; neither is definitionally a meal, so both are excluded ON
+     * PURPOSE rather than by oversight. The founder's own fourth stop is
+     * categorised `restaurants` in our pool, so it is caught.
+     */
+    foodCategories: ["restaurants", "cafes"] as readonly PlaceCategory[],
+    /**
+     * An ending that lands (XXX-35 §1.1): a day whose last stop is a
+     * table after a gap this long reads as giving up rather than as a
+     * finale. The founder's second day ended "2hrs free → meal".
+     * ADVISORY only — "dinner last" is usually right, and a violation
+     * here would threaten loop termination on thin evenings.
+     */
+    endingGapMinutes: 60,
+    /**
+     * How many distinct texture families a day needs before an A-B-A-B run
+     * inside it stops reading as monotony.
+     *
+     * THREE, and the number was corrected by the golden set rather than
+     * chosen: the rule as ratified at CP1 was "an A-B-A-B run is a
+     * violation", and it immediately rejected golden **day-2-old-town** —
+     * table · market · culture · table · culture · table — which the
+     * founder authored and verified. Measured across the whole set:
+     *
+     *   day-1  5 families / 8 stops   no run
+     *   day-2  3 / 6                  HAS a run   ← founder-approved
+     *   day-3  3 / 6                  no run
+     *   day-4  3 / 7                  no run
+     *   day-5  2 / 3                  no run (A-B-A is a sandwich, not a rhythm)
+     *   day-6  3 / 5                  no run
+     *
+     * And the two shapes the founder REJECTED in the tasting room:
+     *
+     *   "meal gallery meal gallery meal"   2 families   HAS a run
+     *   "Food Park Food Park Food Food"    2 families   HAS a run
+     *
+     * So the discriminator is not the run — it is the run in a day that
+     * has nothing else in it. A third texture somewhere earns the
+     * tolerance; two families alternating is the complaint.
+     */
+    minTextureFamilies: 3,
+    /**
      * A wanderer's day must be mostly unscheduled — golden Day 5: "A
      * fully-scheduled output for this persona is a FAILURE."
      */

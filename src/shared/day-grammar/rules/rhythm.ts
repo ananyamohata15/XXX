@@ -23,6 +23,7 @@ import {
   violation,
   type Span,
 } from "../internal";
+import { CATEGORY_FAMILY, type CategoryFamily } from "../../vocabulary";
 import type { GrammarContext, GrammarDay, GrammarSlot, Violation } from "../types";
 
 interface NamedWindow {
@@ -196,6 +197,12 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
     }
   }
 
+  // --- texture: no A-B-A-B ------------------------------------------------
+  found.push(...checkTexture(day, ctx, slots));
+
+  // --- an ending that lands -----------------------------------------------
+  found.push(...checkEnding(day, ctx, slots));
+
   // --- wanderer structure --------------------------------------------------
   if (ctx.persona?.structure === "wanderer") {
     const span =
@@ -222,6 +229,109 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   }
 
   return found;
+}
+
+/** The texture family of a slot's venue, or null when unknowable. */
+function familyOf(day: GrammarDay, slot: GrammarSlot): CategoryFamily | null {
+  const category = readFact(placeOf(day, slot)?.category);
+  return category.state === "present" ? CATEGORY_FAMILY[category.value] : null;
+}
+
+/**
+ * A-B-A-B in a day that has nothing else in it. The founder said it twice,
+ * in two different days' words — "meal, gallery, meal, gallery, meal" and
+ * "Food Park Food Park Food Food" — and the old max-2-per-category rule
+ * permitted both, because two galleries and three meals IS two per
+ * category.
+ *
+ * Measured in FAMILIES (see CATEGORY_FAMILY), over four CONSECUTIVE stops.
+ * Four is the shortest window in which alternation is a pattern rather
+ * than a coincidence: A-B-A is just a sandwich, and sandwiches are fine.
+ *
+ * The second condition — the day carries fewer than
+ * `minTextureFamilies` distinct families — is not decoration. Without it
+ * this rule rejects golden day-2, which the founder authored: see the
+ * measurements recorded at that param. Alternation is only monotony when
+ * there is no third texture anywhere in the day.
+ *
+ * Unknown families break the chain rather than match it — an absence is
+ * not evidence of monotony.
+ */
+function checkTexture(
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slots: GrammarSlot[],
+): Violation[] {
+  const found: Violation[] = [];
+  const distinct = new Set(
+    slots.map((s) => familyOf(day, s)).filter((f): f is CategoryFamily => f !== null),
+  );
+  if (distinct.size >= ctx.params.pacing.minTextureFamilies) return found;
+
+  for (let i = 3; i < slots.length; i += 1) {
+    const window = [slots[i - 3], slots[i - 2], slots[i - 1], slots[i]];
+    const families = window.map((s) => familyOf(day, s));
+    if (families.some((f) => f === null)) continue;
+    const [a, b, c, d] = families;
+    if (a !== c || b !== d || a === b) continue;
+    // A user's own commitments are not ours to call monotonous.
+    if (window.every((s) => s.origin === "user")) continue;
+    found.push(
+      violation(
+        "rhythm.alternating-texture",
+        window.map((s) => s.id),
+        `Four stops in a row alternate ${a} and ${b}: ${window
+          .map((s) => describePlace(placeOf(day, s), s.placeId))
+          .join(" → ")} — and the whole day holds only ${distinct.size} kind${distinct.size === 1 ? "" : "s"} of place. A day needs texture, not a rhythm: put something in it that is neither ${a} nor ${b}.`,
+        {
+          families: [a, b, c, d],
+          distinctFamilies: distinct.size,
+          minTextureFamilies: ctx.params.pacing.minTextureFamilies,
+          slotIds: window.map((s) => s.id),
+        },
+      ),
+    );
+  }
+  return found;
+}
+
+/**
+ * Endings that land (XXX-35 §1.1). The founder's second day finished
+ * "2hrs free → meal", which is not a finale — it is the day running out.
+ *
+ * ADVISORY, deliberately. "Dinner last" is usually exactly right; the
+ * defect is the dead gap in front of it. A violation here would also put
+ * the regeneration loop at risk on a thin evening, which is the same
+ * discipline that governs the unavoidable-weather advisory.
+ */
+function checkEnding(
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slots: GrammarSlot[],
+): Violation[] {
+  const last = slots[slots.length - 1];
+  const previous = slots[slots.length - 2];
+  if (last === undefined || previous === undefined) return [];
+  if (last.origin === "user") return []; // the user chose their own ending
+  if (familyOf(day, last) !== "table") return [];
+
+  const gap = timeToMinutes(last.startTime) - timeToMinutes(previous.endTime);
+  const threshold = ctx.params.pacing.endingGapMinutes;
+  if (gap < threshold) return [];
+
+  return [
+    advisory(
+      "rhythm.ending-without-landing",
+      [previous.id, last.id],
+      `The day ends on ${describePlace(placeOf(day, last), last.placeId)} at ${last.startTime}, ${gap} minutes after ${describePlace(placeOf(day, previous), previous.placeId)} finishes, with nothing in between. That reads as the day running out rather than closing — put something in the gap or bring the ending forward.`,
+      {
+        gapMinutes: gap,
+        endingGapMinutes: threshold,
+        lastSlotId: last.id,
+        previousSlotId: previous.id,
+      },
+    ),
+  ];
 }
 
 function isHeavyweight(

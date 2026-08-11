@@ -135,6 +135,12 @@ export function toTimelineDay(input: MappingInput): TimelineDay {
             ? null
             : { text: reason, source: input.reasonSource, tier: TIERS.judgment },
         alternates: [],
+        // Tier-3 judgment about the day's shape, and only ever on a
+        // concierge slot: a user's own commitment is the day's centre by
+        // definition and was never elected.
+        ...(slot.origin === "concierge" && slot.role !== undefined
+          ? { role: slot.role }
+          : {}),
       };
     });
 
