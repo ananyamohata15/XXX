@@ -306,6 +306,30 @@ export function buildSkeleton(
     open: OPEN_PERIOD_MINUTES,
   };
 
+  /**
+   * The floor below which a step is not worth placing — as opposed to
+   * NOMINAL, which is what it would LIKE.
+   *
+   * The two were the same number until sequential slicing landed, and that
+   * conflation was hidden by the same edge-hugging bound: segments used to
+   * be optimistically long, so nothing ever tested the difference. Slicing
+   * the day around where meals actually sit shortened the tail honestly —
+   * and a 90-minute nominal then dropped the `close` from every moderate-b
+   * day, even though composition fits dwell down to the category minimum
+   * (a 45-minute bar) a few lines later and would have seated it happily.
+   *
+   * Dropping a day's ending because it could not have the dwell it
+   * preferred is not honesty, it is arithmetic. These are the minimums the
+   * grammar itself already enforces.
+   */
+  const NOMINAL_MIN: Record<Exclude<ArcStep, "meal">, number> = {
+    anchor: Math.min(elected?.dwellMinutes ?? 120, 60),
+    warmup: 20,
+    contrast: 30,
+    close: 45,
+    open: OPEN_PERIOD_MINUTES,
+  };
+
   let mealCursor = 0;
   const steps: Step[] = [];
   for (const step of template.steps) {
@@ -349,16 +373,44 @@ export function buildSkeleton(
     ),
   );
 
+  /**
+   * Where a meal is EXPECTED to sit — the sequential-slicing fix
+   * (XXX-35 CP2 ruling b).
+   *
+   * **The seating fix exposed the edge-hugger as accidentally
+   * load-bearing.** The old composer took the earliest legal minute, so
+   * `mealWindow.start + need` really was when lunch released the day, and
+   * every non-meal step was laid out from that bound. The seat objective
+   * centres meals instead — and the bound silently became a lie. day-1-jays
+   * got an anchor slice of 12:30–14:20 while its own lunch, now centred,
+   * sat in 12:30–13:30. Three categories were tried and none could be
+   * seated, because none of them was ever the problem.
+   *
+   * So the layout asks the objective's own question — where will this meal
+   * actually sit? — and slices the day sequentially around the answer.
+   */
+  const expectedMealSeat = (span: Span, need: number): Span => {
+    const centre = (span.start + span.end) / 2;
+    const start = Math.max(span.start, Math.round(centre - need / 2));
+    return { start, end: Math.min(span.end, start + need) };
+  };
+
   /** The open span available to segment i (before meal i, or after the last). */
   const segmentSpan = (index: number): Span => {
     const previousMeal = index === 0 ? null : mealAt[index - 1];
     const start =
       previousMeal === null
         ? daySpan.start
-        : Math.min(daySpan.end, mealSpans[index - 1].start + previousMeal.need);
+        : Math.min(
+            daySpan.end,
+            expectedMealSeat(mealSpans[index - 1], previousMeal.need).end,
+          );
     const end =
       index < mealAt.length
-        ? Math.min(daySpan.end, mealSpans[index].start + 30)
+        ? Math.min(
+            daySpan.end,
+            expectedMealSeat(mealSpans[index], mealAt[index].need).start,
+          )
         : daySpan.end;
     return { start, end: Math.max(end, start) };
   };
@@ -396,14 +448,15 @@ export function buildSkeleton(
           daySpan,
         );
       }
-      if (spanMinutes(window) < step.need) {
+      const floor = NOMINAL_MIN[step.step as Exclude<ArcStep, "meal">];
+      if (spanMinutes(window) < floor) {
         // A step the day has no room for is dropped — but never silently:
         // a thinner day than the arc asked for is something a reviewer
         // must be able to see, and the engine's `unfilled` cannot report a
         // step that never became an intent.
         dropped.push({
           step: step.step,
-          reason: `window ${spanMinutes(window)}min is shorter than the ${step.need}min it needs`,
+          reason: `window ${spanMinutes(window)}min is shorter than the ${floor}min floor it needs`,
         });
         return;
       }

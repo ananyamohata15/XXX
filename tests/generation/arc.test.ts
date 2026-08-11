@@ -632,3 +632,58 @@ describe("an unseatable anchor is REPORTED, never silently absent", () => {
     }
   });
 });
+
+/**
+ * Sequential slicing (XXX-35 CP2 ruling b) — the regression guard for the
+ * defect the exam found.
+ *
+ * The seating fix exposed the edge-hugger as accidentally load-bearing:
+ * layout bounded a meal by `window.start + need`, which was true only
+ * because the old composer seated at the earliest legal minute. Centring
+ * meals made that bound a lie, and day-1-jays got an anchor slice of
+ * 12:30–14:20 while its own lunch sat in 12:30–13:30.
+ *
+ * The invariant is simply that a step's window may not start before the
+ * meal in front of it is expected to be finished.
+ */
+describe("no step is sliced into a window its own meal is still sitting in", () => {
+  it.each(Object.keys(GOLDEN_PERSONAS))(
+    "%s lays out every step after the meal that precedes it",
+    (key) => {
+      const skeleton = buildSkeleton(
+        request({ persona: GOLDEN_PERSONAS[key] }),
+      );
+      const ordered = [...skeleton.intents].sort(
+        (a, b) => a.window.start - b.window.start,
+      );
+      for (let i = 1; i < ordered.length; i += 1) {
+        const previous = ordered[i - 1];
+        if (previous.kind !== "meal") continue;
+        // The meal is expected to sit at its window's centre, so it
+        // releases the day at centre + dwell/2 — never at window.start.
+        const centre = (previous.window.start + previous.window.end) / 2;
+        const expectedEnd = Math.min(
+          previous.window.end,
+          Math.round(centre - previous.dwellMinutes / 2) +
+            previous.dwellMinutes,
+        );
+        expect(
+          ordered[i].window.start,
+          `${ordered[i].role} starts ${ordered[i].window.start} but ${previous.label} is expected to run to ${expectedEnd}`,
+        ).toBeGreaterThanOrEqual(expectedEnd);
+      }
+    },
+  );
+
+  it("keeps the day's ending: no persona drops its close to slicing", () => {
+    for (const key of Object.keys(GOLDEN_PERSONAS)) {
+      const skeleton = buildSkeleton(
+        request({ persona: GOLDEN_PERSONAS[key] }),
+      );
+      expect(
+        skeleton.droppedSteps.map((d) => d.step),
+        `${key} dropped arc steps`,
+      ).toEqual([]);
+    }
+  });
+});

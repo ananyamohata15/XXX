@@ -941,6 +941,78 @@ Re-run: 6 generations, 130 Details, **$2.82 list**. Past the free cap, so
 **$2.60 + $0.14 Anthropic ≈ $2.74 billed**, inside the sanctioned ~$2–3.
 Session total billed ≈ **$5.4** against the ~$9–13 gate.
 
+## Step 5 — CP2 adjudications applied; HOLDING short of CP3
+
+### 5.1 Sequential slicing — the cure, and the sentence worth keeping
+
+**The seating fix exposed the edge-hugger as accidentally load-bearing.**
+Layout bounded a meal by `mealWindow.start + need`, which was only ever
+true because the old composer seated at the earliest legal minute. Centring
+meals made that bound a lie, and day-1-jays got an anchor slice of
+12:30–14:20 while its own lunch sat in 12:30–13:30.
+
+`segmentSpan` now asks the objective's own question — where will this meal
+actually sit? — via `expectedMealSeat`, and slices the day sequentially
+around the answer. The anchor moves to 13:30–15:15.
+
+**A second defect fell out of the first.** Honest slicing shortened the
+day's tail, and a coarse 90-minute nominal then dropped the `close` from
+every `moderate-b` day — even though composition fits dwell down to the
+category minimum a few lines later and would have seated a 45-minute bar
+happily. The two numbers had been conflated because optimistic segments
+meant nothing ever tested the difference. Split into `NOMINAL` (what a step
+would like) and `NOMINAL_MIN` (below which it is not worth placing).
+
+### 5.2 Proofs the ruling required
+
+| condition | result |
+|---|---|
+| composition-level anchor test | **added** — all six personas asserted on `composeDay`'s result, plus a slicing regression guard (no step starts before its preceding meal is expected to end) and a no-dropped-steps assertion |
+| six matrix days recomposed offline, $0 | **6/6 anchors seated**, day-1 passing — `scripts/offline-recompose.ts`, DB pool only (`retrieveCandidates` touches no Google endpoint) |
+| one live day-1-jays end-to-end | **confirmed** — generates, anchor `Toronto Flower Market` seated (it was `FAILED` before this fix) |
+| golden 6/6 clean | **pass** — and 6/6 live matrix days validated clean |
+| suite | **436 passed**, 3 skipped |
+
+### 5.3 The gate: max PASSES, mean does not — HOLDING
+
+Domain refined per ruling (a): comparable shapes = `|Δstops| ≤ 1`,
+cross-shape pairs reported as their own non-gating line. Thresholds and
+normalization untouched.
+
+| metric | value | gate |
+|---|---|---|
+| category-sequence, comparable pairs (n=13) — **max** | **0.80** | ≤0.80 **PASS** |
+| category-sequence, comparable pairs — **mean** | **0.645** | ≤0.55 **FAIL** |
+| category-sequence, cross-shape (n=2) | mean 0.833 · max 1.00 | non-gating, as ruled |
+| venue overlap | mean 0.030 · max 0.25 | **PASS** |
+| role-sequence | **0.933** | non-gating — **worse than 0.644** |
+| anchors seated | **6/6** | — |
+| seat centring | 45.7 → **5.7 min** | — |
+
+The ruled condition on the max is **met**: no same-size pair exceeds 0.80.
+The gate as a whole is not met, so this holds rather than proceeding.
+
+**Why the mean got worse, stated as a mechanism.** The slicing fix shortened
+days: day-2-old-town went from five stops to four and lost its `close`.
+Four of six days are now literally `meal > anchor > contrast > meal`, which
+is why role-sequence overlap climbed to 0.933 — the leading indicator doing
+exactly its job. **The cure for the anchor drop cost shape variety.** The
+arc is more correct and less varied than it was an hour ago, and the honest
+reading is that `NOMINAL_MIN` recovered the close for the *skeleton* while
+live pools still cannot seat it inside the shortened tail.
+
+Not fixed here, and not guessed at: the next move is either a tail that
+earns its close (day-end extension for `moderate`) or templates that differ
+after the anchor rather than before it. Both are composition changes, both
+want their own reproduce-then-fix, and the budget for this session is spent.
+
+### 5.4 Spend
+
+Final matrix: 6 generations, 130 Details, **$2.60 + $0.15 ≈ $2.75 billed**.
+**Session total ≈ $8.2** against the ~$9–13 sanction. CP3's 25–35
+generations are fully billed and do **not** fit the remaining headroom —
+that is its own sanction to grant.
+
 ### 2.8 Process lesson — why this section had to be reconstructed
 
 **The interrupted evening left the code ahead of the record.** Step 2 was

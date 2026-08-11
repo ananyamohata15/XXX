@@ -429,6 +429,18 @@ async function main() {
     let seqSum = 0;
     let seqMax = 0;
     let roleSum = 0;
+    // The gate's DOMAIN is comparable-shape pairs (XXX-35 CP2 ruling a).
+    // A three-stop day is almost automatically a subsequence of a six-stop
+    // one under an LCS normalised by the shorter sequence, which measures
+    // the length difference, not monotony. Thresholds and normalization are
+    // untouched: what is refined is which pairs the number is ABOUT.
+    let cmpSum = 0;
+    let cmpMax = 0;
+    let cmpPairs = 0;
+    let crossSum = 0;
+    let crossMax = 0;
+    let crossPairs = 0;
+    const cmpWorst: string[] = [];
     for (let i = 0; i < keys.length; i++) {
       const row: string[] = [];
       for (let j = 0; j < keys.length; j++) {
@@ -452,6 +464,21 @@ async function main() {
         seqSum += so;
         seqMax = Math.max(seqMax, so);
         roleSum += ro;
+        const sizeI = categorySequence(outcomes.get(keys[i])!).length;
+        const sizeJ = categorySequence(outcomes.get(keys[j])!).length;
+        if (Math.abs(sizeI - sizeJ) <= 1) {
+          cmpSum += so;
+          cmpPairs++;
+          if (so > cmpMax) {
+            cmpMax = so;
+            cmpWorst.length = 0;
+            cmpWorst.push(`${keys[i]} (${sizeI}) vs ${keys[j]} (${sizeJ})`);
+          }
+        } else {
+          crossSum += so;
+          crossPairs++;
+          crossMax = Math.max(crossMax, so);
+        }
         max = Math.max(max, o);
         pairs++;
         row.push(o.toFixed(2));
@@ -467,13 +494,23 @@ async function main() {
       }`,
     );
     const seqMean = seqSum / pairs;
+    const cmpMean = cmpPairs > 0 ? cmpSum / cmpPairs : 0;
     const seqPass =
-      seqMean <= CATEGORY_SEQUENCE_GATE.mean &&
-      seqMax <= CATEGORY_SEQUENCE_GATE.max;
+      cmpMean <= CATEGORY_SEQUENCE_GATE.mean &&
+      cmpMax <= CATEGORY_SEQUENCE_GATE.max;
     console.log(
-      `  category-sequence overlap: mean=${seqMean.toFixed(3)} (GATE ≤${CATEGORY_SEQUENCE_GATE.mean}) max=${seqMax.toFixed(2)} (GATE ≤${CATEGORY_SEQUENCE_GATE.max}) → ${
+      `  category-sequence overlap [GATED, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} (GATE ≤${CATEGORY_SEQUENCE_GATE.mean}) max=${cmpMax.toFixed(2)} (GATE ≤${CATEGORY_SEQUENCE_GATE.max}) → ${
         seqPass ? "PASS" : "FAIL"
-      }   [Session 9 baseline 0.693, then observed/non-gating]`,
+      }`,
+    );
+    if (cmpMax > 0) {
+      console.log(`      worst comparable pair: ${cmpWorst[0] ?? "n/a"}`);
+    }
+    console.log(
+      `  category-sequence overlap [cross-shape, |Δstops|≥2, n=${crossPairs}]: mean=${(crossPairs > 0 ? crossSum / crossPairs : 0).toFixed(3)} max=${crossMax.toFixed(2)} (reported, NON-GATING — a short day is a subsequence of a long one by arithmetic)`,
+    );
+    console.log(
+      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   [Session 9 baseline 0.693; Session 11 pre-fix 0.711]`,
     );
     console.log(
       `  role-sequence overlap:     mean=${(roleSum / pairs).toFixed(3)} (observed, non-gating — the leading indicator of template homogenization)`,
