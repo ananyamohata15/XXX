@@ -184,6 +184,256 @@ CLAUDE.md says to extract. Proposed at CP1 as one shared primitive.
   43. One-line, still open from Session 11 §2.5.
 - **A/B path prints no per-run Anthropic usage** (Session 11 §8.1).
 
+### CHECKPOINT 0 outcome — rulings received
+
+1. **PR topology RULED:** founder merged PR #13 to `main` (now `a1248b0`); the
+   HOLD is discharged by Session 12's mandate. Work continues on this branch,
+   and `main..session-12-variety-audit` is now **one commit** — the clean diff
+   the ruling promised.
+2. **Inventory ACCEPTED.** The funnel finding is **ratified as a design
+   constraint**: all refits sample *post-filter* or fold filters into weights.
+   **No pre-funnel dice.**
+3. Three additions to confirm-or-add — answered in §1.0.
+4. Both flagged findings get action under existing law: the knife-edge must be
+   restructured, and FNV-1a is extracted to one shared util, both call sites
+   migrated.
+5. `retrieveCandidates`' fixed-400 and `zonesFor`'s lens-only key confirmed in
+   scope, with two riders: **determinism-under-seed**, and **cost neutrality**
+   — same query count; vary the order/window, not the volume.
+6. Comment-id correction accepted.
+
+## Step 1 — Fix design (CHECKPOINT 1)
+
+### 1.0 The three additions — two confirmed, one is not a selection point
+
+- **Meal-pattern selection** — confirmed, inventory **row 10**
+  (`defaultMealPattern`, `compose.ts:153`). Dice-key: **`persona.structure`
+  alone**, two outcomes (`wanderer → coffee_then_brunch`, else `classic`).
+  Neither `pace` nor `gravity` nor seed reaches it. Proposed **keep** (§1.5).
+- **Travel-mode tie-breaks in `modeFor`** — confirmed, inventory **row 15**
+  (`compose.ts:668`). The tie-break is the literal array
+  `["transit","drive","cycle","walk"]`: among modes the trip allows, transit
+  always wins. Proposed **keep** (§1.5).
+- **Open-interval locality — NOT a selection point.** Read at
+  `compose.ts:1111` and `:1180`: locality is **inherited**, never chosen —
+  `locality: prevNeighborhood` for arc-placed intervals, and
+  `places[ordered[i-1].placeId].neighborhood` for gaps named afterwards.
+  Nothing is weighed, so there is no die to refit. It varies *only* as a
+  consequence of venue selection, so §1.4's refits move it for free. Recorded
+  rather than invented: giving free time a diced locality would place a
+  traveller's gap somewhere they are not, which is exactly the "middle of
+  nowhere" complaint `openPeriods` exists to answer. Inventory **row 14**
+  covered its *placement* (the template owns that); locality is derived.
+
+### 1.1 The dice primitive — `src/shared/dice.ts`
+
+One module, dependency-free and pure — satisfies the `src/shared` law and is
+unit-testable without a DB.
+
+```
+fnv1a(s: string): number                  // extracted — third occurrence
+mulberry32(seed: number): () => number    // moved from score.ts
+personaIdentity(persona): number          // FNV over ALL five interview fields
+diceStream({seed, identity, site, context}): () => number
+weightedOrder<T>(options, stream, temperature): T[]
+```
+
+The key is the mandate's four-part product, hashed rather than multiplied:
+
+```
+stream = mulberry32( seed ^ personaIdentity(persona) ^ fnv1a(`${site}|${context}`) )
+```
+
+- **(a) preferences cannot be inverted** — §1.3's eligibility floor, not
+  softmax alone. This is the Session 9 lens-floor generalized: the die breaks
+  ties and near-ties; it never promotes an option the persona ranked
+  materially lower.
+- **(b) similar personas draw different streams** — `personaIdentity` hashes
+  the five interview fields' *content*: the `pickTemplate` lesson. It replaces
+  both `hashIdentity` (`arc.ts:153`) and `personaFingerprint` (`score.ts:115`),
+  which today hash **overlapping but different field sets** — a latent
+  divergence nobody recorded, found by the extraction.
+- **(c) reproducibility** — a pure function of (seed, persona, site, context),
+  asserted by test rather than by comment.
+- **(d) per-site temperature** — §1.3.
+
+`site` is a literal per selection point (`"anchor"`, `"close"`, …) so two
+selectors at one seed never draw the same number. `context` carries date and
+the step's window start, so one persona on two dates — or two closes in one
+day — draw independently.
+
+### 1.2 The funnel-aware contract (the ratified constraint, made concrete)
+
+Session 11's queued fix — make `closeCategories` return a seeded choice —
+would not have worked, because the collapse happens in the two narrowings
+*downstream* of it. So the refit changes **where** the die is rolled and **what
+shape** it returns:
+
+1. **Roll at the point of use, not at the source.** The die is rolled inside
+   `buildSkeleton`'s category-choosing loop (`compose.ts:541–586`), over the
+   set that has already survived `usedFamilies` and `forEvening` — never
+   inside `closeCategories`/`warmupCategories`, which sit above the funnel.
+2. **The die yields an ORDER, not a head.** `SlotIntent.categories` is already
+   a list and `buildMenus` already filters across the whole list
+   (`engine.ts:737`), so a diced ordering survives the hours filter: if the
+   drawn head has no venue open at 19:30, the *diced* second choice is used —
+   not the alphabetical one. This folds the last, unknowable filter
+   (seatability) into the design without needing to predict it.
+3. **No selector returns a bare ranked list for a caller to `[0]`.** The four
+   category selectors take the dice key and return the diced order.
+   `compose.ts:596`'s `categories[0]` stays, but becomes a *projection of a
+   decision already made* rather than the decision itself.
+
+### 1.3 Temperature, in units that mean something
+
+τ is stated **in affinity points**, so it is arguable rather than mystical:
+
+```
+eligible = { o : weight(o) >= maxWeight − τ }      // the floor — non-inversion
+draw     = softmax over eligible at temperature τ  // the spread
+```
+
+τ = 0 reduces exactly to today's argmax, which makes every refit's null
+hypothesis testable. τ = 0.35 means "may trade up to 0.35 affinity for
+variety" — and 0.35 is one `GRAVITY_WEIGHTS` step, so the unit is **one rank
+of stated interest**.
+
+### 1.4 Per-site application table — all 25 rows
+
+| # | site | ruling | weight source | τ | why |
+|---|---|---|---|---|---|
+| 3 | `electAnchor` | **REFIT** | category affinity | **0.05** | anchor mostly follows gravity — the mandate's own steer. τ=0.05 breaks only *exact* ties, which are common (7 categories, 3 interests) and today fall to `localeCompare` — that alphabet is why `historic_sites` always beats `museums_galleries` at equal affinity |
+| 4 | `pickContrast` | **REFIT** | affinity within non-anchor families | **0.30** | contrast is *by construction* not the top pick; ranking inside an already-constrained set is near-arbitrary, so variety is cheapest here |
+| 5 | `warmupCategories` | **REFIT** | affinity over cafes/markets/parks | **0.25** | `markets` heads 5 of 6 personas, and the sort has **no tie-break at all** — order rests on V8 sort stability |
+| 6 | `closeCategories` | **REFIT** | affinity + §1.4b | **0.30** | the monotony surface Session 11 measured. Drawn post-`forEvening`, per §1.2 |
+| 7 | `rankedActivityCategories` | **REFIT** | affinity | **0.20** | its head is taken at `:569` as the contrast fallback's anchor proxy |
+| 23 | `zonesFor` | **REFIT** | lens bucket | **0.30** | §1.6 |
+| 24 | `retrieveCandidates` | **REFIT** | — (window rotation) | n/a | §1.6 |
+| 1 | `pickTemplate` | keep, **rekey** | — | — | fixed in S11; migrates to `personaIdentity` so every site shares one identity hash |
+| 20 | `scoreCandidate` jitter | keep, **rekey** | — | — | healthy — it is the model. Same migration |
+| 2 | `templatesFor` fallback | keep | — | — | unreachable; a hardcoded index is honest as a fallback |
+| 8 | `categories[0]` head-take | keep | — | — | becomes a projection under §1.2(2) |
+| 9 | `forEvening` | keep | — | — | a **fact** filter (what is open at night), not a taste choice. Folding it into weights would let the die seat a museum at 19:30 |
+| 10 | `defaultMealPattern` | **keep** | — | — | comment 10290 rules patterns are chosen by chronotype/pace, not dice. A wanderer drawing `classic` is noise, not variety. **Narrow key noted as a real limit** — it reads `structure` and ignores `pace`; widening it is XXX-37-adjacent, not this ticket |
+| 11 | `mealWindowsFor` | keep | — | — | fixed rule with a recorded reason (S11 §5.1) |
+| 12 | `sliceSegment` | keep | — | — | arithmetic; no alternatives weighed |
+| 13 | variety-backstop cut | keep | — | — | a backstop — dicing which slot gets cut makes the guarantee non-deterministic |
+| 14 | open-interval placement | keep | — | — | the template owns it (§1.0) |
+| 15 | `modeFor` | **keep** | — | — | transport is **trip circumstance** (constraint 3, single-owner-per-fact). Dicing the mode hands a fact to judgment. **Flagged:** the `2.2` km walk threshold is a load-bearing constant with no recorded coupling |
+| 16 | seat placement | keep | — | — | an objective, and its determinism is the Session 11 centring win |
+| 17 | alternates order | keep | — | — | inherits the menu, which inherits seeded score |
+| 18 | `pickShortlist` | keep | — | — | seeded via score |
+| 19 | `buildMenus` ranking | keep | — | — | preference-before-score was a deliberate S11 fix (a verified bar outranking every cafe at breakfast). Now consumes the **diced** preference order |
+| 21 | `DeterministicSelector` | keep | — | — | ranked-head over an already-seeded list |
+| 22 | `LlmSelector` menu order | **keep, monitored** | — | — | **measured healthy**: venue overlap 0.040 mean / 0.40 max against a 0.35/0.50 gate. The disease is *category* selection, not venue selection, and CLAUDE.md forbids building past the ticket. The gate is the instrument if it ever moves |
+| 25 | seed default | keep | — | — | entropy source |
+
+**§1.4b — the knife-edge, restructured rather than tuned.** `closeCategories`'
+`night >= 0.35` gate is **deleted**, not adjusted. `restaurants` stops being
+*gated* and becomes a *weighted* option like every other: its weight is its own
+affinity, discounted by a stated close-penalty so a table is never the first
+answer (Session 11's actual intent). The comparison disappears, so there is no
+edge for a persona to sit on — the ruling's "restructure" branch rather than
+its "make the comparison honest" branch.
+
+### 1.5 Sites proposed for NO refit — the ones worth arguing about
+
+Three keeps are judgment calls, stated so they can be overruled:
+`defaultMealPattern` (10), `modeFor` (15), `LlmSelector` (22). The first two
+are keeps **on principle** — meal pattern and transport are owned by profile
+and trip respectively, and a die there is judgment overwriting circumstance.
+The third is a keep **on evidence**: venue variety already passes its gate with
+an order of magnitude of headroom, and refitting a healthy selector to fix a
+sick one is how a variety pass becomes a rewrite.
+
+### 1.6 Retrieval ceilings — cost-neutral by construction, not by discipline
+
+- **`zonesFor`** — the lens buckets stay as the *weighting* (icons → the five
+  icon zones); the die draws the emphasis within the bucket, keyed by
+  (seed, identity, date). Zone choice sets the **bbox**, and
+  `retrieveCandidates` issues **one query per category regardless of bbox** —
+  so query count is untouched structurally.
+- **`retrieveCandidates`'s fixed 400** — today `.order("fsq_place_id").limit(400)`
+  returns the *same* 400 rows for every persona on every run. The refit keeps
+  `.limit(400)` — same volume, same query count — and dices the **order key**
+  from {`fsq_place_id`, `id`, `lat`, `lng`} × {asc, desc}: **8 deterministic
+  windows** at identical cost. Honest limit, stated rather than overclaimed:
+  this buys 8 reachable slices, **not** a uniform sample of the pool. Genuine
+  uniform coverage needs the popularity signal XXX-31 owes us, which is
+  explicitly not this ticket.
+
+Determinism-under-seed holds at both: window and zone emphasis are pure
+functions of (seed, persona, category).
+
+### 1.7 Harness pool-fidelity — REPRODUCED, and Session 11's stated cause is also wrong
+
+Constraint 7 satisfied before proposing a fix.
+`scripts/harness-fidelity-probe.ts` ($0, Supabase reads only), day-5-wanderer
+zones, seed 42:
+
+```
+pool rows (place×category)      : 1726
+distinct place ids              : 1646
+places carrying >1 category     : 79
+rows lost to a place-id Map     : 80
+harness/live category DISAGREE  : 79  (all of them)
+ …disagreeing across food/non-food: 45
+```
+
+Session 11 §8.3 recorded the cause as *"selects on the Candidate's category
+column while the DB pool's stored facts disagree."* **No fact disagrees with
+anything.** `retrieveCandidates` legitimately emits **one Candidate per
+(place, category)** — Brazen Head Irish Pub is a real `restaurants` row *and* a
+real `nightlife_bars` row. The defect is a **collision rule**, and the two code
+paths chose opposite ones:
+
+| | rule | wins |
+|---|---|---|
+| live `pickShortlist` (`engine.ts:710`) | `if (picked.has(id)) { taken++; continue }` | **first** = highest score |
+| harness (`offline-recompose.ts:86`) | `new Map(scored.map(…))` | **last** = lowest score |
+
+So the harness *selects* Brazen Head at its `restaurants` score (0.722) for a
+meal intent, then hands `composeDay` the same place's `nightlife_bars` variant
+(0.560) — and the day seats a **bar for a meal**. Session 11's exact symptom,
+from a cause one line long.
+
+**Fix — share the path, don't re-derive it.** The harness re-implements
+selection at `:88–101`. It will instead call the engine's own `pickShortlist`,
+`buildMenus` and `DeterministicSelector`, so "offline day == live day on
+identical inputs" becomes **structural** rather than coincidental. A divergence
+test pins it.
+
+### 1.8 Verification plan and budget
+
+| stage | what | cost |
+|---|---|---|
+| Tier 1 | fixtures/units for `dice.ts`, every refitted selector, reproducibility, the eligibility floor, harness divergence | **$0** |
+| Step 2 | offline structural iteration on the fixed harness until the matrix projects green | **$0** |
+| Step 3 | ONE live 6×6 confirm | **~$3** |
+| Step 4 | CP3 founder evening, ~25–28 generations @ $0.35–0.45 | **~$10** |
+| | **session total** | **≤$13** against the **$15** gate |
+
+Standing gates restated, unchanged and not movable mid-session: venue overlap
+≤0.35 mean / ≤0.50 max · category-sequence (comparable pairs, |Δstops|≤1)
+≤0.55 mean / ≤0.80 max, cross-shape reported non-gating · role-sequence
+reported, expectation <0.90 · anchors 6/6 · closes 6/6 · golden 6/6 clean ·
+report-the-miss in force.
+
+### 1.9 Rulings requested at CHECKPOINT 1
+
+1. **The dice pattern** (§1.1–1.3) — one primitive, funnel-aware, τ in affinity
+   points, eligibility floor as the non-inversion guarantee.
+2. **The per-site table** (§1.4), including **§1.4b** deleting the 0.35 gate
+   rather than tuning it.
+3. **The three no-refit sites** (§1.5) — two on principle, one on evidence.
+4. **The retrieval refit** (§1.6), including the honest limit that the window
+   rotation buys 8 slices, not a uniform sample.
+5. **The harness fix** (§1.7) — share the engine's path rather than re-derive.
+6. **Noted, not proposed for action:** `modeFor`'s 2.2 km threshold and
+   `defaultMealPattern`'s structure-only key are both load-bearing under the
+   new standard. Recording them is what the standard requires; fixing them is
+   not this ticket.
+
 ---
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
