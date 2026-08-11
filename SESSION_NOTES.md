@@ -1,3 +1,191 @@
+# Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
+
+Branch: `session-12-variety-audit`. Status: **CHECKPOINT 0 — awaiting rulings.**
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### Branch point — the mandate's premise was wrong, and it matters
+
+The mandate says "confirm main carries Session 11's merge." **It does not.**
+
+| | |
+|---|---|
+| `main` HEAD | `30848ef` — *Merge PR #12, session-10-tasting-room*, 2026-08-09 |
+| Session 11 | `038df06`, **11 commits, unmerged**, on `session-11-composition-quality` |
+| PR #13 | **OPEN**, not merged — "Session 11: composition quality (XXX-35)" |
+
+This is consistent, not a mistake: Session 11 ended **HOLD-gated** and §8.3
+ruled "it does not launch on this branch." An unmerged branch is what a HOLD
+looks like in git. The founder has not merged because the founder was told
+not to.
+
+**Decision taken (not deferred — the audit is unexecutable otherwise):**
+`session-12-variety-audit` is branched from **`session-11-composition-quality`**,
+not `main`. Verified as forced rather than preferred: `pickTemplate`,
+`closeCategories`, `electAnchor`, `pickContrast` and the whole `arc.ts` module
+**do not exist on `main`** (`git grep pickTemplate main -- src` → no hits).
+Branching from `main` would audit a composition layer that predates every
+mechanism this session was convened to fix.
+
+**Consequence the founder must rule on, because it changes what gets merged:**
+this branch now carries Session 11's 11 commits plus Session 12's. The
+close-out `gh pr create --base main` would therefore open a PR containing
+**both sessions**. Three options, my recommendation first:
+
+1. **Merge PR #13 first, then Session 12 targets a clean `main`.** Session 11's
+   work was gated on *product* quality (six bars), not on correctness — its
+   gates were green (439 tests, tsc/build clean). Merging it unblocks the
+   history without asserting the days were good.
+2. Let Session 12's PR supersede #13 — close #13, one combined PR. Simplest
+   git, but it buries Session 11's adjudication record inside a variety PR.
+3. Stack: keep #13 open, target Session 12's PR at `session-11-...`. Honest
+   topology, two merges for the founder.
+
+Not decided unilaterally — it is a merge decision, and the founder merges.
+
+### The two Session-11 engineering standards are on the branch, not on main
+
+`d342501` added them to CLAUDE.md — load-bearing constants, and
+invariants-are-rulings. They are present in the working tree **because of the
+branch-point decision above**. Read and binding for this session.
+
+### Record check — comment 10300 does not exist
+
+The mandate cites "comments 10299/10300-era records". **10299** is on XXX-35
+(the premise revision) and is read. **10294** is on XXX-5 (the distinctiveness
+ACs) and is read. There is **no comment 10300** — the project's comment ids
+run 10287–10299, with 10296/10297 on XXX-32/33 and 10298 on XXX-34. Recorded
+rather than silently treated as read.
+
+### Settings — reviewer-directed revision, checkpoint-only supervision
+
+Moved to `allow`: `npx tsx`, `npx supabase`, `npm install`, `rm`, `curl`,
+`wget`, `node`. `ask` now holds `git push` alone. **Deny list untouched** —
+`vercel`/`npx vercel`, the `rm -rf|-fr|-r` family, and `.env.local` reads.
+Deny outranks allow, so the blanket `rm` allow does not reopen `rm -rf`.
+
+Collapsed four now-redundant `npx tsx scripts/*-report.ts` entries into the
+blanket `npx tsx` allow — a simplification beyond what was directed, flagged
+here for objection.
+
+**Rationale of record (reviewer's words):** the cost gate relocates from
+per-command prompts to six real fences — checkpoint-sanctioned budgets,
+`TASTING_DAILY_CAP`, per-script `--max-calls`, the GCP 1000/day quota,
+hard-stop-on-429, and budget alerts + month-gauge. Prompts had become ceremony
+atop the fences. **Discipline that replaces them:** every spend lands inside a
+checkpoint-sanctioned budget; any run *projected* to exceed its sanction stops
+and surfaces rather than running; spends are logged here as they happen, not
+at close-out.
+
+### Spend this checkpoint
+
+**$0.00.** Intake is git, Jira reads, source reads, and one pure-function
+script (`scripts/dice-audit.ts` — no DB, no network).
+
+### The audit inventory — every selection point in composition and generation
+
+Mechanism legend: **RH** ranked-head-always-wins · **SH** seeded-hash ·
+**J** seeded jitter · **F** fixed rule/filter (no alternatives weighed) ·
+**LLM** model choice · **OBJ** deterministic objective (argmin/argmax on a
+cost function).
+
+| # | site | file:line | mech | dice-key (what varies the outcome) | verdict |
+|---|---|---|---|---|---|
+| 1 | `pickTemplate` | `arc.ts:178` | SH | FNV(structure\|pace\|lens\|gravity) ^ \|seed\| | fixed S11; **low spread** (2–3 distinct / 5 seeds) |
+| 2 | `templatesFor` fallback | `arc.ts:149` | F | none — hardcoded `ARC_TEMPLATES[3]` | unreachable today; latent |
+| 3 | `electAnchor` | `arc.ts:210` | RH | persona affinity, then `localeCompare` | **DEGENERATE — no seed** |
+| 4 | `pickContrast` | `arc.ts:259` | RH | persona + anchor family + used families | **DEGENERATE — no seed** |
+| 5 | `warmupCategories` | `arc.ts:293` | RH | affinity over a 3-list, **no tie-break** | **DEGENERATE — markets 5/6** |
+| 6 | `closeCategories` | `arc.ts:306` | RH | affinity + the `night >= 0.35` switch | **DEGENERATE — no seed** |
+| 7 | `rankedActivityCategories` | `compose.ts:158` | RH | affinity, then `localeCompare` | head taken at `:569` |
+| 8 | category head-take | `compose.ts:596` | F | `categories[0]` — every step funnels here | **the universal head-take** |
+| 9 | `forEvening` narrowing | `compose.ts:504–524` | F | window start ≥ 19:00 | **the real six-bar cause — see below** |
+| 10 | `defaultMealPattern` | `compose.ts:153` | F | `structure` only (2 outcomes) | by design |
+| 11 | `mealWindowsFor` | `compose.ts:231` | F | meal-step count | by design |
+| 12 | `sliceSegment` | `compose.ts:201` | F | step needs | arithmetic, not a choice |
+| 13 | variety-backstop cut | `compose.ts:630` | F | anchor-first, then time order | first-come cut |
+| 14 | open-interval placement | `compose.ts:533` | F | template position | template's call |
+| 15 | `modeFor` | `compose.ts:668` | F | distance thresholds | fact-driven, correct |
+| 16 | seat placement | `compose.ts:1054` | OBJ | argmin `seatCost`, ties → earlier | **intended determinism** |
+| 17 | alternates order | `compose.ts:1086` | F | chosen first, then menu order | inherits menu |
+| 18 | `pickShortlist` | `engine.ts:700` | J | score order (seeded ✓) | healthy |
+| 19 | `buildMenus` ranking | `engine.ts:746` | F+J | **category-preference order BEFORE score** | preference dominates |
+| 20 | `scoreCandidate` jitter | `score.ts:121` | J | `seed ^ FNV(placeId) ^ personaFingerprint` | **the model to generalize** |
+| 21 | `DeterministicSelector` | `select.ts:21` | RH | argmax on seeded score, no-repeat | RH over a *seeded* list — OK |
+| 22 | `LlmSelector` menu order | `select-llm.ts:84` | LLM | menu printed score-descending; position bias | needs a stated posture |
+| 23 | `zonesFor` | `retrieve.ts:45` | F | **`lens` only** — 3 fixed buckets | all icons personas share 5 zones |
+| 24 | `retrieveCandidates` | `retrieve.ts:26,133` | F | **none** — `order(fsq_place_id).limit(400)` | **fixed 400 rows, every run** |
+| 25 | seed default | `engine.ts:160` | — | `Math.random()` | entropy source, correct |
+
+Out of engine, recorded not fixed: `TastingRoom.tsx:55,242` draw a random
+date and persona per load — relevant at CP4, where the founder needs *fixed*
+seeds for the A/B against his own verdicts.
+
+### Measured: Session 11's stated six-bar mechanism is WRONG, and the fix follows the mechanism
+
+`scripts/dice-audit.ts` (pure, $0) runs all six golden personas through every
+category selector. Session 11 §7.1 recorded: *"`closeCategories` ranks
+`nightlife_bars` first for every persona whose night affinity clears 0.35."*
+
+Measured, that describes **one** persona of six:
+
+| persona | night affinity | `closeCategories` head |
+|---|---|---|
+| day-1-jays | 0.180 | **parks** |
+| day-2-old-town | 0.000 | **historic_sites** |
+| day-3-winter | 0.000 | **historic_sites** |
+| day-4-budget | 0.300 | **parks** |
+| day-5-wanderer | **0.350** | nightlife_bars |
+| day-6-excursion | 0.210 | **parks** |
+
+`closeCategories` is not the homogeniser. The six-bar day is a **three-stage
+funnel**, and only the middle stage lives in the function Session 11 blamed:
+
+1. **affinity ranks** → `parks` heads 3/6, `historic_sites` 2/6, bars 1/6
+2. **`forEvening` narrows** (`compose.ts:504`) to
+   {nightlife_bars, historic_sites, restaurants} — **drops `parks`**, the head
+   for 3 of 6 → bars now head 4/6
+3. **hours hard-filter** kills `historic_sites` at 19:00+ → the alternates walk
+   lands on **bars 6/6**
+
+**Why this matters for Step 1:** refitting `closeCategories` into a weighted
+draw — the fix Session 11 proposed for this session — would **not** have fixed
+it. The distribution is sampled *before* the two narrowings that actually
+collapse it. A die rolled upstream of a funnel is still a funnel. Any fix must
+either sample after the filters or make the filters part of the weighting.
+
+### Second finding: a boundary constant sitting exactly on a persona's value
+
+`closeCategories`'s switch is `night >= 0.35`. `day-5-wanderer` measures
+**exactly 0.350** — because `nightlife` sits at gravity position 3 and
+`GRAVITY_WEIGHTS[2]` **is** 0.35, against an affinity of 1.0. Every persona
+with a 1.0-affinity interest in third position lands precisely on the
+threshold. Flipping `>=` to `>` silently changes day-5's close list.
+
+This is the **load-bearing constant** standard's exact shape: 0.35's
+correctness depends on `GRAVITY_WEIGHTS` never moving, and nothing records
+that coupling. Carried into Step 1 as a named ruling request.
+
+### Third finding: two FNV-1a implementations
+
+`arc.ts:153 hashIdentity` and `score.ts:53 fnv1a` are independent copies of
+the same primitive (bit-identical output; verified by inspection —
+`>>> 0` inside vs. after the loop does not change the XOR's int32 coercion).
+The dice pattern will be the **third** occurrence, which is precisely when
+CLAUDE.md says to extract. Proposed at CP1 as one shared primitive.
+
+### Carried into Step 1, not fixed here
+
+- **Harness pool-fidelity (Session 11 §8.3, OPEN).** `offline-recompose.ts`
+  reads `retrieveCandidates` (which synthesises `candidate.category` from the
+  *queried* category, so a multi-mapped place appears once per category).
+  Diagnosis is not complete enough to state a cause; Step 1 owes it one.
+- **`boundaries.test.ts:516` reads "every one of the 38"** when `RULE_IDS` is
+  43. One-line, still open from Session 11 §2.5.
+- **A/B path prints no per-run Anthropic usage** (Session 11 §8.1).
+
+---
+
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
 
 Branch: `session-11-composition-quality`. Status: **HOLDING short of CP3.**
