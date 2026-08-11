@@ -117,7 +117,12 @@ describe("buildSkeleton", () => {
   });
 
   it("activity categories follow persona gravity", () => {
-    const ranked = rankedActivityCategories(GOLDEN_PERSONAS["day-3-winter"]);
+    // The lowest roll takes the first eligible option, so this asserts that
+    // gravity — not the dice — still decides when the dice does not push.
+    const ranked = rankedActivityCategories(
+      GOLDEN_PERSONAS["day-3-winter"],
+      () => 0,
+    );
     expect(ranked[0]).toBe("museums_galleries"); // art-first persona
   });
 });

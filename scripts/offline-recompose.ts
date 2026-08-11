@@ -1,10 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildSkeleton, composeDay } from "@/server/generation/compose";
+import { buildMenus } from "@/server/generation/engine";
 import { hardFilter } from "@/server/generation/filters";
-import { retrieveCandidates, zonesFor } from "@/server/generation/retrieve";
+import {
+  POOL_WINDOWS,
+  retrieveCandidates,
+  zonesFor,
+} from "@/server/generation/retrieve";
 import { scoreAll } from "@/server/generation/score";
+import { DeterministicSelector } from "@/server/generation/select";
 import type { Candidate, GenerationRequest, Selection } from "@/server/generation/types";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
@@ -69,36 +76,65 @@ async function main(): Promise<void> {
     };
 
     const skeleton = buildSkeleton(request);
-    const zones = zonesFor(persona.lens, []);
+    const identity = personaIdentity(persona);
+    const zones = zonesFor(
+      persona.lens,
+      [],
+      diceStream({ seed, identity, site: "zone", context: date }),
+    );
     const pool = await retrieveCandidates(
       supabase,
       "toronto",
       [...PLACE_CATEGORIES],
       zones,
+      (category) =>
+        diceIndex(
+          { seed, identity, site: "pool-window", context: category },
+          POOL_WINDOWS.length,
+        ),
     );
+    // FIDELITY (Session 12 CP1, ruled as doctrine): the harness CALLS the
+    // engine's selection path and MIRRORS ITS SEQUENCE — it never
+    // re-implements either.
+    //
+    // The sequence matters as much as the functions, and getting it wrong is
+    // how the original defect happened. `retrieveCandidates` emits one
+    // Candidate per (place, CATEGORY), so a place mapped to several
+    // categories appears several times under one `place.id` — 79 of them in
+    // the Toronto pool, 45 straddling the food boundary. The engine collapses
+    // that collision ONCE, at `engine.ts:292`, BEFORE menus exist, so its
+    // selection and its composition necessarily agree about what a place is.
+    // The old harness collapsed it AFTER selecting from the still-duplicated
+    // list, so it selected Brazen Head Irish Pub at its `restaurants` score
+    // for a meal and then composed with the same place's `nightlife_bars`
+    // variant. A bar seated as a meal — Session 11's symptom exactly.
+    //
+    // So: collapse first (same rule, same place in the order), then filter,
+    // then re-score, then build menus over the FULL re-scored pool — which is
+    // what `engine.ts:431` passes, not the shortlist. `pickShortlist` governs
+    // only which candidates earn paid Details calls, and offline there are
+    // none.
+    const preById = new Map(pool.map((c: Candidate) => [c.place.id, c]));
     const { kept } = hardFilter(
-      pool,
+      [...preById.values()],
       date,
       skeleton.daySpan,
       (c) => GRAMMAR_PARAMS.dwellMinutes[c.category].min,
     );
     const scored = scoreAll(kept, persona, request.budgetBand, seed);
     const byId = new Map(scored.map((c: Candidate) => [c.place.id, c]));
-
-    // Deterministic selection, same rule the DeterministicSelector uses:
-    // the best-scoring unused candidate whose category the intent wants.
-    const used = new Set<string>();
-    const selections: Selection[] = [];
-    for (const intent of skeleton.intents) {
-      const pick = scored.find(
-        (c: Candidate) =>
-          intent.categories.includes(c.category) && !used.has(c.place.id),
-      );
-      if (pick !== undefined) {
-        used.add(pick.place.id);
-        selections.push({ intentId: intent.id, placeId: pick.place.id });
-      }
-    }
+    const menus = buildMenus(
+      skeleton,
+      scored,
+      date,
+      timeToMinutes("20:30"),
+      undefined,
+    );
+    const selections: Selection[] = await new DeterministicSelector().select(
+      menus,
+      persona,
+      seed,
+    );
 
     const composed = composeDay({
       request,

@@ -20,7 +20,9 @@ import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
 import type { PlaceCategory } from "@/shared/vocabulary";
+import { weightedOrderBy } from "@/shared/dice";
 import { ANCHORS, type Anchor } from "../discovery/plan";
+import { COMPOSE_PARAMS } from "./compose-params";
 import type { Candidate } from "./types";
 
 const PER_CATEGORY_CAP = 400;
@@ -41,8 +43,26 @@ const CORNER_ZONES = new Set([
   "leslieville",
 ]);
 
-/** The zone anchors a day draws from — lens-driven, anchor-overridden. */
-export function zonesFor(lens: Lens, anchorCoords: LatLng[]): Anchor[] {
+/**
+ * The zone anchors a day draws from — lens-driven, anchor-overridden, and
+ * (Session 12) diced WITHIN the lens's bucket.
+ *
+ * The lens still decides which bucket: an icons persona never draws a corners
+ * zone. What the dice decides is the day's EMPHASIS inside it, because
+ * keying zone choice on `lens` alone meant every icons persona on every date
+ * searched the same five neighbourhoods — a variety ceiling upstream of every
+ * selector below it.
+ *
+ * Cost-neutral by construction, not by discipline: zone choice only sets the
+ * bbox, and `retrieveCandidates` issues one query per CATEGORY regardless of
+ * how wide that box is. Passing no `dice` keeps the full bucket, which is
+ * what a user-anchored day and the fixture tests want.
+ */
+export function zonesFor(
+  lens: Lens,
+  anchorCoords: LatLng[],
+  dice?: () => number,
+): Anchor[] {
   if (anchorCoords.length > 0) {
     // A committed day is a geographic fact: draw from every zone within
     // reach of any user anchor, whatever the lens says.
@@ -52,10 +72,59 @@ export function zonesFor(lens: Lens, anchorCoords: LatLng[]): Anchor[] {
       ),
     );
   }
-  if (lens === "icons") return ANCHORS.filter((z) => ICON_ZONES.has(z.slug));
-  if (lens === "corners") return ANCHORS.filter((z) => CORNER_ZONES.has(z.slug));
-  return [...ANCHORS];
+  const bucket =
+    lens === "icons"
+      ? ANCHORS.filter((z) => ICON_ZONES.has(z.slug))
+      : lens === "corners"
+        ? ANCHORS.filter((z) => CORNER_ZONES.has(z.slug))
+        : [...ANCHORS];
+  if (dice === undefined) return bucket;
+
+  // Every zone in the bucket is equally on-lens, so this is a flat draw
+  // rather than a weighted one — dressing it as weighted would be false
+  // precision. Keeping a majority of the bucket keeps the bbox wide enough
+  // for a day's walking; dropping the rest is what makes two personas
+  // sharing a lens search differently.
+  const keep = Math.max(
+    2,
+    Math.round(bucket.length * COMPOSE_PARAMS.dice.zoneKeepFraction),
+  );
+  if (keep >= bucket.length) return bucket;
+  const drawn = weightedOrderBy(
+    bucket,
+    () => 0,
+    dice,
+    COMPOSE_PARAMS.dice.zone,
+  ).slice(0, keep);
+  // Restored to the canonical ANCHORS order so the bbox and every downstream
+  // `nearestZone` read the same list regardless of what the dice returned.
+  return ANCHORS.filter((z) => drawn.includes(z));
 }
+
+/**
+ * The stable orderings a pool page may be taken in.
+ *
+ * `.order(fsq_place_id).limit(400)` returned the SAME 400 rows for every
+ * persona on every run — a fixed slice of a pool that is often far larger, so
+ * the tail was structurally unreachable no matter how well the dice below it
+ * worked. Rotating the order key gives eight deterministic windows at
+ * identical cost: same query count, same volume, different 400 rows.
+ *
+ * Labelled honestly, per the CP1 ruling: this is ROTATION, not uniform
+ * coverage. Eight reachable slices is eight, not a sample. The real fix is
+ * the pre-fetch popularity signal XXX-31 owes the pool, and it is explicitly
+ * not this ticket.
+ */
+export const POOL_WINDOWS: readonly { column: string; ascending: boolean }[] = [
+  { column: "fsq_place_id", ascending: true },
+  { column: "fsq_place_id", ascending: false },
+  { column: "id", ascending: true },
+  { column: "id", ascending: false },
+  { column: "lat", ascending: true },
+  { column: "lat", ascending: false },
+  { column: "lng", ascending: true },
+  { column: "lng", ascending: false },
+];
 
 function bboxOf(zones: Anchor[]): {
   latMin: number;
@@ -112,11 +181,21 @@ export async function retrieveCandidates(
   city: string,
   categories: PlaceCategory[],
   zones: Anchor[],
+  /**
+   * Picks which of `POOL_WINDOWS` this request pages by. Omit for the
+   * canonical `fsq_place_id` ascending window — what the fixtures and any
+   * caller wanting the historical slice should use.
+   */
+  window?: (category: PlaceCategory) => number,
 ): Promise<Candidate[]> {
   const box = bboxOf(zones);
 
   const perCategory = await Promise.all(
     categories.map(async (category) => {
+      const order =
+        POOL_WINDOWS[
+          window === undefined ? 0 : window(category) % POOL_WINDOWS.length
+        ];
       const { data, error } = await client
         .from("places")
         .select(
@@ -130,7 +209,7 @@ export async function retrieveCandidates(
         .lte("lat", box.latMax)
         .gte("lng", box.lngMin)
         .lte("lng", box.lngMax)
-        .order("fsq_place_id")
+        .order(order.column, { ascending: order.ascending })
         .limit(PER_CATEGORY_CAP);
       if (error) {
         throw new Error(`candidate retrieval failed: ${error.message}`);

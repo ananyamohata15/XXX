@@ -1,9 +1,10 @@
 /**
- * Session 12 CP0 — the degenerate-dice inventory, measured rather than argued.
+ * Session 12 — the degenerate-dice inventory, measured rather than argued.
  *
- * For every selection point that chooses a CATEGORY, print what each of the
- * six golden personas actually draws. A column whose six rows are identical
- * is a degenerate die; a column that varies with seed is a live one.
+ * CP0 ran this against the un-diced selectors and it produced the evidence
+ * that corrected Session 11's recorded six-bar mechanism. It now doubles as
+ * the CP2 before/after demonstration: same six personas, same seeds, showing
+ * the close categories drawn ACROSS days and two similar personas diverging.
  *
  * $0 — pure functions only, no DB, no network.
  */
@@ -16,79 +17,145 @@ import {
   warmupCategories,
 } from "@/server/generation/arc";
 import { rankedActivityCategories } from "@/server/generation/compose";
-import { categoryAffinity, GOLDEN_PERSONAS } from "@/shared/persona";
+import { diceStream, personaIdentity } from "@/shared/dice";
+import { categoryAffinity, GOLDEN_PERSONAS, type Persona } from "@/shared/persona";
 import { CATEGORY_FAMILY } from "@/shared/vocabulary";
 
 const SEEDS = [42, 7, 1234, 99, 2026];
+const DATE = "2026-08-15";
 const pad = (s: string, n: number) => s.padEnd(n);
 
-console.log("\n=== per-persona category draws (head-take shown first) ===\n");
+/** The same key the composer builds — so this measures the real draws. */
+const roll = (persona: Persona, seed: number, site: string, context: string) =>
+  diceStream({
+    seed,
+    identity: personaIdentity(persona),
+    site,
+    context: `${DATE}|${context}`,
+  });
+
+console.log("\n=== per-persona draws at seed 42 (lowest-roll head shown) ===\n");
 console.log(
   pad("persona", 18) +
     pad("anchor", 19) +
     pad("contrast", 19) +
     pad("warmup[0]", 11) +
-    pad("close[0]", 17) +
-    "close list",
+    "close order",
 );
-console.log("-".repeat(120));
+console.log("-".repeat(118));
 
 for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
-  const anchor = electAnchor(persona);
+  const anchor = electAnchor(persona, { dice: roll(persona, 42, "anchor", "") });
   const used = new Set(anchor ? [CATEGORY_FAMILY[anchor.category]] : []);
   const contrast =
-    anchor === null ? null : pickContrast(persona, anchor.category, used);
-  const closes = closeCategories(persona);
+    anchor === null
+      ? []
+      : pickContrast(persona, anchor.category, used, {
+          dice: roll(persona, 42, "contrast", "840"),
+        });
   console.log(
     pad(key, 18) +
       pad(anchor?.category ?? "—", 19) +
-      pad(contrast ?? "—", 19) +
-      pad(warmupCategories(persona)[0], 11) +
-      pad(closes[0], 17) +
-      closes.join(" > "),
+      pad(contrast[0] ?? "—", 19) +
+      pad(warmupCategories(persona, roll(persona, 42, "warmup", "540"))[0], 11) +
+      closeCategories(persona, roll(persona, 42, "close", "1140")).join(" > "),
   );
 }
 
-console.log("\n=== the evening narrowing (what a 19:00+ close may draw) ===\n");
+console.log("\n=== THE HEADLINE: close head across seeds (was 1/1 for all) ===\n");
+for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
+  const heads = SEEDS.map(
+    (s) => closeCategories(persona, roll(persona, s, "close", "1140"))[0],
+  );
+  console.log(
+    `${pad(key, 18)}${heads.map((h) => pad(h, 18)).join("")}distinct=${new Set(heads).size}/${SEEDS.length}`,
+  );
+}
+
+console.log("\n=== evening close: what survives forEvening, across seeds ===\n");
 const EVENING_OK = ["nightlife_bars", "historic_sites", "restaurants"];
 for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
-  const closes = closeCategories(persona);
-  const evening = closes.filter((c) => EVENING_OK.includes(c));
+  const heads = SEEDS.map((s) => {
+    const drawn = closeCategories(persona, roll(persona, s, "close", "1140"));
+    return drawn.filter((c) => EVENING_OK.includes(c))[0] ?? "—";
+  });
   console.log(
-    `${pad(key, 18)} close=${pad(closes.join(">"), 46)} evening-filtered=${evening.join(">") || "(empty)"} → head=${evening[0] ?? "—"}`,
+    `${pad(key, 18)}${heads.map((h) => pad(h, 18)).join("")}distinct=${new Set(heads).size}/${SEEDS.length}`,
   );
 }
 
-console.log("\n=== night affinity vs the 0.35 switch in closeCategories ===\n");
+console.log("\n=== anchor across seeds — must stay gravity-faithful (tau 0.05) ===\n");
 for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
-  const night = categoryAffinity(persona, "nightlife_bars");
+  const drawn = SEEDS.map(
+    (s) => electAnchor(persona, { dice: roll(persona, s, "anchor", "") })!.category,
+  );
+  const top = Math.max(
+    ...drawn.map((c) => categoryAffinity(persona, c)),
+  );
+  const best = categoryAffinity(
+    persona,
+    rankedActivityCategories(persona, () => 0)[0],
+  );
   console.log(
-    `${pad(key, 18)} nightlife_bars affinity=${night.toFixed(3)}  ${night >= 0.35 ? "≥0.35 → restaurants EXCLUDED" : "<0.35 → restaurants appended"}`,
+    `${pad(key, 18)}${drawn.map((d) => pad(d, 19)).join("")}distinct=${new Set(drawn).size} maxAffinityDrawn=${top.toFixed(2)} best=${best.toFixed(2)}`,
   );
 }
 
-console.log("\n=== template spread across seeds (the fixed die, for contrast) ===\n");
+console.log("\n=== warmup across seeds (markets headed 5/6 before) ===\n");
+for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
+  const heads = SEEDS.map(
+    (s) => warmupCategories(persona, roll(persona, s, "warmup", "540"))[0],
+  );
+  console.log(
+    `${pad(key, 18)}${heads.map((h) => pad(h, 11)).join("")}distinct=${new Set(heads).size}/${SEEDS.length}`,
+  );
+}
+
+console.log("\n=== template spread across seeds ===\n");
 for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
   const drawn = SEEDS.map((s) => pickTemplate(persona, s).id);
   console.log(
-    `${pad(key, 18)} ${drawn.map((d) => pad(d, 13)).join("")} distinct=${new Set(drawn).size}/${SEEDS.length}`,
+    `${pad(key, 18)}${drawn.map((d) => pad(d, 13)).join("")}distinct=${new Set(drawn).size}/${SEEDS.length}`,
   );
 }
 
-console.log("\n=== rankedActivityCategories (head is taken at compose.ts:569) ===\n");
-for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
-  console.log(`${pad(key, 18)} ${rankedActivityCategories(persona).join(" > ")}`);
-}
-
-console.log("\n=== seed sensitivity: does ANY category selector move with seed? ===\n");
-for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
-  const anchors = new Set(SEEDS.map(() => electAnchor(persona)?.category ?? "—"));
-  const closesHead = new Set(SEEDS.map(() => closeCategories(persona)[0]));
+console.log("\n=== TWO SIMILAR PERSONAS MUST DIVERGE (the pickTemplate lesson) ===\n");
+// Identical but for ONE gravity entry — the case that collapsed in Session 9
+// (jitter) and again in Session 11 (length-keyed template hash).
+const twinA: Persona = {
+  pace: "moderate",
+  gravity: ["art", "food", "history"],
+  foodCourage: "adventurous",
+  structure: "scheduler",
+  lens: "corners",
+};
+const twinB: Persona = { ...twinA, gravity: ["art", "food", "nature"] };
+console.log(
+  `identity hashes differ: ${personaIdentity(twinA) !== personaIdentity(twinB)}  (${personaIdentity(twinA)} vs ${personaIdentity(twinB)})`,
+);
+for (const seed of SEEDS) {
+  const a = closeCategories(twinA, roll(twinA, seed, "close", "1140"));
+  const b = closeCategories(twinB, roll(twinB, seed, "close", "1140"));
   console.log(
-    `${pad(key, 18)} anchor distinct across ${SEEDS.length} seeds=${anchors.size}  close-head distinct=${closesHead.size}`,
+    `  seed ${pad(String(seed), 6)} A=${pad(a.join(">"), 46)} B=${pad(b.join(">"), 46)} ${a.join() === b.join() ? "SAME" : "differ"}`,
   );
+}
+
+console.log("\n=== REPRODUCIBILITY: same persona + seed → identical draw ===\n");
+let reproduced = true;
+for (const [key, persona] of Object.entries(GOLDEN_PERSONAS)) {
+  for (const seed of SEEDS) {
+    const a = closeCategories(persona, roll(persona, seed, "close", "1140"));
+    const b = closeCategories(persona, roll(persona, seed, "close", "1140"));
+    if (a.join() !== b.join()) {
+      reproduced = false;
+      console.log(`  ** ${key} seed ${seed}: ${a.join()} vs ${b.join()}`);
+    }
+  }
 }
 console.log(
-  "\n(electAnchor and closeCategories take no seed parameter at all — the\n" +
-    " distinct-count of 1 is structural, not a sampling artefact.)\n",
+  reproduced
+    ? "  OK — every (persona, seed) reproduced its exact draw."
+    : "  ** NOT REPRODUCIBLE — see above.",
 );
+console.log();

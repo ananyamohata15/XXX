@@ -91,10 +91,20 @@ describe("arc templates are a grammar of shapes", () => {
  * named test failure instead of a TypeError three lines later.
  */
 function elect(persona: Persona, exclude: PlaceCategory[] = []): ElectedAnchor {
-  const e = electAnchor(persona, exclude);
+  const e = electAnchor(persona, { exclude, dice: fixedDice() });
   if (e === null) throw new Error("expected an anchor to be elected");
   return e;
 }
+
+/**
+ * A stream that always returns 0 — the FIRST eligible option, every time.
+ *
+ * Not a mock of the dice: it is the draw at its lowest roll, which is what
+ * lets a test assert "gravity still decides" without asserting on a
+ * particular PRNG's output. Tests that care about spread use a real
+ * `diceStream` instead (see "the dice" below).
+ */
+const fixedDice = (): (() => number) => () => 0;
 
 describe("anchor election", () => {
   it("elects the persona's first interest, never a meal", () => {
@@ -180,18 +190,34 @@ describe("texture: contrast never repeats the anchor's family", () => {
         persona,
         anchor,
         new Set([CATEGORY_FAMILY[anchor]]),
+        { dice: fixedDice() },
       );
-      if (contrast === null) continue;
-      expect(CATEGORY_FAMILY[contrast]).not.toBe(CATEGORY_FAMILY[anchor]);
+      // Every entry of the diced ORDER must clear the family rule, not just
+      // its head — the whole list is carried into the intent now, so a bad
+      // tail member would be seated whenever the head fails to seat.
+      for (const c of contrast) {
+        expect(CATEGORY_FAMILY[c]).not.toBe(CATEGORY_FAMILY[anchor]);
+      }
     }
   });
 
   it("does not hand a daytime slot to a bar on an affinity tie", () => {
     // day-2's persona has zero affinity for both parks and nightlife, and
-    // alphabetical order used to give 14:20 to `nightlife_bars`.
+    // alphabetical order used to give 14:20 to `nightlife_bars`. Now `night`
+    // is FILTERED from daytime contrast rather than merely ranked last — it
+    // is a fact about what a 14:20 stop can be, not a preference the dice
+    // may trade away — so no roll of any temperature can surface it.
     const persona = GOLDEN_PERSONAS["day-2-old-town"];
-    const pick = pickContrast(persona, "historic_sites", new Set(["culture", "market"]));
-    expect(pick).toBe("parks");
+    for (const roll of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const picks = pickContrast(
+        persona,
+        "historic_sites",
+        new Set(["culture", "market"]),
+        { dice: () => roll },
+      );
+      expect(picks).toContain("parks");
+      expect(picks).not.toContain("nightlife_bars");
+    }
   });
 
   it("skeletons keep at least three texture families where the day allows", () => {
@@ -532,7 +558,9 @@ describe("the elected anchor survives composition", () => {
     const nonFood = (Object.keys(GRAMMAR_PARAMS.dwellMinutes) as PlaceCategory[]).filter(
       (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
     );
-    expect(electAnchor(persona, nonFood)).toBeNull();
+    expect(
+      electAnchor(persona, { exclude: nonFood, dice: fixedDice() }),
+    ).toBeNull();
   });
 });
 

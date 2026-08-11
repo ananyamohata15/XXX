@@ -434,6 +434,184 @@ report-the-miss in force.
    new standard. Recording them is what the standard requires; fixing them is
    not this ticket.
 
+### CHECKPOINT 1 outcome — all rulings granted
+
+All five ratified as proposed. τ values land in `COMPOSE_PARAMS.dice`
+(**folded in**, not a separate object — same layer, same lifecycle, same tier
+as `seating`; `COMPOSE_PARAMS` goes **v1 → v2**). Identity-hash consolidation
+approved with the note that it **re-baselines every seeded outcome**, so this
+session's matrix stands on the standing gates, not on deltas against prior
+matrices.
+
+## Step 2 — Build + offline iteration (CHECKPOINT 2)
+
+### 2.1 What was built
+
+| # | change | file |
+|---|---|---|
+| 1 | `dice.ts` — `fnv1a`, `mulberry32`, `personaIdentity`, `diceStream`, `weightedOrder(By)`, `diceIndex` | `src/shared/dice.ts` (new) |
+| 2 | τ params, Tier 3, `COMPOSE_PARAMS` v2 | `compose-params.ts` |
+| 3 | `electAnchor`, `pickContrast`, `warmupCategories`, `closeCategories` refit; `hashIdentity` deleted; `pickTemplate` rekeyed | `arc.ts` |
+| 4 | `rankedActivityCategories` refit; point-of-use rolls; `demoteRatherThanDrop` | `compose.ts` |
+| 5 | `fnv1a`/`mulberry32`/`personaFingerprint` migrated to the shared primitive | `score.ts` |
+| 6 | `zonesFor` zone emphasis + `POOL_WINDOWS` 8-window rotation | `retrieve.ts` |
+| 7 | retrieval dice wired; `pickShortlist`/`buildMenus` exported | `engine.ts` |
+| 8 | harness calls the engine's path and mirrors its sequence | `offline-recompose.ts` |
+| 9 | 20 new tests | `tests/generation/dice.test.ts` (new) |
+
+### 2.2 Code gates — GREEN
+
+`tsc --noEmit` clean · `npm run build` exit 0, full route table ·
+**459 passed**, 3 skipped, 23 files (was 439 — the 20 new dice tests) ·
+golden 6/6 and all traps still pass, unchanged.
+
+### 2.3 Per-site variety demonstration (`scripts/dice-audit.ts`, $0)
+
+**Reproducibility** — every (persona, seed) reproduced its exact draw.
+**Twins diverge** — two personas differing in ONE gravity entry drew
+different close orders at **5 of 5** seeds; identity hashes differ.
+**Non-inversion holds** — for all six personas at all seeds, the anchor's
+drawn affinity **equals** the best available affinity: τ=0.05 unseats
+`localeCompare` and moves nothing else.
+**Closes are no longer fixed** — `day-1-jays` draws 3 distinct close heads
+across 5 seeds (was 1); `day-5-wanderer` 2. Personas with a single dominant
+stated preference (day-2, day-3: affinity 1.00) still draw 1, **correctly** —
+that is the eligibility floor refusing to invert a stated preference.
+
+### 2.4 Harness fidelity — fixed, and my CP1 diagnosis was PARTLY WRONG
+
+The fix is in and the harness now calls `buildMenus` + `DeterministicSelector`
+and mirrors the engine's sequence. But the CP1 cause I reported must be
+corrected, because I got it wrong in the direction that flatters the engine:
+
+> CP1 said: *live `pickShortlist` collapses the (place, category) collision
+> first-wins; the harness collapsed it last-wins.*
+
+**`pickShortlist` is not on that path.** It selects which candidates earn paid
+Details calls. What actually reaches the composer is built at
+**`engine.ts:292`** — `new Map(scored.map(...))` — which is **last-wins**, the
+same rule the old harness used. So:
+
+- The engine collapses duplicates **once, before menus exist**, so its
+  selection and its composition necessarily agree about what a place is.
+  Arbitrary (a place competes under its **lowest**-scored category) but
+  self-consistent.
+- The old harness collapsed **after** selecting from the still-duplicated
+  list, so selection and composition disagreed — Brazen Head chosen at its
+  `restaurants` score for a meal, then composed as `nightlife_bars`.
+
+The divergence was real; its shape was not what I said. Recorded as a
+correction because an unrecorded one is worth less than no diagnosis.
+
+**Consequence now on the record:** `engine.ts:292`'s last-wins collapse means
+79 Toronto places (45 straddling the food boundary) enter composition under
+their lowest-scored category. **This is a live engine behaviour, not a harness
+artefact**, and it is a selection point I did not catalogue at CP0 — the
+inventory's 26th row. Not fixed: it is outside the ratified per-site table and
+changing it moves every seeded outcome again.
+
+### 2.5 Structural gates — NOT GREEN. Reported, not tuned around.
+
+Three seeds, date 2026-08-15, on the fixed harness:
+
+| gate | seed 42 | seed 7 | seed 1234 | threshold | verdict |
+|---|---|---|---|---|---|
+| anchors seated | 6/6 | 6/6 | 6/6 | 6/6 | **PASS** |
+| venue overlap mean | 0.000 | 0.047 | 0.000 | ≤0.35 | **PASS** (huge headroom) |
+| venue overlap max | 0.00 | 0.33 | 0.00 | ≤0.50 | **PASS** |
+| category-seq mean | **0.610** | **0.729** | **0.580** | ≤0.55 | **MISS** |
+| category-seq max | 0.75 | **1.00** | 0.80 | ≤0.80 | **MISS** (seed 7) |
+| closes present | **4/6** | 6/6 | **5/6** | 6/6 | **MISS** (2 of 3) |
+| role-seq mean | 0.926 | 0.929 | 0.911 | <0.90 expected | **MISS** |
+
+Against Session 11's HOLD numbers (category-seq 0.720, role-seq 0.960,
+closes 6/6): category-sequence improved at two seeds of three, role-sequence
+improved from 0.960 to ~0.92, venue overlap went from 0.040 to ~0.00 — and
+**closes regressed**. The six-bar day is gone (closes now draw across
+`nightlife_bars`, `historic_sites`, `parks`), which was the mandate's target,
+but the gate as written is not met.
+
+### 2.6 Two levers tested offline; BOTH failed. This is why I am not tuning.
+
+**Experiment A — raise the temperatures** (contrast/close 0.30→0.45, warmup
+0.25→0.40, activity 0.20→0.35):
+
+| seed | before | after |
+|---|---|---|
+| 42 | 0.610 | **0.686** |
+| 7 | 0.729 | **0.783** |
+| 1234 | 0.580 | 0.580 |
+
+**More randomness made distinctiveness WORSE**, and the reason is structural
+rather than a tuning miss: all six personas draw from the same five non-food
+categories. Pushing each persona's draw toward uniform makes them converge on
+the *same* uniform distribution. Reverted.
+
+**Experiment B — let lunch/dinner draw `markets`/`cafes`, not only
+`restaurants`:** identical numbers at all three seeds, to three decimals.
+`buildMenus` preference-ranks by `intent.categories.indexOf(...)` before
+score (`engine.ts:746` — inventory row 19, ruled **keep** at CP1), so
+`restaurants` at index 0 wins every meal menu and the added categories are
+never reachable. Reverted.
+
+### 2.7 The finding that matters: the dice cannot fix what this gate measures
+
+The dice cure **monotony** — one persona's days differing from each other, and
+from its own days on other dates. The evidence says they do: closes spread,
+twins diverge, reproducibility holds, venue overlap is ~0.
+
+Category-sequence measures something else: **cross-persona sameness**. Six
+personas are compared against each other on one date. What makes two personas'
+days differ is their *stated preferences*, and the eligibility floor exists
+precisely to stop the dice from overriding those. **A die that fixed this gate
+would be a die that inverted stated preference** — the thing CP1 ratified it
+must never do. The two goals pull against each other, and the floor is on the
+side the ruling chose.
+
+The binding constraint is vocabulary. Seven categories, two consumed by
+mandatory meals (`restaurants` is every lunch and every dinner — the
+structural floor the harness prints is **~0.40 of the ~0.61 measured**), leave
+five to distinguish six travellers across two to four non-meal slots. That is
+**XXX-37** — "the seven-category vocabulary cannot express several major
+traveler identities" — which is explicitly out of this session's scope.
+
+**A 26th inventory row, missed at CP0 and recorded now:** `MEAL_CATEGORIES`
+(`compose.ts:146`) gives `lunch` and `dinner` exactly ONE option each. It is
+the purest degenerate die in the codebase — a choice among alternatives with
+no alternatives — and I missed it because it is a data table rather than a
+function. Experiment B shows widening it is inert until row 19 also changes.
+
+### 2.8 Spend
+
+**$0.00** for all of Step 2. Session total **$0.00** of the $13 plan.
+
+### 2.9 CHECKPOINT 2 — HOLD, with three rulings requested
+
+Per report-the-miss, and per the standing rule that thresholds move only by
+deliberate adjudication with evidence:
+
+1. **The `closes 6/6` gate needs a definition ruling.** Two of the six days
+   drew templates that end on a `meal` **by design** — `moderate-d`,
+   `packed-c`, `relaxed-d` have no `close` step at all, which was Session 11's
+   own §7.3 fix for the unrecorded `lastStep = "close"` invariant. Counting a
+   template with no close as a missing close measures the template table, not
+   the composer. Proposed: **closes present / templates that HAVE a close
+   step**, which is 4/4, 6/6, 5/5 across the three seeds. This is a
+   restatement, so it is yours to grant, not mine to assume. Separately,
+   `day-4-budget`'s close is a genuine seating failure and is a real miss
+   under either definition.
+2. **Category-sequence ≤0.55: adjudicate the threshold, or authorise XXX-37.**
+   The number is not reachable by any lever inside this session's ratified
+   scope — both were measured, not guessed. Either the gate moves with the
+   evidence above, or the vocabulary work is pulled in, or the session ships
+   the variety win and reports the miss.
+3. **`engine.ts:292`'s last-wins collapse** (§2.4) — record only, or fix?
+   Fixing it re-baselines every seeded outcome a second time.
+
+**No live confirm has been run.** Step 3's $3 is unspent, and spending it on
+a matrix that is already known to miss two gates would buy a more expensive
+copy of the same answer.
+
 ---
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)

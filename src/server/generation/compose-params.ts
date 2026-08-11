@@ -14,7 +14,63 @@
  */
 
 export const COMPOSE_PARAMS = {
-  version: "v1",
+  version: "v2",
+
+  /**
+   * Dice temperatures, in AFFINITY POINTS (XXX-35, Session 12 CP1).
+   *
+   * Folded in here rather than given their own object: they are the same
+   * layer, the same lifecycle and the same tier as `seating` — composition
+   * judgment that no grammar rule reads and no client needs. One versioned
+   * object for the composer beats two.
+   *
+   * τ is how much STATED PREFERENCE a site may trade for variety. The unit is
+   * meaningful: 0.35 is one `GRAVITY_WEIGHTS` step — one whole rank of
+   * declared interest. τ = 0 is exactly ranking, which is every refit's
+   * testable null hypothesis.
+   *
+   * All Tier 3 judgment, tunable post-CP3 per the CP1 ruling.
+   */
+  dice: {
+    /**
+     * The anchor mostly follows gravity — it IS the persona's first interest
+     * made concrete, and inverting it breaks the product's promise. 0.05
+     * breaks only near-exact ties, which are common (seven categories, three
+     * interests) and today fall to `localeCompare`. That alphabet is why
+     * `historic_sites` always beat `museums_galleries` at equal affinity.
+     */
+    anchor: 0.05,
+    /**
+     * Contrast is BY CONSTRUCTION not the top pick — it must differ in
+     * texture family from the anchor. Ranking inside an already-constrained
+     * set is close to arbitrary, so variety is cheapest here.
+     */
+    contrast: 0.3,
+    /**
+     * The close is the monotony surface Session 11 measured: six days, six
+     * bars. Drawn post-`forEvening`, per the funnel rule.
+     */
+    close: 0.3,
+    /**
+     * A three-option list (cafes/markets/parks) where `markets` headed five
+     * of six personas — and whose sort carried NO tie-break at all, so the
+     * order rested on V8's sort stability.
+     */
+    warmup: 0.25,
+    /** The contrast fallback's anchor proxy (`compose.ts` step `contrast`). */
+    activity: 0.2,
+    /**
+     * Which zones a day draws from, within the lens's bucket. The lens still
+     * sets WHICH bucket — an icons persona never draws a corners zone.
+     */
+    zone: 0.3,
+    /**
+     * How much of the lens bucket a single day reaches. Below 1.0 so two
+     * personas sharing a lens draw different emphases; high enough that the
+     * bbox still covers a day's worth of walking.
+     */
+    zoneKeepFraction: 0.7,
+  },
 
   seating: {
     /**

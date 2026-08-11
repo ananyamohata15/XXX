@@ -34,6 +34,7 @@ import {
   type Span,
 } from "@/shared/day-grammar/predicates";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import { diceStream, personaIdentity, weightedOrderBy } from "@/shared/dice";
 import {
   SHELTERED_MODES,
   exposureAt,
@@ -154,14 +155,25 @@ export function defaultMealPattern(persona: Persona): MealPatternId {
   return persona.structure === "wanderer" ? "coffee_then_brunch" : "classic";
 }
 
-/** Activity categories in persona-gravity order, food categories excluded. */
-export function rankedActivityCategories(persona: Persona): PlaceCategory[] {
-  return PLACE_CATEGORIES.filter(
-    (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
-  ).sort(
-    (a, b) =>
-      categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
-      a.localeCompare(b),
+/**
+ * Activity categories in persona-gravity order, food categories excluded.
+ *
+ * Diced (Session 12): its head is taken at the `contrast` step as the anchor
+ * proxy, and as the fallback list when contrast finds nothing — so an
+ * un-diced ranking here reintroduced the very determinism the contrast draw
+ * had just removed.
+ */
+export function rankedActivityCategories(
+  persona: Persona,
+  dice: () => number,
+): PlaceCategory[] {
+  return weightedOrderBy(
+    PLACE_CATEGORIES.filter(
+      (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
+    ),
+    (c) => categoryAffinity(persona, c),
+    dice,
+    COMPOSE_PARAMS.dice.activity,
   );
 }
 
@@ -281,10 +293,32 @@ export function buildSkeleton(
   const seed = request.seed ?? 0;
   const template = pickTemplate(persona, seed);
 
+  /**
+   * One dice key per (site, context) — the funnel rule's machinery.
+   *
+   * `identity` is the persona's content hash, so two similar personas draw
+   * different streams; `site` keeps two selectors at one seed from drawing
+   * the same number; `context` carries the date and, where a day has several
+   * of a step, that step's window — so two closes in one day, or one persona
+   * on two dates, draw independently.
+   */
+  const identity = personaIdentity(persona);
+  const rollFor = (site: string, context: string): (() => number) =>
+    diceStream({ seed, identity, site, context: `${request.date}|${context}` });
+
   const hasUserAnchor = (request.anchors ?? []).length > 0;
   const elected: ElectedAnchor | null = hasUserAnchor
     ? null
-    : electAnchor(persona, options.excludeAnchorCategories ?? []);
+    : electAnchor(persona, {
+        exclude: options.excludeAnchorCategories ?? [],
+        // Re-election must not redraw the same order it just drew, or the
+        // engine retries its way through an identical list. The exclusions
+        // are part of the context, so each re-election is a fresh draw.
+        dice: rollFor(
+          "anchor",
+          (options.excludeAnchorCategories ?? []).join(","),
+        ),
+      });
   const electedRecord: ElectedAnchorRecord | null =
     elected === null
       ? null
@@ -523,6 +557,27 @@ export function buildSkeleton(
       ? categories.filter((c) => eveningOk.includes(c))
       : categories;
 
+  /**
+   * Family-freshness is a PREFERENCE, so it reorders — it must never
+   * truncate.
+   *
+   * Filtering it as a hard cut cost two closes on the first Session-12
+   * matrix (6/6 → 3/6). By the time a `close` is reached, the anchor's
+   * family, the contrast's family and `table` (the meals) are all spent, so
+   * `!usedFamilies` can leave exactly ONE survivor — and if that one cannot
+   * seat, the step dies with nothing in reserve. The old either/or fallback
+   * did not help: it only fired when the filter emptied the list completely,
+   * never when it left a single unseatable entry.
+   *
+   * Demoting instead keeps the whole diced order available, fresh families
+   * first, so the funnel's last filter (seatability) picks up the next thing
+   * the dice wanted rather than dropping the step.
+   */
+  const demoteRatherThanDrop = (
+    ordered: PlaceCategory[],
+    fresh: (c: PlaceCategory) => boolean,
+  ): PlaceCategory[] => [...ordered.filter(fresh), ...ordered.filter((c) => !fresh(c))];
+
   const intents: SlotIntent[] = [];
   const opens: OpenIntervalPlan[] = [];
   let nextId = 1;
@@ -555,33 +610,51 @@ export function buildSkeleton(
       // the intent goes unfilled honestly, which is a visible thin day
       // rather than a silently different one.
       categories =
-        elected !== null ? [elected.category] : rankedActivityCategories(persona);
+        elected !== null
+          ? [elected.category]
+          : rankedActivityCategories(persona, rollFor("activity", "anchor"));
       label = "the day's anchor";
     } else if (item.step === "warmup") {
-      const preferred = forEvening(
-        warmupCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
-        item.window,
+      // THE FUNNEL RULE. The die is rolled here, at the point of use, over
+      // the options that have already survived both narrowings — never
+      // inside `warmupCategories`, which sits above them. Session 11 blamed
+      // `closeCategories` for the six-bar day and queued "make it a seeded
+      // choice"; measured, that would not have worked, because the collapse
+      // happens in the filters BELOW the ranking. A die rolled upstream of a
+      // funnel is still a funnel.
+      const at = String(item.window.start);
+      categories = demoteRatherThanDrop(
+        forEvening(warmupCategories(persona, rollFor("warmup", at)), item.window),
+        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
-      categories =
-        preferred.length > 0 ? preferred : forEvening(warmupCategories(persona), item.window);
       label = "warm-up";
     } else if (item.step === "contrast") {
-      const anchorCategory = elected?.category ?? rankedActivityCategories(persona)[0];
-      const pick = pickContrast(persona, anchorCategory, usedFamilies, {
+      const at = String(item.window.start);
+      const anchorCategory =
+        elected?.category ??
+        rankedActivityCategories(persona, rollFor("activity", at))[0];
+      const picks = pickContrast(persona, anchorCategory, usedFamilies, {
         eveningOnly: isEvening(item.window),
+        dice: rollFor("contrast", at),
       });
+      // The whole diced ORDER is carried, not its head: `buildMenus` filters
+      // across every category in this list, so when the drawn first choice
+      // has nothing open at this hour the DICED second choice is used —
+      // rather than falling back to whatever the alphabet offered.
       categories =
-        pick === null
-          ? forEvening(rankedActivityCategories(persona), item.window)
-          : [pick];
+        picks.length === 0
+          ? forEvening(
+              rankedActivityCategories(persona, rollFor("activity", at)),
+              item.window,
+            )
+          : picks;
       label = "contrast";
     } else {
-      const preferred = forEvening(
-        closeCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
-        item.window,
+      const at = String(item.window.start);
+      categories = demoteRatherThanDrop(
+        forEvening(closeCategories(persona, rollFor("close", at)), item.window),
+        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
-      categories =
-        preferred.length > 0 ? preferred : forEvening(closeCategories(persona), item.window);
       label = "the day's close";
     }
 

@@ -29,6 +29,7 @@
  */
 
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import { personaIdentity, weightedOrderBy } from "@/shared/dice";
 import { categoryAffinity, type Persona } from "@/shared/persona";
 import {
   CATEGORY_FAMILY,
@@ -37,6 +38,7 @@ import {
   type PlaceCategory,
   type SlotRole,
 } from "@/shared/vocabulary";
+import { COMPOSE_PARAMS } from "./compose-params";
 
 /**
  * A role in a template. `open` is placed FREE TIME and is deliberately not
@@ -149,16 +151,6 @@ export function templatesFor(persona: Persona): ArcTemplate[] {
   return matching.length > 0 ? matching : [ARC_TEMPLATES[3]];
 }
 
-/** Deterministic 32-bit hash (FNV-1a) — content in, spread out. */
-function hashIdentity(text: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i += 1) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h >>> 0;
-}
-
 /**
  * Deterministic template choice, keyed on WHO the traveller is and then
  * varied by seed.
@@ -177,13 +169,7 @@ function hashIdentity(text: string): number {
  */
 export function pickTemplate(persona: Persona, seed: number): ArcTemplate {
   const options = templatesFor(persona);
-  const identity = [
-    persona.structure,
-    persona.pace,
-    persona.lens,
-    ...persona.gravity,
-  ].join("|");
-  const key = (hashIdentity(identity) ^ (Math.abs(seed) >>> 0)) >>> 0;
+  const key = (personaIdentity(persona) ^ (Math.abs(seed) >>> 0)) >>> 0;
   return options[key % options.length];
 }
 
@@ -209,25 +195,40 @@ export const ANCHOR_ELECTOR_SOURCE = "arc_elector_v1";
 
 export function electAnchor(
   persona: Persona,
-  /**
-   * Categories already tried and proven unseatable for this day. The
-   * engine re-elects rather than shipping an anchorless day: a centrepiece
-   * that cannot be seated is a reason to choose a different centrepiece,
-   * never a reason to quietly deliver the un-anchored day the founder
-   * rejected in exactly those words.
-   */
-  exclude: readonly PlaceCategory[] = [],
+  options: {
+    /**
+     * Categories already tried and proven unseatable for this day. The
+     * engine re-elects rather than shipping an anchorless day: a centrepiece
+     * that cannot be seated is a reason to choose a different centrepiece,
+     * never a reason to quietly deliver the un-anchored day the founder
+     * rejected in exactly those words.
+     */
+    exclude?: readonly PlaceCategory[];
+    /**
+     * The seeded stream for site "anchor". Required — an un-diced elector is
+     * how `historic_sites` won every tie against `museums_galleries` for
+     * every persona forever (the alphabet was the tie-break).
+     */
+    dice: () => number;
+  },
 ): ElectedAnchor | null {
-  const ranked = PLACE_CATEGORIES.filter(
+  const exclude = options.exclude ?? [];
+  const eligible = PLACE_CATEGORIES.filter(
     (c) =>
-      !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
-      !exclude.includes(c),
-  ).sort(
-    (a, b) =>
-      categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
-      a.localeCompare(b),
+      !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) && !exclude.includes(c),
   );
-  const category = ranked[0];
+  // τ is deliberately near zero: the anchor MOSTLY FOLLOWS GRAVITY. It is the
+  // persona's first interest made concrete, and a die that could move it
+  // would break the product's promise rather than vary it. At 0.05 the draw
+  // only reaches near-exact ties — which are common (seven categories, three
+  // interests) and previously fell to `localeCompare`.
+  const ordered = weightedOrderBy(
+    eligible,
+    (c) => categoryAffinity(persona, c),
+    options.dice,
+    COMPOSE_PARAMS.dice.anchor,
+  );
+  const category = ordered[0];
   // Every non-food category has been tried and none could be seated. The
   // caller must fail loudly; there is no honest anchor left to elect.
   if (category === undefined) return null;
@@ -235,7 +236,7 @@ export function electAnchor(
   const first =
     affinity > 0
       ? `${persona.gravity[0]} is this traveller's first interest`
-      : `no interest maps to a category, so the day is centred on ${category} by name order`;
+      : `no interest maps to a category, so the day is centred on ${category}`;
   return {
     category,
     dwellMinutes: GRAMMAR_PARAMS.dwellMinutes[category].typical,
@@ -260,58 +261,85 @@ export function pickContrast(
   persona: Persona,
   anchor: PlaceCategory,
   used: Set<CategoryFamily>,
-  options: { eveningOnly?: boolean } = {},
-): PlaceCategory | null {
+  options: { eveningOnly?: boolean; dice: () => number },
+): PlaceCategory[] {
   const anchorFamily = CATEGORY_FAMILY[anchor];
   const eveningOk: readonly PlaceCategory[] = ["nightlife_bars", "historic_sites"];
   const evening = options.eveningOnly === true;
-  const ranked = PLACE_CATEGORIES.filter((c) => {
+  const eligible = PLACE_CATEGORIES.filter((c) => {
     if (GRAMMAR_PARAMS.pacing.foodCategories.includes(c)) return false;
     if (CATEGORY_FAMILY[c] === anchorFamily) return false;
     if (used.has(CATEGORY_FAMILY[c])) return false;
     if (evening && !eveningOk.includes(c)) return false;
     return true;
-  }).sort((a, b) => {
-    // A bar is an evening contrast. When two categories tie on affinity —
-    // which they do often, since a persona has three interests and there
-    // are seven categories — alphabetical order was handing 14:20 slots to
-    // `nightlife_bars`. Daytime windows rank `night` last instead.
-    if (!evening) {
-      const aNight = CATEGORY_FAMILY[a] === "night" ? 1 : 0;
-      const bNight = CATEGORY_FAMILY[b] === "night" ? 1 : 0;
-      if (aNight !== bNight) return aNight - bNight;
-    }
-    return (
-      categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
-      a.localeCompare(b)
-    );
   });
-  return ranked[0] ?? null;
+  // A bar is an EVENING contrast. Daytime windows exclude `night` outright
+  // rather than ranking it last: it is a fact about what a 14:20 stop can
+  // be, not a preference the dice may trade away. Filter first, then roll —
+  // the funnel rule. Kept as a fallback only if nothing else survives, so a
+  // constrained day still gets a contrast rather than none.
+  const daytime = evening
+    ? eligible
+    : eligible.filter((c) => CATEGORY_FAMILY[c] !== "night");
+  const pool = daytime.length > 0 ? daytime : eligible;
+  return weightedOrderBy(
+    pool,
+    (c) => categoryAffinity(persona, c),
+    options.dice,
+    COMPOSE_PARAMS.dice.contrast,
+  );
 }
 
 /** Categories a `warmup` may draw from — low commitment, early, easy. */
-export function warmupCategories(persona: Persona): PlaceCategory[] {
+export function warmupCategories(
+  persona: Persona,
+  dice: () => number,
+): PlaceCategory[] {
   const preferred: PlaceCategory[] = ["cafes", "markets", "parks"];
-  return [...preferred].sort(
-    (a, b) => categoryAffinity(persona, b) - categoryAffinity(persona, a),
+  return weightedOrderBy(
+    preferred,
+    (c) => categoryAffinity(persona, c),
+    dice,
+    COMPOSE_PARAMS.dice.warmup,
   );
 }
 
 /**
  * Categories a `close` may draw from. An ending that lands is an
  * EXPERIENCE, not a table you arrive at because the day ran out — so a
- * close prefers night and outdoor-at-golden-hour, and only falls back to a
- * table when the persona genuinely wants one.
+ * close prefers night and outdoor-at-golden-hour, and falls back to a table
+ * only when no experience can be seated.
+ *
+ * The `night >= 0.35` gate that used to decide whether `restaurants` was
+ * offered is DELETED, not retuned (Session 12 CP1 ruling). It was a
+ * knife-edge: `day-5-wanderer` measured **exactly** 0.350, because
+ * `nightlife` sat at gravity position 3 and `GRAVITY_WEIGHTS[2]` IS 0.35.
+ * Any persona with a 1.0-affinity interest in third position landed
+ * precisely on the threshold, so `>=` vs `>` silently changed their day —
+ * the load-bearing-constant failure exactly.
+ *
+ * The restructure removes the comparison rather than moving it: the three
+ * experience categories are DRAWN, and `restaurants` is APPENDED behind them
+ * as a ranked tail. No constant, no penalty to tune, and Session 11's stated
+ * intent — "a table must not be the FIRST answer" — now holds structurally
+ * instead of conditionally.
  */
-export function closeCategories(persona: Persona): PlaceCategory[] {
-  const night = categoryAffinity(persona, "nightlife_bars");
-  const experience: PlaceCategory[] = ["nightlife_bars", "historic_sites", "parks"];
-  const ranked = [...experience].sort(
-    (a, b) => categoryAffinity(persona, b) - categoryAffinity(persona, a),
+export function closeCategories(
+  persona: Persona,
+  dice: () => number,
+): PlaceCategory[] {
+  const experience: PlaceCategory[] = [
+    "nightlife_bars",
+    "historic_sites",
+    "parks",
+  ];
+  const drawn = weightedOrderBy(
+    experience,
+    (c) => categoryAffinity(persona, c),
+    dice,
+    COMPOSE_PARAMS.dice.close,
   );
-  // A table close is legitimate — dinner IS how most good days end. It
-  // just must not be the FIRST answer, or every day ends the same way.
-  return night >= 0.35 ? ranked : [...ranked, "restaurants"];
+  return [...drawn, "restaurants"];
 }
 
 export type { CategoryFamily };

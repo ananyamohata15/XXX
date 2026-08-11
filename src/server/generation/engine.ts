@@ -22,6 +22,7 @@ import {
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { Violation } from "@/shared/day-grammar/types";
+import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
 import { CITY_GEO, type PlaceCategory } from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
@@ -52,7 +53,7 @@ import {
   type Skeleton,
 } from "./compose";
 import { applyFounderGroundtruth } from "./groundtruth";
-import { retrieveCandidates, zonesFor } from "./retrieve";
+import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
 import { scoreAll } from "./score";
@@ -74,6 +75,9 @@ import type {
  * of a bound is that an unseatable pool must not loop.
  */
 const MAX_ANCHOR_REELECTIONS = 2;
+
+/** How many stable orderings a category's pool page may be taken in. */
+const POOL_WINDOW_COUNT = POOL_WINDOWS.length;
 
 export const SHORTLIST_NOMINAL = 24;
 export const DETAILS_CAP = 30;
@@ -251,9 +255,16 @@ export async function generateDay(
      * (XXX-35 CP2 ruling 1).
      */
     const failedAnchorCategories: PlaceCategory[] = [];
+    // Retrieval's two dice (XXX-35, Session 12): which zones inside the
+    // lens's bucket this day emphasises, and which of the eight stable
+    // orderings each category's 400-row page is taken in. Both are pure
+    // functions of (seed, persona, …), so a trace replays exactly; neither
+    // changes the query count.
+    const identity = personaIdentity(request.persona);
     const zones = zonesFor(
       request.persona.lens,
       (request.anchors ?? []).map((a) => a.coords),
+      diceStream({ seed, identity, site: "zone", context: request.date }),
     );
     const categories = [
       ...new Set(skeleton.intents.flatMap((i) => i.categories)),
@@ -264,6 +275,11 @@ export async function generateDay(
       request.city,
       categories,
       zones,
+      (category) =>
+        diceIndex(
+          { seed, identity, site: "pool-window", context: category },
+          POOL_WINDOW_COUNT,
+        ),
     );
     timings.retrieveMs = now().getTime() - tRetrieve;
 
@@ -697,7 +713,7 @@ export async function generateDay(
  * emptying when it does.
  */
 const SHORTLIST_DEPTH = MENU_SIZE + 2;
-function pickShortlist(
+export function pickShortlist(
   scored: Candidate[],
   skeleton: Skeleton,
 ): Candidate[] {
@@ -719,7 +735,7 @@ function pickShortlist(
   return [...picked.values()];
 }
 
-function buildMenus(
+export function buildMenus(
   skeleton: Skeleton,
   scored: Candidate[],
   date: string,
