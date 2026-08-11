@@ -808,7 +808,60 @@ assumed.)
 
 **CHECKPOINT 3: PASS.** Both structural gates clean → CP4 launches.
 
----
+## Step 4 — Founder's evening (CHECKPOINT 4)
+
+### 4.1 Launch state — every precondition read, not assumed
+
+| precondition | state |
+|---|---|
+| dev server | Next 16.3.0 Turbopack, ready in 348ms |
+| LAN URL | **http://192.168.2.10:3000/tasting** → 200 |
+| daily cap | `TASTING_DAILY_CAP = 40`; `generationsToday` **0**, headroom **40/40**, `capReached` false |
+| month gauge | `detailsThisMonth` **1,758** / 1,000 free — renders red (`filled ≥ 90` → `bg-rose-500`) |
+| meter | renders per generation from `outcome.meter` |
+
+**The dev server was restarted deliberately.** One had been up ~30 hours,
+predating this session's changes to `engine.ts`, `compose`, `arc` and the new
+`dice.ts`. Rather than trust Turbopack to have kept a day-old server-side
+module graph current, it was killed and restarted: an evening that spends
+real money per generation must not be vetting stale code. Cheap insurance for
+a question that would otherwise be unanswerable afterwards.
+
+The month gauge opening **red** is correct and wanted. The free cap is long
+gone (1,758 of 1,000), so every generation tonight bills at $0.020/event, and
+the founder should be looking at a red bar while deciding to press again.
+
+### 4.2 The protocol's first step cannot be done in the app — surfaced, not worked around
+
+The protocol is: two complaint seeds first, then free vetting with
+back-to-back personas, bands and idle-weight by feel, verdicts in the app.
+
+**Steps 2–4 are all in the room. Step 1 is not.** `TastingRoom.tsx:246` sends
+`seed: null` on every generation, and `:55,242` randomise date and persona per
+load. The room is deliberately unseeded — that is what "vet something new"
+means — so it **cannot reproduce** day-3-winter @ seed 416117931 or
+day-6-excursion @ seed 625971101.
+
+This was seen and recorded at CP0 (§ the inventory's closing line: *"relevant
+at CP4, where the founder needs fixed seeds for the A/B against his own
+verdicts"*) and deliberately left unfixed. It is now due.
+
+The A/B lives in the terminal instead:
+
+```
+npx tsx --env-file .env.local scripts/generation-report.ts \
+  --session10-ab --in-horizon <date>
+```
+
+2 generations ≈ **$0.90** at tonight's measured ~$0.45/generation. Its
+verdicts print to stdout; they do **not** land in `taste_signals`, so the
+complaint-seed A/B and the evening's in-app verdicts end up in two different
+places. Flagged rather than patched: wiring a seed field into the room is a
+UI change on the evening it would first be used, which is the worst possible
+moment to make one.
+
+**Not started.** The evening is the founder's to run; the room is up and the
+gauges are honest. ~$8.8 of the $13 plan remains.
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
 
