@@ -1,7 +1,10 @@
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
 
-Branch: `session-11-composition-quality`. Status: **Step 2 complete and
-committed; Tier 2/3 exam HELD for the founder's explicit go, then CP3.**
+Branch: `session-11-composition-quality`. Status: **HOLDING short of CP3.**
+Both pre-registered triggers fired on the final matrix (category-sequence
+mean 0.720 > 0.693; role-sequence 0.960 > 0.90) — see Step 7. Anchors and
+closes are 6/6 and every day validates clean, but every day now ends at a
+bar. Session billed ≈ $11.5 of the $20 ceiling.
 Scope: making LEGAL days GOOD. Five builds, all named by XXX-35 comment
 10299 (the revised premises of record): (1) skeleton/intent-sequence arc
 design, (2) seat-choice objective replacing earliest-legal-minute, (3) the
@@ -1083,6 +1086,86 @@ lunch is not.
 tsc 0, build 0, **439 tests** (+3). Session billed ≈ **$8.7** of the $20
 ceiling: the fix round cost one live reproduce (~$0.5) and the offline
 runs cost nothing.
+
+## Step 7 — Pre-registered adjudication: HOLD (both triggers fired)
+
+The rule was fixed before the number was known. That is the whole value of
+it, and it is why this section is short.
+
+| trigger | measured | verdict |
+|---|---|---|
+| category-sequence mean, comparable pairs (n=10) | **0.720** | **> 0.693 → HOLD** |
+| role-sequence mean | **0.960** | **> 0.90 → HOLD** |
+| venue overlap | 0.040 / 0.40 | PASS (gates held) |
+| anchors seated | 6/6 | — |
+| closes present | 6/6 | — |
+| golden + live validation | 6/6 clean | — |
+| seat centring | 50.2 → **5.7 min** | — |
+
+Two independent triggers, either one sufficient. **CP3 does not launch.**
+
+### 7.1 The mechanism, in one line: every day now ends at a bar
+
+Grossman's Tavern · Horseshoe Tavern · The Pilot · Tranzac · Ronnie's Local
+069 · Tranzac. Six days, six bars.
+
+`closeCategories` ranks `nightlife_bars` first for every persona whose
+night affinity clears 0.35, and the tail fix made the close *reliably
+seatable* for the first time. So a step that used to fail half the time
+now succeeds every time — with the same answer. Combined with `classic`
+putting restaurants at lunch and dinner, three of every day's five or six
+positions are now fixed before the arc has any say.
+
+**The fix worked and the product got worse.** Closes went 2/6 → 6/6, which
+was the goal, and ordered overlap went 0.645 → 0.720, past even Session 9's
+0.693 baseline. Restoring a step is not the same as varying it; the arc now
+reliably produces one shape instead of unreliably producing two.
+
+Not fixed here — the round was bounded to one and it is spent. The next
+session's candidate is `closeCategories` returning a *seeded* choice across
+the persona's acceptable endings rather than a ranked list whose head wins
+every time, which is the same defect as `pickTemplate`'s length-keyed dice
+in a different function.
+
+### 7.2 Spend, final
+
+This matrix: 132 Details, **$2.64 + $0.15 ≈ $2.79 billed**. **Session total
+≈ $11.5** against the $20 ceiling. CP3 is not launched, so the ~$8.6 CP3
+budget is unspent.
+
+### 7.3 Two lessons, recorded as ruled
+
+**The third load-bearing accident — day-ends.** Three times this session, a
+bound that was only true because of behaviour that had since changed:
+
+1. `mealWindow.start + need` bounded a meal — true only while seating hugged
+   the earliest legal minute. Centring made it a lie, and the anchor was
+   sliced into a window its own lunch was sitting in.
+2. `NOMINAL` doubled as the drop floor — true only while segments were
+   optimistically long. Sequential slicing shortened them and the `close`
+   started being dropped for wanting a dwell it did not need.
+3. `DEFAULT_DAY`'s 21:00/21:30 ends — true only while days STOPPED after
+   dinner, which every day did before the arc gave days an ending.
+
+None was a bug when written. Each became one when a neighbouring assumption
+moved, and none had a test that would notice. **The pattern to look for is
+not a wrong constant; it is a constant whose correctness depends on a
+behaviour nobody wrote down.**
+
+**Invariants are rulings — the silent legislature.**
+`TEMPLATE_INVARIANTS.lastStep = "close"` was written as an implementation
+detail. CP1 had ruled something narrower: never a bare `meal` behind an
+`open`. The stronger rule was never proposed, never ruled on, and never
+recorded — and it turned out to be the thing forcing every scheduler day to
+end identically. It took a $2.79 matrix and two fix rounds to find a
+sentence that should have been a CHECKPOINT line.
+
+An invariant asserted in a test has the force of a ruling: it constrains
+every future output. **When a build tightens a ruling — even for a good
+local reason — the tightening goes in the notes as a deviation, or it is
+legislation nobody voted for.** This is the same failure class as Step 2
+shipping code ahead of the record, and it is why deviations get their own
+numbered list.
 
 ### 2.8 Process lesson — why this section had to be reconstructed
 
