@@ -647,7 +647,7 @@ recollection.
 `RULE_IDS` goes **38 → 43** (`day-grammar/types.ts:285`): 2 rhythm + 3
 exposure.
 
-### 2.2 Five deviations from the CP1 proposal — stated, not buried
+### 2.2 Six deviations from the CP1 proposal — stated, not buried
 
 1. **Template shapes moved.** The invariant test wrote them, which is the
    point of asserting invariants rather than trusting a table. `wanderer-a`
@@ -691,6 +691,21 @@ exposure.
 5. **`isFood` takes `ctx`.** Proposed `(day, slot)`, built
    `(day, ctx, slot)` — the category list is a versioned param, so the rule
    reads it from context rather than importing policy directly.
+6. **Exposure cold bands 10/20 → 20/25** (`params.ts:262`). The CP1-ruled
+   ≤-10 °C row capped walking at 10 minutes and immediately **flagged
+   golden day-3's rink→PATH hop** — 16 minutes at -10 °C apparent, authored
+   and verified by the founder as a good day. The fixture set the floor and
+   the corpus set the ceiling: 16 min at -10 °C must pass, 35 min at -8 °C
+   must fail, and 20/25 satisfies both with headroom. Recorded late — it
+   was documented in `params.ts` from the day it was written and missing
+   from this list until the CP2 winter-replay tests tripped over it, which
+   is exactly the failure the deviation list exists to prevent. **Accepted
+   at CP2**; the founder calibrates the bands at CP3 regardless.
+
+Not a deviation, and recorded separately at §7.3 because it is worse than
+one: `TEMPLATE_INVARIANTS.lastStep = "close"` was never in the CP1 proposal
+at all. It was invented in Step 2 and asserted in tests, where it silently
+acquired the force of a ruling — and it was the homogeniser.
 
 ### 2.3 Gates — run, not remembered
 
@@ -1166,6 +1181,91 @@ local reason — the tightening goes in the notes as a deviation, or it is
 legislation nobody voted for.** This is the same failure class as Step 2
 shipping code ahead of the record, and it is why deviations get their own
 numbered list.
+
+## Step 8 — Close-out
+
+### 8.1 Spend, final and reconciled against the live counter
+
+Read from `scripts/intake-report.ts` (DB counts, free), not estimated:
+
+| | |
+|---|---|
+| Details events MTD | **1,560 / 1,000** free |
+| Session start (reconstructed: 1,560 − 660) | 900 |
+| **This session's Details events** | **660** across 24 live generations |
+| Of those, inside the free cap | 100 (900 → 1,000) |
+| **Billed Details** | **560 × $0.02 = $11.20** |
+| Anthropic (printed) | $0.631 |
+| **Session total billed** | **≈ $11.8** of the **$20** ceiling |
+| CP3 budget (~$8.6) | **unspent** |
+
+Correction to the figure I gave at Step 7: I said ≈$11.5 from per-run
+sums; the live counter says **≈$11.8**. The difference is the A/B path,
+which does not print per-run Anthropic usage — a reporting gap, not an
+unmetered spend, and it stays on the open list.
+
+Against the CP1 forecast of ~$9–13 billed: **inside it**, but only because
+CP3 never ran. The forecast assumed CP3 was included; it was not.
+
+### 8.2 SESSION 12 MANDATE — audit every selection point for degenerate dice
+
+`pickTemplate` and `closeCategories` are **instances two and three of one
+disease**, and the generalisation is the mandate:
+
+> Wherever composition chooses among acceptable options, the choice must be
+> *distributed*, not *decided by ranking alone or by a key that collides*.
+
+Two failure shapes, both confirmed in production this session:
+
+1. **Ranked-head-always-wins.** `closeCategories` returns a preference list
+   and the caller takes `[0]`. Once the step reliably seats, every day gets
+   the same answer — six days, six bars. Anything that returns a ranked
+   list and has its head taken is suspect.
+2. **Seed-key collision.** `pickTemplate` mixed the seed with
+   `persona.gravity.join(",").length` — the character count of the interest
+   list. Same-length gravity, same dice. Fixed here by hashing identity
+   content; the same mistake may live elsewhere.
+
+**Find them all in one pass.** Candidate sites to audit, at minimum:
+`closeCategories`, `warmupCategories`, `pickContrast`, `electAnchor`'s
+tie-break, `rankedActivityCategories`, `mealWindowsFor`, the composer's
+alternates ordering, and `scoreAll`'s jitter. For each: does it return a
+ranked list whose head is taken? Does any key mix the seed with a
+*proxy* for identity rather than identity itself? The exam already has the
+instrument — role-sequence overlap is the leading indicator and it moved
+0.644 → 0.960 across this session as the disease spread.
+
+Do the audit **before** the next founder review. This session spent
+$11.80 and two fix rounds discovering two instances one at a time.
+
+### 8.3 Forward notes
+
+- **CP3 founder review moves to Session 12**, bundled with the variety
+  pass, on a **fresh sanction**. It does not launch on this branch: six
+  days that all end at a bar is not what the founder's evening is for.
+- **Harness pool-fidelity defect — OPEN.**
+  `scripts/offline-recompose.ts` selects on the Candidate's category column
+  while the DB pool's stored facts disagree, so it seats `nightlife_bars`
+  as a meal. Structure (roles, anchors, closes) is trustworthy; **category
+  sequences are not**. Filed rather than fixed mid-session, per ruling. Fix
+  it before relying on it for any gated number.
+- **A/B path does not print per-run Anthropic usage** (§8.1).
+- **`boundaries.test.ts:516` still reads "every one of the 38"** when
+  `RULE_IDS` is 43.
+- **Exposure remains unproven live** — 0 swaps in 24 generations, because
+  in-horizon August binds no band. Proven by fixtures and the offline
+  winter replay only. A live winter proof needs a winter.
+- **`wIdle = 0.5`, exposure bands, and `TASTING_DAILY_CAP = 40`** all still
+  want founder calibration at CP3.
+- **XXX-37 and XXX-31 queued post-CP3**, unchanged.
+
+### 8.4 Final gate run
+
+`tsc --noEmit` clean · `npm run build` exit 0 · **439 passed**, 3 skipped,
+22 files · golden 6/6 · **27/27 traps** · 6/6 live days validate clean.
+
+Branch `session-11-composition-quality`, tree clean, **not pushed** —
+handed back for merge.
 
 ### 2.8 Process lesson — why this section had to be reconstructed
 
