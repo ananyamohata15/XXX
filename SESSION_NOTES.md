@@ -612,6 +612,116 @@ deliberate adjudication with evidence:
 a matrix that is already known to miss two gates would buy a more expensive
 copy of the same answer.
 
+### CHECKPOINT 2 outcome — three rulings, all applied
+
+1. **Closes RESTATED** as seated / templates-with-a-close — granted. Measured
+   by the harness, not by hand. `day-4-budget` got its bounded diagnosis
+   (§2.10).
+2. **Category-sequence DEMOTED to reported-non-gating** by deliberate
+   adjudication, with the numbers on the record; re-registered as **XXX-37's
+   AC at ≤0.55 on the expanded vocabulary**. Role-sequence stays reported.
+3. **`engine.ts:292` fixed this session** — highest-score-wins, two tests.
+   `MEAL_CATEGORIES`-as-die and its row-19 interplay recorded to XXX-37 scope.
+
+**Gating set from here:** venue overlap · anchors 6/6 · closes-restated ·
+twin divergence · reproducibility · non-inversion.
+
+### 2.10 day-4-budget's missing close — diagnosed to MY OWN dice, and fixed
+
+Bounded diagnosis, per the ruling. The close was not a composer failure: it
+seated at 2 of 3 seeds **on the same template** (`moderate-b`). Isolation test
+— set the zone bucket back to full and re-run seed 42 — and the close
+**returned** (closes 4/6 → 5/6).
+
+The cause was the zone dice I added at CP1. `keep = round(bucket × 0.7)` read
+fine against the 5-zone `icons` bucket and quietly broke `corners`: at 4 zones
+it dropped a quarter of the day's geography, and the bars that could seat
+day-4's close lived in the dropped zone.
+
+**Fix, inside the ruled mechanism:** drop exactly ONE zone, and only from a
+bucket that can spare it (`MIN_ZONES_FOR_A_DAY = 4`). `zoneKeepFraction` is
+deleted — one fewer arbitrary tunable. The trade is stated in the code rather
+than hidden: **a `corners` persona now gets no zone variety at all**; its
+distinctiveness comes from the category dice and the pool-window rotation
+instead. A day that cannot be composed is worth less than a day that searched
+the same four neighbourhoods as its twin.
+
+Recorded as a **deviation**: I introduced this defect at CP1 and it was not
+foreseen in the per-site table.
+
+### 2.11 Offline projection after all CP2 fixes (3 seeds, 2026-08-15)
+
+| | seed 42 | seed 7 | seed 1234 |
+|---|---|---|---|
+| anchors seated | **6/6** | **6/6** | **6/6** |
+| closes (restated) | **5/5** | **6/6** | **5/5** |
+| venue overlap mean / max | 0.013 / 0.20 | 0.049 / 0.33 | 0.000 / 0.00 |
+| category-seq (reported) | 0.614 | 0.729 | 0.580 |
+| role-seq (reported) | 0.938 | 0.929 | 0.911 |
+
+Gating set **projects green**. `tsc` clean · `build` exit 0 · **461 passed**.
+
+## Step 3 — Live confirm (CHECKPOINT 3)
+
+One live 6×6, `--matrix --llm --date 2026-08-15 --seed 42`.
+
+### 3.1 Results
+
+| gate | measured | verdict |
+|---|---|---|
+| venue overlap | **mean 0.000 / max 0.00** (AC ≤0.35 / ≤0.50) | **PASS** |
+| all six days validate clean | **6/6** | **PASS** |
+| seat centring (A/B, free) | **45.2 min → 3.0 min** from window centre | improved |
+| category-sequence (reported) | comparable 0.614 · cross-shape 0.725 · all-pairs **0.673** | vs Session 9's 0.693 baseline and Session 11's 0.711 pre-fix |
+| role-sequence (reported) | 0.938 | above the <0.90 expectation |
+| **anchors 6/6** | **days 5–6 confirmed; days 1–4 NOT READ** | **see §3.2** |
+| **closes (restated)** | **days 5–6 confirmed; days 1–4 NOT READ** | **see §3.2** |
+
+Live day-5 (`wanderer-b`) came back `anchor > meal > close` on
+museums_galleries; day-6 (`moderate-d`, a template with no `close` by design)
+came back `warmup > meal > anchor > contrast > meal` on parks. Both correct.
+
+### 3.2 My error: the matrix never summarised its own gates, and I truncated the rest
+
+The `--matrix` report prints anchors and closes **only inside six per-day
+blocks** — there is no summary line. I captured the run's tail, which held the
+matrix-level summary but not days 1–4. So two gating items from a **$2.28
+run** are unread, and no amount of re-reading the DB recovers them: the
+composed days are not persisted by this script.
+
+**Fixed so it cannot recur** (`generation-report.ts`): the matrix now prints
+`anchors seated: n/6` and `closes [seated / templates WITH a close step]`
+directly, and the category-sequence line is relabelled REPORTED/NON-GATING
+with its would-have-been verdict kept visible. A gate you reassemble by eye is
+a gate you eventually get wrong.
+
+### 3.3 Spend, read from the counter rather than estimated
+
+| | |
+|---|---|
+| Details events MTD | **1,674** (Session 11 closed at 1,560) |
+| **This session's Details** | **114**, all above the 1,000 free cap |
+| Details billed | 114 × $0.02 = **$2.28** |
+| Anthropic (printed, 6 days) | ≈ **$0.15** |
+| **Step 3 total** | **≈ $2.43** against the ~$3 sanction |
+| **Session total** | **≈ $2.43** of the $13 plan / $15 gate |
+
+### 3.4 HOLD — one decision, because a re-run would exceed its sanction
+
+A second matrix to read the two unread gates costs **another ~$2.43**, which
+takes Step 3 to ~$4.86 against a ~$3 sanction. The standing discipline is that
+a run projected to exceed its sanction **stops and surfaces** rather than
+running, so it is surfaced:
+
+- **(a) Re-run the matrix (~$2.43).** Reads anchors and closes-restated live
+  on the now-fixed summary. Leaves ~$7.7 for the founder's evening inside the
+  $15 session gate. **Recommended** — CP4 is the evening the whole session is
+  for, and anchors-6/6 is precisely what Session 11 paid to fix.
+- **(b) Proceed to CP4 on the offline projection** (anchors 6/6, closes 5/5 at
+  this seed and date) plus the live partial (6/6 validated clean, venue
+  overlap 0.000, 2 of 6 days' roles confirmed). Leaves the full ~$10 for the
+  evening, and accepts that two gates were projected rather than read.
+
 ---
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
