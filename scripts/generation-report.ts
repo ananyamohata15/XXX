@@ -16,6 +16,7 @@ import { timeToMinutes } from "@/shared/time";
 import { CATEGORY_FAMILY } from "@/shared/vocabulary";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { computeDaylight } from "@/server/weather/ephemeris";
+import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
 
@@ -485,6 +486,40 @@ async function main() {
       }
       console.log(`  ${keys[i].padEnd(18)} ${row.join("  ")}`);
     }
+    // The two structural gates, summarised rather than left scattered across
+    // six per-day blocks. Session 12 ran a $2.28 live matrix and could not
+    // read its own anchors gate afterwards, because this summary did not
+    // exist and the per-day lines had scrolled — a gate you must reassemble
+    // by eye is a gate you will eventually get wrong.
+    const anchorsSeated = keys.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("anchor"),
+    ).length;
+    console.log(
+      `\n  anchors seated: ${anchorsSeated}/${keys.length} → ${anchorsSeated === keys.length ? "PASS" : "FAIL"}`,
+    );
+    // Closes, RESTATED (Session 12 CP2 ruling 1): seated closes over the
+    // templates that HAVE a close step. `moderate-d`, `packed-c` and
+    // `relaxed-d` end on a meal BY DESIGN — Session 11 §7.3's own fix for the
+    // unrecorded `lastStep = "close"` invariant — so counting them as missing
+    // closes measured the template table, not the composer.
+    const wantsClose = keys.filter((k) => {
+      const outcome = outcomes.get(k)!;
+      if (outcome.status !== "ok") return false;
+      return (
+        ARC_TEMPLATES.find((t) => t.id === outcome.arcTemplateId)?.steps ?? []
+      ).includes("close");
+    });
+    const closesSeated = wantsClose.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("close"),
+    ).length;
+    const rawCloses = keys.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("close"),
+    ).length;
+    console.log(
+      `  closes [seated / templates WITH a close step]: ${closesSeated}/${wantsClose.length} → ${closesSeated === wantsClose.length ? "PASS" : "FAIL"}` +
+        `   (raw, for the record: ${rawCloses}/${keys.length})`,
+    );
+
     const mean = sum / pairs;
     const venuePass =
       mean <= VENUE_OVERLAP_GATE.mean && max <= VENUE_OVERLAP_GATE.max;
@@ -499,10 +534,16 @@ async function main() {
       cmpMean <= CATEGORY_SEQUENCE_GATE.mean &&
       cmpMax <= CATEGORY_SEQUENCE_GATE.max;
     console.log(
-      `  category-sequence overlap [GATED, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} (GATE ≤${CATEGORY_SEQUENCE_GATE.mean}) max=${cmpMax.toFixed(2)} (GATE ≤${CATEGORY_SEQUENCE_GATE.max}) → ${
-        seqPass ? "PASS" : "FAIL"
-      }`,
+      `  category-sequence overlap [REPORTED, NON-GATING since Session 12, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} max=${cmpMax.toFixed(2)}` +
+        `  (would-have-been ≤${CATEGORY_SEQUENCE_GATE.mean}/${CATEGORY_SEQUENCE_GATE.max}: ${seqPass ? "PASS" : "FAIL"})`,
     );
+    // Demoted by deliberate adjudication at Session 12 CP2, with the numbers
+    // on the record: the dice are proven honest (six-bar day dead, twins
+    // diverge, non-inversion structural) and the residual is vocabulary-bound
+    // — the meal pattern alone floors this metric at ~0.40 of the ~0.61
+    // measured, and five non-meal categories cannot distinguish six
+    // travellers. Re-registered as XXX-37's acceptance criterion at ≤0.55 on
+    // the EXPANDED vocabulary. It is reported here, never silently dropped.
     if (cmpMax > 0) {
       console.log(`      worst comparable pair: ${cmpWorst[0] ?? "n/a"}`);
     }
