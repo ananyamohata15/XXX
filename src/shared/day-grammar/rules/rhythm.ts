@@ -72,12 +72,41 @@ export function windowsFor(day: GrammarDay, ctx: GrammarContext): NamedWindow[] 
   return out;
 }
 
-const isFood = (slot: GrammarSlot) => slot.kind === "meal";
+/**
+ * A food stop is a food VENUE, whatever kind of slot it was seated into
+ * (XXX-35 comment 10299 item 3).
+ *
+ * The defect this replaces counted `slot.kind === "meal"`, so a
+ * restaurant-categorised venue seated as an evening ACTIVITY — Scotland
+ * Yard Pub, dealt from the nightlife menu — was invisible to the one rule
+ * whose job is bounding food stops. The founder counted four meals; the
+ * rule counted three and passed the day at a ceiling of four.
+ *
+ * Which categories count is a versioned judgment in
+ * GRAMMAR_PARAMS.pacing.foodCategories, not a literal here. An unknown
+ * category cannot be counted — honest absence; `dwell.category-unknown`
+ * already reports every such slot, so nothing goes unsaid.
+ */
+const isFood = (
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slot: GrammarSlot,
+): boolean => {
+  if (slot.kind === "meal") return true;
+  const category = readFact(placeOf(day, slot)?.category);
+  return (
+    category.state === "present" &&
+    ctx.params.pacing.foodCategories.includes(category.value)
+  );
+};
 
 export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   const found: Violation[] = [];
   const slots = orderedSlots(day);
-  const meals = slots.filter(isFood);
+  /** Slots seated as meals — the set the pattern's WINDOWS apply to. */
+  const meals = slots.filter((s) => s.kind === "meal");
+  /** Food venues — the set the pattern's CEILING applies to. */
+  const foodStops = slots.filter((s) => isFood(day, ctx, s));
 
   // --- meal pattern --------------------------------------------------------
   if (ctx.mealPattern === null) {
@@ -85,8 +114,8 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
       advisory(
         "meal.pattern-unknown",
         [],
-        `No meal pattern was supplied for this day, so the ${meals.length} food stop${meals.length === 1 ? "" : "s"} were not checked against one. The taste profile owns that choice.`,
-        { foodStopCount: meals.length },
+        `No meal pattern was supplied for this day, so the ${foodStops.length} food stop${foodStops.length === 1 ? "" : "s"} were not checked against one. The taste profile owns that choice.`,
+        { foodStopCount: foodStops.length, mealSlotCount: meals.length },
       ),
     );
   } else {
@@ -121,15 +150,26 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
       );
     }
 
-    if (meals.length > pattern.maxFoodStops) {
+    if (foodStops.length > pattern.maxFoodStops) {
+      // Named separately because the interesting case is the one the old
+      // predicate could not see: food venues seated as activities.
+      const asActivities = foodStops.filter((s) => s.kind !== "meal");
       found.push(
         violation(
           "pacing.food-stops-exceeded",
-          meals.map((m) => m.id),
-          `This day has ${meals.length} food stops; the ${ctx.mealPattern.replace(/_/g, " ")} pattern allows ${pattern.maxFoodStops}.`,
+          foodStops.map((m) => m.id),
+          `This day has ${foodStops.length} food stops; the ${ctx.mealPattern.replace(/_/g, " ")} pattern allows ${pattern.maxFoodStops}.${
+            asActivities.length > 0
+              ? ` ${asActivities.length} of them ${asActivities.length === 1 ? "is" : "are"} seated as an activity rather than a meal (${asActivities
+                  .map((s) => describePlace(placeOf(day, s), s.placeId))
+                  .join(", ")}) — a food venue is a food stop wherever it sits.`
+              : ""
+          }`,
           {
             pattern: ctx.mealPattern,
-            foodStopCount: meals.length,
+            foodStopCount: foodStops.length,
+            mealSlotCount: meals.length,
+            foodAsActivitySlotIds: asActivities.map((s) => s.id),
             maxFoodStops: pattern.maxFoodStops,
           },
         ),
@@ -142,7 +182,9 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   // eating spans time, and treating a meal as an instant made every day
   // in the golden set look starved.
   const maxGap = ctx.params.pacing.maxFoodGapMinutes;
-  const fedSpans = meals.map(spanOf).sort((a, b) => a.start - b.start);
+  // Anything that feeds you counts — a pub with a kitchen ends a hungry
+  // stretch whether the composer called the slot a meal or not.
+  const fedSpans = foodStops.map(spanOf).sort((a, b) => a.start - b.start);
   const gaps: { from: number; to: number }[] = [];
   let cursor = timeToMinutes(day.dayStart);
   for (const fed of fedSpans) {

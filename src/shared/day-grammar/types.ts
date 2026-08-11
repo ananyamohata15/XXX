@@ -190,7 +190,18 @@ export interface GrammarDay {
 // Context
 // ---------------------------------------------------------------------------
 
-export const MEAL_PATTERNS = ["classic", "coffee_then_brunch", "grazing"] as const;
+/**
+ * Meal patterns, not fixed slots (XXX-5 comment 10290).
+ *
+ * `grazing` was removed in Session 11 (XXX-35 ruling 3) because nothing
+ * could select it: comment 10290 selects grazing by CHRONOTYPE, and
+ * `Persona` carries pace/gravity/foodCourage/structure/lens — no
+ * chronotype. Its params advertised `maxFoodStops: 7` while governing
+ * nothing, which is a false statement about what the grammar enforces.
+ * The product concept is intact and recorded; it returns in one commit
+ * when E6 lands a chronotype dimension that can actually choose it.
+ */
+export const MEAL_PATTERNS = ["classic", "coffee_then_brunch"] as const;
 export type MealPatternId = (typeof MEAL_PATTERNS)[number];
 
 export const PERSONA_STRUCTURES = ["scheduler", "wanderer"] as const;

@@ -541,6 +541,53 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
       g.day.places.distillery.coords = null;
     },
   ),
+  // --- Session 11 (XXX-35) -------------------------------------------------
+  broken(
+    goldenDay3,
+    {
+      key: "trap-food-venue-as-activity",
+      title: "A pub seated as an evening activity, invisible to the food cap",
+      expect: "pacing.food-stops-exceeded",
+      trapClass: null,
+      why: "The Session-10 defect, as a fixture. pacing.food-stops-exceeded counted slot.kind==='meal', so a restaurants-categorised venue seated as an ACTIVITY was invisible to the one rule that bounds food stops — the founder counted four meals and the rule counted three. Under the OLD predicate this day passes, which is what makes it worth having.",
+    },
+    (g) => {
+      // Day 3 already carries three meal slots. A fourth and fifth food
+      // VENUE arrive as activities: legal kinds, food categories.
+      g.day.places.pub = {
+        id: "pub",
+        name: "Scotland Yard Pub",
+        neighborhood: "Entertainment District",
+        coords: at(43.6462, -79.3901),
+        tags: tags(),
+        category: present("restaurants", CONCIERGE, TIERS.observed),
+        hours: present(hours({ default: [["11:00", "24:00"]] }), PLACES_API, TIERS.verified),
+        businessStatus: present("operational", PLACES_API, TIERS.verified),
+        priceRange: present(cad(20, 35), PLACES_API, TIERS.observed),
+      };
+      g.day.places.espresso = {
+        id: "espresso",
+        name: "Dark Horse Espresso",
+        neighborhood: "Financial District",
+        coords: at(43.6459, -79.3812),
+        tags: tags(),
+        category: present("cafes", CONCIERGE, TIERS.observed),
+        hours: present(hours({ default: [["07:00", "19:00"]] }), PLACES_API, TIERS.verified),
+        businessStatus: present("operational", PLACES_API, TIERS.verified),
+        priceRange: present(cad(5, 12), PLACES_API, TIERS.observed),
+      };
+      // Both as `activity`, both inside their own hours, both feasible.
+      g.day.slots.splice(
+        5,
+        0,
+        slot({ id: "s5b", place: "espresso", from: "18:05", to: "18:25" }),
+      );
+      g.day.slots.push(
+        slot({ id: "s7", place: "pub", from: "20:45", to: "21:00", by: "walk" }),
+      );
+      g.day.dayEnd = "21:30";
+    },
+  ),
   broken(
     goldenDay6,
     {

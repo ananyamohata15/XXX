@@ -542,28 +542,33 @@ describe("the remaining rules, so every one of the 38 is exercised somewhere", (
     expect(ruleIds(day, ctxOf())).not.toContain("daylight.golden-hour-missed");
   });
 
-  it("rejects a fifth food stop under a four-stop pattern", () => {
+  it("rejects a fifth food stop, and passes four, under both patterns", () => {
+    // Rewritten in Session 11: this case used to prove `grazing` tolerated
+    // five food stops. `grazing` was deleted (XXX-35 ruling 3) because
+    // nothing could select it, so the case now proves what the surviving
+    // patterns actually do — both cap at four.
     const diner = place({
       id: "d",
       hours: present(hours({ default: [["00:00", "24:00"]] }), PLACES_API, TIERS.verified),
     });
     const eats = (id: string, from: string, to: string) =>
       slot({ id, place: "d", from, to, kind: "meal" });
-    const day = dayOf(
-      [diner],
-      [
-        eats("s1", "08:00", "08:45"),
-        eats("s2", "09:00", "09:45"),
-        eats("s3", "10:00", "10:45"),
-        eats("s4", "12:00", "12:45"),
-        eats("s5", "13:00", "13:45"),
-      ],
-    );
-    const found = ruleIds(day, ctxOf({ mealPattern: "grazing" }));
-    expect(found).not.toContain("pacing.food-stops-exceeded");
-    expect(ruleIds(day, ctxOf({ mealPattern: "classic" }))).toContain(
-      "pacing.food-stops-exceeded",
-    );
+    const four = [
+      eats("s1", "08:00", "08:45"),
+      eats("s2", "09:00", "09:45"),
+      eats("s3", "12:00", "12:45"),
+      eats("s4", "13:00", "13:45"),
+    ];
+    const fifth = eats("s5", "18:00", "18:45");
+
+    for (const pattern of ["classic", "coffee_then_brunch"] as const) {
+      expect(
+        ruleIds(dayOf([diner], four), ctxOf({ mealPattern: pattern })),
+      ).not.toContain("pacing.food-stops-exceeded");
+      expect(
+        ruleIds(dayOf([diner], [...four, fifth]), ctxOf({ mealPattern: pattern })),
+      ).toContain("pacing.food-stops-exceeded");
+    }
   });
 });
 

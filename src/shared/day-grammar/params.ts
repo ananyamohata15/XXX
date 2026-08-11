@@ -54,7 +54,14 @@ export interface MealPatternSpec {
 }
 
 export const GRAMMAR_PARAMS = {
-  version: "v1",
+  /**
+   * v2 (XXX-35, Session 11 CP1): adds `pacing.foodCategories` (the
+   * food-cap predicate now counts food-category VENUES, not slot kinds)
+   * and the `exposure` band table (the first rules that read a travel LEG
+   * rather than a slot). `grazing` left the meal patterns in the same
+   * change — see SESSION_NOTES §1.3.
+   */
+  version: "v2",
 
   /**
    * Plausible time in a place, by category. Applied ONLY to
@@ -101,10 +108,6 @@ export const GRAMMAR_PARAMS = {
         { label: "dinner", open: "17:30", close: "21:30" },
       ],
       maxFoodStops: 4,
-    },
-    grazing: {
-      windows: [{ label: "grazing", open: "08:00", close: "22:00" }],
-      maxFoodStops: 7,
     },
   } satisfies Record<MealPatternId, MealPatternSpec>,
 
