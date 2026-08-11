@@ -722,6 +722,92 @@ running, so it is surfaced:
   overlap 0.000, 2 of 6 days' roles confirmed). Leaves the full ~$10 for the
   evening, and accepts that two gates were projected rather than read.
 
+### CHECKPOINT 3 outcome — a targeted re-run, days 1–4 only
+
+Ruled: neither (a) nor (b), but the narrower thing both were reaching for —
+**re-run only the four unread personas**, ~$1.60, taking Step 3 to a
+re-sanctioned ~$4. The surfacing itself was the discipline working. Also
+ruled:
+
+- Venue overlap **0.000 / 15 pairs is banked** from the full run; a 4-persona
+  re-run must not be allowed to restate it.
+- Category-seq 0.614 comparable and role-seq 0.938 stand as **reported,
+  non-gating**, with the XXX-37 pre-registration standing.
+- The **zone-dice deviation is accepted as recorded** — self-introduced,
+  self-caught, structurally fixed; the `corners` personas' variety burden
+  moves to the category dice and window rotation, and that trade is stated in
+  the code rather than hidden.
+
+### 3.5 The instrument needed a subset flag before it could be run cheaply
+
+`--matrix` had no way to run a subset, and the honest problem with adding one
+is that **every pairwise number changes domain**: 4 personas is 6 pairs, not
+15. So `--personas a,b,c,d` prints a `SUBSET RUN` banner, and venue overlap
+and both sequence metrics carry `SUBSET — NOT THE GATE` instead of a verdict,
+with the all-pairs line refusing to cite the 15-pair baselines. A cheaper run
+must not be able to overwrite a banked one by looking similar. Guard verified
+at **$0** first: an unknown persona key exits before a single generation.
+
+### 3.6 The targeted re-run — both structural gates read live
+
+`--matrix --llm --date 2026-08-15 --seed 42 --personas day-1-jays,day-2-old-town,day-3-winter,day-4-budget`
+
+| gate | measured | verdict |
+|---|---|---|
+| **anchors seated** | **4/4** | **PASS** |
+| **closes (restated)** | **4/4** (raw 4/4) | **PASS** |
+| days validate clean | **4/4** | **PASS** |
+
+| day | template | anchor | roles |
+|---|---|---|---|
+| day-1-jays | moderate-a | markets | warmup > meal > anchor > contrast > meal > close |
+| day-2-old-town | packed-a | historic_sites | warmup > meal > anchor > contrast > contrast > meal > close |
+| day-3-winter | relaxed-a | museums_galleries | warmup > meal > anchor > meal > close |
+| day-4-budget | moderate-b | markets | meal > anchor > contrast > meal > close |
+
+Combined with days 5–6 from the full run, **anchors are 6/6 and
+closes-restated 6/6 live** — the thing Session 11 paid to fix, now read rather
+than projected.
+
+The result worth naming: **`day-4-budget` seats its close live** (Parkdale
+Social Club, 20:50). That was the §2.10 zone-dice defect I introduced at CP1
+and fixed offline; it now holds against real data, not just a recomposition.
+
+Subset numbers, recorded and gating nothing: venue overlap 0.000/0.00 over 6
+pairs, category-seq comparable 0.675 (n=4), role-seq 0.967. Role-seq is
+higher than the full run's 0.938 because dropping days 5–6 drops the two most
+structurally distinct shapes — which is exactly why a subset does not restate
+a 15-pair gate.
+
+### 3.7 Spend — read from the counter, both ends
+
+| | |
+|---|---|
+| Details MTD before / after | **1,674 → 1,758** |
+| This re-run's Details | **84**, all above the 1,000 free cap → **$1.68** |
+| Anthropic (printed, 4 days) | 8 calls, **$0.109** |
+| **Re-run total** | **$1.79** |
+| **Step 3 total** | **$4.22** (= $2.43 + $1.79) |
+| **Session total** | **$4.22** of the $13 plan / $15 gate |
+
+**Overshoot, stated:** the re-run was projected at ~$1.60 and cost **$1.79**
+— $0.19 over, because the projection assumed ~80 Details and the shortlists
+drew 84. Step 3 lands at $4.22 against its re-sanctioned ~$4. Inside the $15
+session gate, with **~$8.8 of the $13 plan** left for the founder's evening.
+
+### 3.8 Standing line, added this session
+
+> **Instruments print their summary before spend — an unreadable report is
+> money spent twice.**
+
+Earned literally: a $2.28 run whose gates could not be read, then $1.79 to
+read them. The `--matrix` summary lines and the `SUBSET` labelling both exist
+because of it. (Recorded here per the ruling; it reads like the Session-11
+standards that went into CLAUDE.md, so promoting it there is offered, not
+assumed.)
+
+**CHECKPOINT 3: PASS.** Both structural gates clean → CP4 launches.
+
 ---
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)

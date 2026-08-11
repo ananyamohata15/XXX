@@ -43,6 +43,10 @@ import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
  *                       and prints the seat-centering A/B histograms — the
  *                       A/B costs nothing, because composeDay is pure and
  *                       both seatings run on one generation's inputs.
+ *   --personas a,b,c    with --matrix: run only these golden personas. For
+ *                       re-reading the structural gates on a subset of days
+ *                       without repaying for the ones already read. Pairwise
+ *                       metrics are then printed as SUBSET and gate nothing.
  *   --session10-ab      the two days the founder red-penned, re-run at their
  *                       exact persona/date/seed and read against their own
  *                       recorded verdicts (XXX-35 CP2)
@@ -387,8 +391,37 @@ async function main() {
 
   // ---- 6-persona distinctiveness matrix (CP3 proof b) ------------------
   if (has("--matrix")) {
+    // A subset re-run exists to re-read the STRUCTURAL gates (anchors,
+    // closes-restated) on days whose per-day blocks were lost, without paying
+    // for the personas already read. Everything pairwise — venue overlap,
+    // both sequence metrics — is computed over a different pair domain when
+    // the subset is partial, so it is printed as SUBSET and carries no
+    // verdict. The full-run numbers stay banked in SESSION_NOTES.md; a
+    // cheaper run must never be able to overwrite them by looking similar.
+    const allKeys = Object.keys(GOLDEN_PERSONAS);
+    const requested = arg("--personas");
+    const keys =
+      requested === null || requested === undefined
+        ? allKeys
+        : requested.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
+    const unknown = keys.filter((k) => GOLDEN_PERSONAS[k] === undefined);
+    if (unknown.length > 0) {
+      console.error(
+        `Unknown persona(s) in --personas: ${unknown.join(", ")}. Known: ${allKeys.join(", ")}`,
+      );
+      process.exit(1);
+    }
+    const isSubset = keys.length < allKeys.length;
     console.log(`generation-report MATRIX: date=${date} seed=${seed} [llm]`);
-    const keys = Object.keys(GOLDEN_PERSONAS);
+    if (isSubset) {
+      console.log(
+        `  SUBSET RUN: ${keys.length}/${allKeys.length} personas (${keys.join(", ")}).\n` +
+          `  Structural gates (anchors, closes-restated) are read over these personas only.\n` +
+          `  Pairwise metrics below cover ${(keys.length * (keys.length - 1)) / 2} of ` +
+          `${(allKeys.length * (allKeys.length - 1)) / 2} pairs and are NOT the gate — ` +
+          `use the banked full-run numbers.`,
+      );
+    }
     const outcomes = new Map<string, GenerationOutcome>();
     // The A/B costs nothing: composeDay is pure given these inputs, so the
     // last ones the engine used get recomposed the OLD way for comparison.
@@ -495,7 +528,8 @@ async function main() {
       roleSequence(outcomes.get(k)!).includes("anchor"),
     ).length;
     console.log(
-      `\n  anchors seated: ${anchorsSeated}/${keys.length} → ${anchorsSeated === keys.length ? "PASS" : "FAIL"}`,
+      `\n  anchors seated: ${anchorsSeated}/${keys.length} → ${anchorsSeated === keys.length ? "PASS" : "FAIL"}` +
+        (isSubset ? `   (over the ${keys.length} personas run)` : ""),
     );
     // Closes, RESTATED (Session 12 CP2 ruling 1): seated closes over the
     // templates that HAVE a close step. `moderate-d`, `packed-c` and
@@ -525,7 +559,11 @@ async function main() {
       mean <= VENUE_OVERLAP_GATE.mean && max <= VENUE_OVERLAP_GATE.max;
     console.log(
       `\n  venue overlap: mean=${mean.toFixed(3)} (AC ≤${VENUE_OVERLAP_GATE.mean}) max=${max.toFixed(2)} (AC ≤${VENUE_OVERLAP_GATE.max}) → ${
-        venuePass ? "PASS" : "FAIL"
+        isSubset
+          ? `SUBSET (${pairs} of ${(allKeys.length * (allKeys.length - 1)) / 2} pairs) — NOT THE GATE`
+          : venuePass
+            ? "PASS"
+            : "FAIL"
       }`,
     );
     const seqMean = seqSum / pairs;
@@ -551,7 +589,10 @@ async function main() {
       `  category-sequence overlap [cross-shape, |Δstops|≥2, n=${crossPairs}]: mean=${(crossPairs > 0 ? crossSum / crossPairs : 0).toFixed(3)} max=${crossMax.toFixed(2)} (reported, NON-GATING — a short day is a subsequence of a long one by arithmetic)`,
     );
     console.log(
-      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   [Session 9 baseline 0.693; Session 11 pre-fix 0.711]`,
+      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   ` +
+        (isSubset
+          ? "[SUBSET — not comparable to the 15-pair baselines]"
+          : "[Session 9 baseline 0.693; Session 11 pre-fix 0.711]"),
     );
     console.log(
       `  role-sequence overlap:     mean=${(roleSum / pairs).toFixed(3)} (observed, non-gating — the leading indicator of template homogenization)`,
