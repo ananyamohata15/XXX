@@ -16,6 +16,7 @@ import { timeToMinutes } from "../time";
 import { orderedSlots } from "./internal";
 import { checkDwell } from "./rules/dwell";
 import { checkEnvironment } from "./rules/environment";
+import { checkExposure } from "./rules/exposure";
 import { checkFacts } from "./rules/facts";
 import { checkMoney } from "./rules/money";
 import { checkMovement } from "./rules/movement";
@@ -31,6 +32,7 @@ const FAMILIES: RuleFamily[] = [
   checkFacts,
   checkDwell,
   checkEnvironment,
+  checkExposure,
   checkMovement,
   checkRhythm,
   checkMoney,

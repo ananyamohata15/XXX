@@ -1,14 +1,31 @@
 /**
  * Composition (CP1 §1.1 stage 7): the code-owned structure layer. The
- * skeleton decides what kinds of slots the day wants; the scheduler
- * turns selections into a timed `GrammarDay` against meal-pattern
- * windows, pinned anchors (XXX-27: fill the negative space), hours
- * predicates, and the travel chain. The LLM owns none of this.
+ * skeleton decides what SHAPE the day wants; the scheduler turns
+ * selections into a timed `GrammarDay` against meal-pattern windows,
+ * pinned anchors (XXX-27: fill the negative space), hours predicates, and
+ * the travel chain. The LLM owns none of this.
  *
- * The composer is deliberately conservative, not clever: it avoids the
- * violations it can see coming (hours, pattern windows, anchor buffers,
- * daylight for outdoor slots) and lets `validateDay` catch the rest —
- * the grammar loop, not the composer, is the guarantee.
+ * Session 11 (XXX-35) changed two things here, both of them defects the
+ * founder felt before anyone found them:
+ *
+ *  1. The skeleton has an ARC (see arc.ts). It used to deal meal intents
+ *     off the pattern's windows and fill the leftovers with activities in
+ *     persona-gravity order, which made 3 of 5 intents meals and let both
+ *     activity slots draw the same top category. "Meal, gallery, meal,
+ *     gallery, meal" was the only shape it could produce. Now every day
+ *     elects a centrepiece and the rest of the day is placed relative to
+ *     it — including its free time.
+ *  2. Seating is an OBJECTIVE, not `earliest legal minute`. The old
+ *     comment said the quiet part out loud: every slot was placed "at the
+ *     earliest legal minute after travel", so every day trended to its
+ *     earliest legal shape and an 11:30 lunch was that policy working
+ *     correctly.
+ *
+ * The composer is still deliberately conservative, not clever: it avoids
+ * the violations it can see coming (hours, pattern windows, anchor
+ * buffers, daylight for outdoor slots, and now leg exposure) and lets
+ * `validateDay` catch the rest — the grammar loop, not the composer, is
+ * the guarantee.
  */
 
 import {
@@ -17,6 +34,11 @@ import {
   type Span,
 } from "@/shared/day-grammar/predicates";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import {
+  SHELTERED_MODES,
+  exposureAt,
+  walkCapMinutes,
+} from "@/shared/day-grammar/rules/exposure";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type {
   AnchorBaseline,
@@ -27,32 +49,65 @@ import type {
   MealPatternId,
   TravelTimeProvider,
 } from "@/shared/day-grammar/types";
+import type { HourlyExposure } from "@/shared/scheduling-windows";
 import { categoryAffinity, type Persona } from "@/shared/persona";
 import { minutesToTime, timeToMinutes } from "@/shared/time";
 import {
+  CATEGORY_FAMILY,
   PLACE_CATEGORIES,
   weekdayOf,
+  type CategoryFamily,
   type PlaceCategory,
   type TransportMode,
 } from "@/shared/vocabulary";
+import {
+  ANCHOR_ELECTOR_SOURCE,
+  closeCategories,
+  electAnchor,
+  pickContrast,
+  pickTemplate,
+  warmupCategories,
+  type ArcStep,
+  type ElectedAnchor,
+} from "./arc";
+import { COMPOSE_PARAMS } from "./compose-params";
 import type {
   AnchorInput,
   Candidate,
   ComposedLeg,
+  ElectedAnchorRecord,
   GenerationRequest,
+  OpenIntervalPlan,
+  OpenPeriod,
   Selection,
   SlotIntent,
 } from "./types";
 export type { ComposedLeg } from "./types";
 
-/** Variety within a day is code-enforced (10294 point 4). */
+/**
+ * Variety within a day is code-enforced (10294 point 4). Since Session 11
+ * the arc's family logic does most of this work — a contrast step cannot
+ * share the anchor's texture family — and this stays as the backstop that
+ * catches any template/persona combination the family rules do not.
+ */
 export const MAX_SLOTS_PER_CATEGORY = 2;
 
-const ACTIVITY_COUNT: Record<Persona["pace"], number> = {
-  relaxed: 2,
-  moderate: 3,
-  packed: 4,
-};
+/** Nominal length of a placed free-time period. */
+export const OPEN_PERIOD_MINUTES = 60;
+
+/**
+ * A gap worth naming. Below this a gap is a stop's own overrun or a walk's
+ * rounding, and labelling it would be noise; at or above it the traveller
+ * has time they will notice, and time they notice must have a place.
+ */
+const OPEN_PERIOD_NOTICEABLE_MINUTES = 45;
+
+/**
+ * How far an anchor's window may run past its template slice when the
+ * slice is too short to hold the centrepiece. Enough to seat it plus room
+ * for the objective to centre it, not enough to swallow the next meal.
+ */
+const ANCHOR_WINDOW_SLACK_MINUTES = 60;
 
 const DEFAULT_DAY: Record<Persona["pace"], { start: string; end: string }> = {
   relaxed: { start: "09:30", end: "21:00" },
@@ -67,7 +122,6 @@ const MEAL_DWELL: Record<string, number> = {
   brunch: 75,
   lunch: 60,
   dinner: 90,
-  grazing: 45,
 };
 
 const MEAL_CATEGORIES: Record<string, PlaceCategory[]> = {
@@ -76,7 +130,6 @@ const MEAL_CATEGORIES: Record<string, PlaceCategory[]> = {
   brunch: ["restaurants", "cafes"],
   lunch: ["restaurants"],
   dinner: ["restaurants"],
-  grazing: ["markets", "cafes", "restaurants"],
 };
 
 export function defaultMealPattern(persona: Persona): MealPatternId {
@@ -86,7 +139,7 @@ export function defaultMealPattern(persona: Persona): MealPatternId {
 /** Activity categories in persona-gravity order, food categories excluded. */
 export function rankedActivityCategories(persona: Persona): PlaceCategory[] {
   return PLACE_CATEGORIES.filter(
-    (c) => c !== "restaurants" && c !== "cafes",
+    (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
   ).sort(
     (a, b) =>
       categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
@@ -96,14 +149,91 @@ export function rankedActivityCategories(persona: Persona): PlaceCategory[] {
 
 export interface Skeleton {
   intents: SlotIntent[];
+  /** Free time the arc PLACED, not residue the arithmetic left over. */
+  opens: OpenIntervalPlan[];
   daySpan: Span;
   mealPattern: MealPatternId;
+  /** Which arc shape built this day — recorded so a shape is auditable. */
+  templateId: string;
+  /** null when a user anchor pre-empted election (the day has a centre). */
+  electedAnchor: ElectedAnchorRecord | null;
+  /**
+   * Arc steps the day had no room for. Never silent: a thinner day than
+   * the arc asked for is something a reviewer must be able to see, and the
+   * engine's `unfilled` cannot report a step that never became an intent.
+   */
+  droppedSteps: { step: ArcStep; reason: string }[];
+}
+
+const spanMinutes = (s: Span): number => Math.max(0, s.end - s.start);
+const spanClip = (s: Span, outer: Span): Span => ({
+  start: Math.max(s.start, outer.start),
+  end: Math.min(s.end, outer.end),
+});
+
+/**
+ * Contiguous sub-windows of `span`, proportional to each step's need.
+ *
+ * Each step gets its own centre, which is what makes the seat objective
+ * spread a day rather than pile every stop into the middle of one big
+ * window. A sub-window is never narrower than the step's own need: on a
+ * tight segment the slices overlap and the cursor serializes them, which
+ * is honest, where a too-narrow window would just fail to seat.
+ */
+function sliceSegment(span: Span, needs: number[]): Span[] {
+  const total = needs.reduce((a, b) => a + b, 0);
+  const room = spanMinutes(span);
+  if (needs.length === 0) return [];
+  if (total <= 0) return needs.map(() => ({ ...span }));
+  const out: Span[] = [];
+  let cursor = span.start;
+  needs.forEach((need, i) => {
+    const start = Math.round(cursor);
+    const share = room * (need / total);
+    const isLast = i === needs.length - 1;
+    const end = isLast
+      ? span.end
+      : Math.min(span.end, Math.max(start + need, Math.round(cursor + share)));
+    out.push({ start, end: Math.max(end, start + need) });
+    cursor += share;
+  });
+  return out;
 }
 
 /**
- * What the day wants, before any venue exists. Scheduler personas get a
- * full timeline; wanderers get three anchors and their negative space —
- * the unstructured fraction IS the shape (rule 27 guards it).
+ * Which of the pattern's windows a template's meal steps use.
+ *
+ * Templates carry two meal steps where `classic` offers three windows, so
+ * one is dropped — and it is dropped from the FRONT. Travelling, breakfast
+ * is the meal that actually goes: a warmup cafe often replaces it, and the
+ * templates that open with `warmup` literally do. Taking the last k also
+ * keeps the day's main meals (lunch, dinner) where a traveller expects
+ * them, which taking the first k would not.
+ */
+function mealWindowsFor(
+  pattern: { windows: { label: string; open: string; close: string }[] },
+  mealStepCount: number,
+): { label: string; open: string; close: string }[] {
+  if (mealStepCount >= pattern.windows.length) return [...pattern.windows];
+  // A single-meal template takes the MIDDLE window, not the last. Taking
+  // the last gave wanderers a day whose only meal was dinner, and since
+  // every non-meal step is laid out relative to the meal windows, the
+  // whole arc collapsed into the evening after it. The middle window is
+  // also the right answer on its own terms: one meal on a drifting day is
+  // brunch or lunch, not a 19:00 sit-down.
+  if (mealStepCount === 1) {
+    return [pattern.windows[Math.floor((pattern.windows.length - 1) / 2)]];
+  }
+  return pattern.windows.slice(pattern.windows.length - mealStepCount);
+}
+
+/**
+ * What the day wants, before any venue exists — as an ARC.
+ *
+ * A user anchor PRE-EMPTS election: the day already has a centre, and
+ * electing a second one is the duplicate ownership XXX-27 exists to
+ * prevent. Wanderers get an arc too (three stops and their negative
+ * space); rule 27's unstructured floor stays the binding constraint.
  */
 export function buildSkeleton(request: GenerationRequest): Skeleton {
   const persona = request.persona;
@@ -120,150 +250,336 @@ export function buildSkeleton(request: GenerationRequest): Skeleton {
   }
   const mealPattern = request.mealPattern ?? defaultMealPattern(persona);
   const pattern = GRAMMAR_PARAMS.mealPatterns[mealPattern];
-  const intents: SlotIntent[] = [];
-  let nextId = 1;
-  const intent = (
-    kind: SlotIntent["kind"],
-    label: string,
-    window: Span,
-    categories: PlaceCategory[],
-    dwellMinutes: number,
-  ): SlotIntent => ({
-    id: `i${nextId++}`,
-    kind,
-    label,
-    window,
-    categories,
-    dwellMinutes,
-  });
+  const seed = request.seed ?? 0;
+  const template = pickTemplate(persona, seed);
 
-  if (persona.structure === "wanderer") {
-    // Three anchors + zones. The gaps are deliberately unowned.
-    const top = rankedActivityCategories(persona)[0];
-    intents.push(
-      intent("meal", "brunch", spanClip({ start: 600, end: 720 }, daySpan), MEAL_CATEGORIES.brunch, 90),
-      intent("activity", "afternoon anchor", spanClip({ start: 850, end: 990 }, daySpan), [top], 90),
-      intent(
-        "meal",
-        "evening anchor",
-        spanClip({ start: 1170, end: 1290 }, daySpan),
-        categoryAffinity(persona, "nightlife_bars") >= 0.5
-          ? ["nightlife_bars", "restaurants"]
-          : ["restaurants", "nightlife_bars"],
-        120,
-      ),
-    );
-    return { intents: intents.filter((i) => spanMinutes(i.window) >= i.dwellMinutes), daySpan, mealPattern };
+  const hasUserAnchor = (request.anchors ?? []).length > 0;
+  const elected: ElectedAnchor | null = hasUserAnchor ? null : electAnchor(persona);
+  const electedRecord: ElectedAnchorRecord | null =
+    elected === null
+      ? null
+      : {
+          category: elected.category,
+          dwellMinutes: elected.dwellMinutes,
+          reason: elected.reason,
+          source: ANCHOR_ELECTOR_SOURCE,
+          tier: 3,
+        };
+
+  // --- 1. what each step needs, before any window or category exists -------
+  //
+  // Layout runs on NOMINAL needs and category choice happens afterwards,
+  // in time order. The other way round is what produced three bugs in the
+  // first draft: a step's evening-viability depends on the window it ends
+  // up in, so choosing categories first meant an evening fallback could
+  // override the family logic AND overwrite the elected anchor's own
+  // category with a bar.
+  const mealStepCount = template.steps.filter((s) => s === "meal").length;
+  const windows = mealWindowsFor(pattern, mealStepCount);
+
+  interface Step {
+    step: ArcStep;
+    /** Nominal minutes for layout; the real dwell follows the category. */
+    need: number;
+    /** Pattern window index, for meal steps only. */
+    windowIndex: number | null;
   }
 
-  // Meals from the pattern's windows, clipped to the day.
-  const mealIntents: SlotIntent[] = [];
-  for (const window of pattern.windows) {
-    const clipped = spanClip(
-      { start: timeToMinutes(window.open), end: timeToMinutes(window.close) },
-      daySpan,
-    );
-    const dwell = MEAL_DWELL[window.label] ?? 60;
-    if (spanMinutes(clipped) < dwell) continue;
-    mealIntents.push(
-      intent(
-        "meal",
-        window.label,
-        clipped,
-        MEAL_CATEGORIES[window.label] ?? ["restaurants"],
-        dwell,
-      ),
-    );
-  }
-
-  // Activities fill the gaps between meals, persona-gravity categories,
-  // max two slots per category across the day.
-  const ranked = rankedActivityCategories(persona);
-  const categoryUse = new Map<PlaceCategory, number>();
-  /**
-   * Evening activity slots draw only from categories plausibly open at
-   * night — museums and markets at 19:30 are exactly the unverified-junk
-   * trap the first live run walked into (CP2 finding): every verified
-   * venue is filtered by its real hours and only unknowns survive.
-   */
-  const EVENING_OK: PlaceCategory[] = ["nightlife_bars", "historic_sites"];
-  const takeCategory = (evening: boolean): PlaceCategory => {
-    const pool = evening ? ranked.filter((c) => EVENING_OK.includes(c)) : ranked;
-    for (const c of pool) {
-      if ((categoryUse.get(c) ?? 0) < MAX_SLOTS_PER_CATEGORY) {
-        categoryUse.set(c, (categoryUse.get(c) ?? 0) + 1);
-        return c;
-      }
-    }
-    return pool[0] ?? ranked[0];
+  /** Nominal needs. Deliberately coarse: layout only needs a shape. */
+  const NOMINAL: Record<Exclude<ArcStep, "meal">, number> = {
+    anchor: elected?.dwellMinutes ?? 120,
+    warmup: 45,
+    contrast: 90,
+    close: 90,
+    open: OPEN_PERIOD_MINUTES,
   };
 
-  const gaps: { label: string; window: Span }[] = [];
-  const sortedMeals = [...mealIntents].sort((a, b) => a.window.start - b.window.start);
-  let cursor = daySpan.start;
-  for (const meal of sortedMeals) {
-    if (meal.window.start - cursor >= 60) {
-      gaps.push({
-        label: labelForGap(cursor),
-        window: { start: cursor, end: meal.window.start + 30 },
+  let mealCursor = 0;
+  const steps: Step[] = [];
+  for (const step of template.steps) {
+    if (step === "meal") {
+      const window = windows[mealCursor];
+      if (window === undefined) continue; // fewer windows than steps: honest drop
+      steps.push({
+        step,
+        need: MEAL_DWELL[window.label] ?? 60,
+        windowIndex: mealCursor,
       });
+      mealCursor++;
+      continue;
     }
-    cursor = Math.max(cursor, meal.window.start + (MEAL_DWELL[meal.label] ?? 60));
-  }
-  if (daySpan.end - cursor >= 60) {
-    gaps.push({ label: labelForGap(cursor), window: { start: cursor, end: daySpan.end } });
+    steps.push({ step, need: NOMINAL[step], windowIndex: null });
   }
 
-  const activityCount = ACTIVITY_COUNT[persona.pace];
-  const activities: SlotIntent[] = [];
-  let gi = 0;
-  while (activities.length < activityCount && gaps.length > 0) {
-    const gap = gaps[gi % gaps.length];
-    const category = takeCategory(gap.window.start >= timeToMinutes("19:00"));
-    activities.push(
-      intent(
-        "activity",
-        `${gap.label} activity`,
-        gap.window,
-        [category],
-        GRAMMAR_PARAMS.dwellMinutes[category].typical,
-      ),
+  // --- 2. lay the steps out in time ---------------------------------------
+  // Meal steps own their pattern window; every other step is sliced into
+  // the segment between the meal windows that bracket it.
+  const dropped: { step: ArcStep; reason: string }[] = [];
+
+  const segments: Step[][] = [[]];
+  const mealAt: Step[] = [];
+  for (const step of steps) {
+    if (step.step === "meal") {
+      mealAt.push(step);
+      segments.push([]);
+    } else {
+      segments[segments.length - 1].push(step);
+    }
+  }
+
+  const mealSpans = mealAt.map((meal) =>
+    spanClip(
+      {
+        start: timeToMinutes(windows[meal.windowIndex!].open),
+        end: timeToMinutes(windows[meal.windowIndex!].close),
+      },
+      daySpan,
+    ),
+  );
+
+  /** The open span available to segment i (before meal i, or after the last). */
+  const segmentSpan = (index: number): Span => {
+    const previousMeal = index === 0 ? null : mealAt[index - 1];
+    const start =
+      previousMeal === null
+        ? daySpan.start
+        : Math.min(daySpan.end, mealSpans[index - 1].start + previousMeal.need);
+    const end =
+      index < mealAt.length
+        ? Math.min(daySpan.end, mealSpans[index].start + 30)
+        : daySpan.end;
+    return { start, end: Math.max(end, start) };
+  };
+
+  /** A step placed in time, before it knows what it is looking for. */
+  interface Placed {
+    step: ArcStep;
+    window: Span;
+    need: number;
+    /** Meal label ("lunch"), for meal steps. */
+    label: string | null;
+  }
+  const placed: Placed[] = [];
+
+  segments.forEach((segment, index) => {
+    const span = segmentSpan(index);
+    const slices = sliceSegment(
+      span,
+      segment.map((s) => s.need),
     );
-    gi++;
-    if (gi > gaps.length * 3) break; // safety: never loop forever
+    segment.forEach((step, i) => {
+      let window = spanClip(slices[i], daySpan);
+      // THE ANCHOR IS NEVER DROPPED. A template may place the centrepiece
+      // in a segment too short to hold it, and silently losing it would
+      // deliver exactly the un-anchored day the founder rejected — while
+      // the trace still claimed an anchor was elected. So the anchor's
+      // window is widened past its slice instead; the cursor and the
+      // meal's own (wide) window sort out the ordering from there.
+      if (step.step === "anchor" && spanMinutes(window) < step.need) {
+        window = spanClip(
+          {
+            start: window.start,
+            end: window.start + step.need + ANCHOR_WINDOW_SLACK_MINUTES,
+          },
+          daySpan,
+        );
+      }
+      if (spanMinutes(window) < step.need) {
+        // A step the day has no room for is dropped — but never silently:
+        // a thinner day than the arc asked for is something a reviewer
+        // must be able to see, and the engine's `unfilled` cannot report a
+        // step that never became an intent.
+        dropped.push({
+          step: step.step,
+          reason: `window ${spanMinutes(window)}min is shorter than the ${step.need}min it needs`,
+        });
+        return;
+      }
+      placed.push({ step: step.step, window, need: step.need, label: null });
+    });
+
+    const meal = mealAt[index];
+    if (meal !== undefined) {
+      const window = mealSpans[index];
+      const label = windows[meal.windowIndex!].label;
+      if (spanMinutes(window) < meal.need) {
+        dropped.push({
+          step: "meal",
+          reason: `${label} window ${spanMinutes(window)}min is shorter than its ${meal.need}min dwell`,
+        });
+      } else {
+        placed.push({ step: "meal", window, need: meal.need, label });
+      }
+    }
+  });
+
+  placed.sort((a, b) => a.window.start - b.window.start);
+
+  // --- 3. choose categories, in time order --------------------------------
+  const usedFamilies = new Set<CategoryFamily>();
+  if (elected !== null) usedFamilies.add(CATEGORY_FAMILY[elected.category]);
+  const eveningOk: readonly PlaceCategory[] = [
+    "nightlife_bars",
+    "historic_sites",
+    "restaurants",
+  ];
+  const isEvening = (window: Span) => window.start >= timeToMinutes("19:00");
+  /**
+   * Evening stops draw only from categories plausibly open at night —
+   * museums and markets at 19:30 are the unverified-junk trap the first
+   * live run walked into (Session 9 CP2). Applied as a FILTER on the
+   * step's own preferences, never as a substitution: a fallback that
+   * replaces the list is how the elected anchor became a bar in the first
+   * draft of this function.
+   */
+  const forEvening = (
+    categories: PlaceCategory[],
+    window: Span,
+  ): PlaceCategory[] =>
+    isEvening(window)
+      ? categories.filter((c) => eveningOk.includes(c))
+      : categories;
+
+  const intents: SlotIntent[] = [];
+  const opens: OpenIntervalPlan[] = [];
+  let nextId = 1;
+  let lastIntentId: string | null = null;
+
+  for (const item of placed) {
+    if (item.step === "open") {
+      opens.push({
+        id: `o${opens.length + 1}`,
+        afterIntentId: lastIntentId,
+        minutes: Math.min(item.need, spanMinutes(item.window)),
+      });
+      continue;
+    }
+
+    let categories: PlaceCategory[];
+    let label: string;
+    let kind: SlotIntent["kind"] = "activity";
+
+    if (item.step === "meal") {
+      label = item.label ?? "meal";
+      kind = "meal";
+      categories = MEAL_CATEGORIES[label] ?? ["restaurants"];
+      // A meal's window comes from the pattern, so it is already legal at
+      // its hour; the evening filter would only ever narrow dinner to
+      // restaurants, which it already is.
+    } else if (item.step === "anchor") {
+      // The elected category is not negotiable — it is the day's centre.
+      // If it cannot be open at this hour the hard filters will say so and
+      // the intent goes unfilled honestly, which is a visible thin day
+      // rather than a silently different one.
+      categories =
+        elected !== null ? [elected.category] : rankedActivityCategories(persona);
+      label = "the day's anchor";
+    } else if (item.step === "warmup") {
+      const preferred = forEvening(
+        warmupCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
+        item.window,
+      );
+      categories =
+        preferred.length > 0 ? preferred : forEvening(warmupCategories(persona), item.window);
+      label = "warm-up";
+    } else if (item.step === "contrast") {
+      const anchorCategory = elected?.category ?? rankedActivityCategories(persona)[0];
+      const pick = pickContrast(persona, anchorCategory, usedFamilies, {
+        eveningOnly: isEvening(item.window),
+      });
+      categories =
+        pick === null
+          ? forEvening(rankedActivityCategories(persona), item.window)
+          : [pick];
+      label = "contrast";
+    } else {
+      const preferred = forEvening(
+        closeCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
+        item.window,
+      );
+      categories =
+        preferred.length > 0 ? preferred : forEvening(closeCategories(persona), item.window);
+      label = "the day's close";
+    }
+
+    if (categories.length === 0) {
+      dropped.push({
+        step: item.step,
+        reason: `no category is both wanted and plausibly open at ${minutesToTime(item.window.start)}`,
+      });
+      continue;
+    }
+
+    const primary = categories[0];
+    usedFamilies.add(CATEGORY_FAMILY[primary]);
+    const dwell =
+      item.step === "anchor" && elected !== null
+        ? elected.dwellMinutes
+        : item.step === "meal"
+          ? item.need
+          : GRAMMAR_PARAMS.dwellMinutes[primary].typical;
+    const fitted = Math.min(dwell, spanMinutes(item.window));
+    if (fitted < GRAMMAR_PARAMS.dwellMinutes[primary].min) {
+      dropped.push({
+        step: item.step,
+        reason: `${primary} needs ${GRAMMAR_PARAMS.dwellMinutes[primary].min}min and the window holds ${spanMinutes(item.window)}min`,
+      });
+      continue;
+    }
+
+    const id = `i${nextId++}`;
+    intents.push({
+      id,
+      kind,
+      label,
+      window: item.window,
+      categories,
+      dwellMinutes: fitted,
+      role: item.step,
+    });
+    lastIntentId = id;
   }
 
-  // Evening nightlife when the persona actually wants it and the day
-  // is still awake for it.
-  if (
-    daySpan.end >= timeToMinutes("21:30") &&
-    categoryAffinity(persona, "nightlife_bars") >= 0.35 &&
-    (categoryUse.get("nightlife_bars") ?? 0) === 0
-  ) {
-    activities.push(
-      intent(
-        "activity",
-        "evening",
-        { start: timeToMinutes("20:30"), end: daySpan.end },
-        ["nightlife_bars"],
-        90,
-      ),
-    );
+  // Backstop: no category more than twice across the day (10294 point 4).
+  // The anchor is exempt from being the one cut — it is the day's centre,
+  // and a backstop that can delete the centrepiece is not a backstop.
+  const categoryUse = new Map<PlaceCategory, number>();
+  const byAnchorFirst = [...intents].sort(
+    (a, b) => (a.role === "anchor" ? 0 : 1) - (b.role === "anchor" ? 0 : 1),
+  );
+  const cut = new Set<string>();
+  for (const intent of byAnchorFirst) {
+    const primary = intent.categories[0];
+    const used = categoryUse.get(primary) ?? 0;
+    if (used >= MAX_SLOTS_PER_CATEGORY) {
+      cut.add(intent.id);
+      dropped.push({
+        step: intent.role ?? "meal",
+        reason: `${primary} already has ${MAX_SLOTS_PER_CATEGORY} slots (variety backstop)`,
+      });
+      continue;
+    }
+    categoryUse.set(primary, used + 1);
   }
 
-  const all = [...mealIntents, ...activities].sort(
+  const kept = intents.filter((intent) => !cut.has(intent.id));
+
+  const ordered = kept.sort(
     (a, b) => a.window.start - b.window.start || a.id.localeCompare(b.id),
   );
-  return { intents: all, daySpan, mealPattern };
+  const keptIds = new Set(ordered.map((i) => i.id));
+  return {
+    intents: ordered,
+    opens: opens.filter(
+      (o) => o.afterIntentId === null || keptIds.has(o.afterIntentId),
+    ),
+    daySpan,
+    mealPattern,
+    templateId: template.id,
+    electedAnchor: electedRecord,
+    droppedSteps: dropped,
+  };
 }
-
-const spanMinutes = (s: Span): number => Math.max(0, s.end - s.start);
-const spanClip = (s: Span, outer: Span): Span => ({
-  start: Math.max(s.start, outer.start),
-  end: Math.min(s.end, outer.end),
-});
-const labelForGap = (startMinutes: number): string =>
-  startMinutes < 720 ? "morning" : startMinutes < 1020 ? "afternoon" : "evening";
 
 /** Distance-driven mode choice among the modes the request allows. */
 export function modeFor(
@@ -288,6 +604,13 @@ export interface ComposeInput {
   /** Extra per-leg slack from the repair loop. 0 on the first pass. */
   slackMinutes?: number;
   /**
+   * Hourly exposure readings for the date; null past the forecast horizon.
+   * Drives the mode swap that keeps a traveller off a 35-minute winter
+   * walk. null = the composer cannot know, so it does not pretend to —
+   * `exposure.unknown` then reports the leg as unchecked.
+   */
+  exposure?: readonly HourlyExposure[] | null;
+  /**
    * Menu order per intent (placeIds). When the SELECTED venue cannot be
    * seated — the cursor ate its window, its verified hours refuse — the
    * scheduler tries these in order rather than dropping the intent. The
@@ -296,6 +619,13 @@ export interface ComposeInput {
    * have offered. Venues chosen for other intents are never stolen.
    */
   alternates?: Map<string, string[]>;
+  /**
+   * Seat at the earliest legal minute instead of scoring the objective.
+   * The Session-11 A/B seam ONLY: it reproduces the pre-XXX-35 composer
+   * on identical inputs so the seated-time histograms cost no generations.
+   * Production never sets it.
+   */
+  seatingLegacyEarliest?: boolean;
 }
 
 export interface ComposedDay {
@@ -310,19 +640,27 @@ export interface ComposedDay {
    * durations (mapless use) with attribution.
    */
   legs: ComposedLeg[];
+  /**
+   * Free time the arc placed, with a location and a reason. Not slots:
+   * `slots.place_id` is NOT NULL and free time is not a stop, so making
+   * it one would mean a migration to represent something that isn't.
+   */
+  openPeriods: OpenPeriod[];
 }
 
 /**
- * Deterministic greedy scheduler. Anchors are immovable; concierge slots
- * flow around them in time order, each placed at the earliest legal
- * minute after travel, snapped to a 5-minute grid (snapping only ever
- * adds slack — buffers price friction, the grid is cosmetic).
+ * Deterministic scheduler. Anchors are immovable; concierge slots flow
+ * around them in time order, each placed at the minute the seat objective
+ * likes best rather than the first one that is legal, snapped to a
+ * 5-minute grid.
  */
 export function composeDay(input: ComposeInput): ComposedDay {
   const { request, skeleton, selections, candidatesById, travel } = input;
   const weekday = weekdayOf(request.date);
   const params = GRAMMAR_PARAMS;
+  const seating = COMPOSE_PARAMS.seating;
   const chosen = new Map(selections.map((s) => [s.intentId, s.placeId]));
+  const exposure = input.exposure ?? null;
 
   interface Item {
     kind: "anchor" | "intent";
@@ -348,28 +686,128 @@ export function composeDay(input: ComposeInput): ComposedDay {
   const places: Record<string, GrammarPlace> = {};
   const anchorBaseline: Record<string, AnchorBaseline> = {};
   const unfilled: string[] = [];
+  const openPeriods: OpenPeriod[] = [];
   let cursor = skeleton.daySpan.start;
   let prevCoords: LatLng | null = request.lodging ?? null;
+  let prevNeighborhood: string | null = null;
   let anchorCount = 0;
+
+  const openAfter = new Map<string, OpenIntervalPlan>();
+  for (const open of skeleton.opens) {
+    if (open.afterIntentId !== null) openAfter.set(open.afterIntentId, open);
+  }
+  /**
+   * Free time whose start is fixed (the cursor was moved for it) but whose
+   * end is not known until the next stop seats. Resolved into an
+   * `OpenPeriod` there, or dropped if nothing follows — an open period with
+   * nothing after it is just the day ending.
+   */
+  let pendingOpen: {
+    id: string;
+    start: number;
+    end: number;
+    reason: OpenPeriod["reason"];
+  } | null = null;
+
+  /**
+   * The chosen mode for a leg, and the exposure swap if one happened.
+   *
+   * A walk over its weather cap is swapped for the first sheltered mode
+   * the travel chain can actually PRICE. An unpriceable swap would be a
+   * guess dressed up as care, so the walk stands and the leg-exposure
+   * rule speaks instead.
+   */
+  const chooseMode = (
+    from: LatLng,
+    to: LatLng,
+    km: number,
+    departureLocal: string,
+  ): {
+    mode: TransportMode;
+    swap: ComposedLeg["exposureSwap"];
+  } => {
+    const base = modeFor(km, request.transport);
+    if (exposure === null) return { mode: base, swap: null };
+    if (base !== "walk" && base !== "cycle") return { mode: base, swap: null };
+    const reading = exposureAt(exposure, departureLocal);
+    if (reading === null) return { mode: base, swap: null };
+    const estimate = travel.estimate({
+      origin: from,
+      destination: to,
+      mode: base,
+      departureLocal,
+    });
+    if (estimate === null) return { mode: base, swap: null };
+    const { capMinutes, drivers } = walkCapMinutes(reading, params.exposure);
+    if (Math.ceil(estimate.minutes) <= capMinutes) {
+      return { mode: base, swap: null };
+    }
+    for (const mode of SHELTERED_MODES) {
+      if (!request.transport.includes(mode)) continue;
+      const alternative = travel.estimate({
+        origin: from,
+        destination: to,
+        mode,
+        departureLocal,
+      });
+      if (alternative === null) continue;
+      return {
+        mode,
+        swap: {
+          fromMode: base,
+          toMode: mode,
+          exposedMinutes: Math.ceil(estimate.minutes),
+          capMinutes,
+          apparentTempC: reading.apparentTempC,
+          drivers,
+        },
+      };
+    }
+    return { mode: base, swap: null };
+  };
 
   /**
    * The priced leg between two points, or null when there is nothing to
    * price (same spot, missing coordinates) or no estimate is obtainable.
    * null is honest absence and costs zero minutes — never a guessed number.
    */
-  const travelLeg = (
+  interface PricedLeg {
+    minutes: number;
+    mode: TransportMode;
+    source: string;
+    tier: 1 | 2 | 3;
+    exposureSwap: ComposedLeg["exposureSwap"];
+  }
+  /**
+   * Memoized per (from, to, departure minute). The seating objective, the
+   * slot's `arriveBy` and the recorded leg all want the same answer, and
+   * an exposure-aware mode choice prices up to three modes to produce it —
+   * asking three times would triple that for no new information.
+   */
+  const legCache = new Map<string, PricedLeg | null>();
+  const priceLeg = (
     from: LatLng | null,
     to: LatLng | null,
-  ): { minutes: number; mode: TransportMode; source: string; tier: 1 | 2 | 3 } | null => {
+  ): PricedLeg | null => {
     if (from === null || to === null) return null;
+    const key = `${from.lat},${from.lng}|${to.lat},${to.lng}|${cursor}`;
+    const cached = legCache.get(key);
+    if (cached !== undefined) return cached;
+    const priced = computeLeg(from, to);
+    legCache.set(key, priced);
+    return priced;
+  };
+
+  const computeLeg = (from: LatLng, to: LatLng): PricedLeg | null => {
     const km = haversineKm(from, to);
     if (km <= params.travel.negligibleDistanceKm) return null;
-    const mode = modeFor(km, request.transport);
+    const departureLocal = minutesToTime(Math.min(cursor, 1439));
+    const { mode, swap } = chooseMode(from, to, km, departureLocal);
     const estimate = travel.estimate({
       origin: from,
       destination: to,
       mode,
-      departureLocal: minutesToTime(Math.min(cursor, 1439)),
+      departureLocal,
     });
     if (estimate === null) return null;
     return {
@@ -377,16 +815,22 @@ export function composeDay(input: ComposeInput): ComposedDay {
       mode,
       source: estimate.provenance.source,
       tier: estimate.provenance.tier,
+      exposureSwap: swap,
     };
   };
 
   const travelMinutes = (from: LatLng | null, to: LatLng | null): number =>
-    travelLeg(from, to)?.minutes ?? 0;
+    priceLeg(from, to)?.minutes ?? 0;
+
+  /** The mode a slot records as its arrival, exposure-aware. */
+  const arriveByFor = (from: LatLng | null, to: LatLng | null): TransportMode =>
+    priceLeg(from, to)?.mode ??
+    modeFor(from && to ? haversineKm(from, to) : 0, request.transport);
 
   const legs: ComposedLeg[] = [];
   let prevPlaceId: string | null = null;
   const recordLeg = (toCoords: LatLng | null, toPlaceId: string): void => {
-    const leg = prevPlaceId === null ? null : travelLeg(prevCoords, toCoords);
+    const leg = prevPlaceId === null ? null : priceLeg(prevCoords, toCoords);
     if (leg !== null && prevPlaceId !== null) {
       legs.push({ fromPlaceId: prevPlaceId, toPlaceId, ...leg });
     }
@@ -446,6 +890,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
         },
       };
       const slotId = `s-anchor-${anchorCount}`;
+      const arriveBy = arriveByFor(prevCoords, anchor.coords);
       recordLeg(anchor.coords, placeId);
       slots.push({
         id: slotId,
@@ -454,10 +899,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
         startTime: anchor.startTime,
         endTime: anchor.endTime,
         placeId,
-        arriveBy: modeFor(
-          prevCoords ? haversineKm(prevCoords, anchor.coords) : 0,
-          request.transport,
-        ),
+        arriveBy,
       });
       anchorBaseline[slotId] = {
         startTime: anchor.startTime,
@@ -467,15 +909,22 @@ export function composeDay(input: ComposeInput): ComposedDay {
       cursor =
         end + (anchor.highCrowd ? params.anchors.crowdEgressBufferMinutes : 0);
       prevCoords = anchor.coords;
+      prevNeighborhood = null;
       continue;
     }
 
     const intent = item.intent!;
 
-    /** Where a candidate could sit given the cursor, or null. */
+    /**
+     * Where a candidate could sit, and how good that seat is.
+     *
+     * The legal start minutes are enumerated on the objective's grid and
+     * scored; the old composer took the first one. `null` = it cannot sit
+     * at all.
+     */
     const trySeat = (
       candidate: Candidate,
-    ): { start: number; dwell: number; travel: number } | null => {
+    ): { start: number; dwell: number; travel: number; cost: number } | null => {
       const place = candidate.place;
       const t = travelMinutes(prevCoords, place.coords);
       const arrival = cursor + t;
@@ -483,10 +932,14 @@ export function composeDay(input: ComposeInput): ComposedDay {
       if (place.tags.outdoor && input.outdoorLatestEnd !== null) {
         window = { ...window, end: Math.min(window.end, input.outdoorLatestEnd) };
       }
-      let dwell =
+      const wanted =
         place.category?.status === "present"
           ? clampDwell(intent.dwellMinutes, params.dwellMinutes[place.category.value])
           : intent.dwellMinutes;
+      const minDwell =
+        place.category?.status === "present"
+          ? params.dwellMinutes[place.category.value].min
+          : 30;
       const earliest = snap5(Math.max(arrival, window.start));
       const latestEnd = Math.min(window.end, skeleton.daySpan.end);
       // Hours unknown covers BOTH never-fetched and fetched-but-absent
@@ -494,28 +947,53 @@ export function composeDay(input: ComposeInput): ComposedDay {
       // window alone and the validator reports it — treating absence as
       // unschedulable was the first live run's silent-thin-day bug.
       const hoursKnown = openIntervalsOn(place.hours, weekday) !== null;
-      let start = hoursKnown
-        ? earliestVisitStart(place.hours, weekday, earliest, latestEnd, dwell)
-        : earliest + dwell <= latestEnd
-          ? earliest
-          : null;
-      if (start === null) {
-        // The shortest worthwhile visit before giving up.
-        const minDwell =
-          place.category?.status === "present"
-            ? params.dwellMinutes[place.category.value].min
-            : 30;
-        start = hoursKnown
-          ? earliestVisitStart(place.hours, weekday, earliest, latestEnd, minDwell)
-          : earliest + minDwell <= latestEnd
-            ? earliest
-            : null;
-        dwell = minDwell;
+
+      /** Legal start minutes on the grid, in ascending order. */
+      const legalStarts = (dwell: number): number[] => {
+        const out: number[] = [];
+        let from = earliest;
+        for (let guard = 0; guard < 288; guard += 1) {
+          const next = hoursKnown
+            ? earliestVisitStart(place.hours, weekday, from, latestEnd, dwell)
+            : from + dwell <= latestEnd
+              ? from
+              : null;
+          if (next === null) break;
+          const snapped = snap5(next);
+          if (snapped + dwell > latestEnd) break;
+          if (out[out.length - 1] !== snapped) out.push(snapped);
+          from = snapped + seating.gridMinutes;
+          if (from + dwell > latestEnd) break;
+        }
+        return out;
+      };
+
+      for (const dwell of wanted === minDwell ? [wanted] : [wanted, minDwell]) {
+        const starts = legalStarts(dwell);
+        if (starts.length === 0) continue;
+        if (input.seatingLegacyEarliest === true) {
+          return { start: starts[0], dwell, travel: t, cost: 0 };
+        }
+        let best = starts[0];
+        let bestCost = Number.POSITIVE_INFINITY;
+        for (const start of starts) {
+          const cost = seatCost({
+            start,
+            dwell,
+            arrival,
+            window,
+            latestEnd,
+          });
+          // Strictly less: ties go to the earlier minute, so the
+          // objective stays deterministic.
+          if (cost < bestCost) {
+            bestCost = cost;
+            best = start;
+          }
+        }
+        return { start: best, dwell, travel: t, cost: bestCost };
       }
-      if (start === null) return null;
-      start = snap5(start);
-      if (start + dwell > latestEnd) return null;
-      return { start, dwell, travel: t };
+      return null;
     };
 
     // The selected venue first; the menu's alternates only if it cannot
@@ -535,7 +1013,26 @@ export function composeDay(input: ComposeInput): ComposedDay {
       const seat = trySeat(candidate);
       if (seat === null) continue;
       const place = candidate.place;
+      // Free time the arc placed BEFORE this stop is now a real interval:
+      // the cursor was advanced deliberately, so the gap is a choice with
+      // a location rather than whatever the arithmetic left over.
+      if (
+        pendingOpen !== null &&
+        pendingOpen.start < seat.start &&
+        prevNeighborhood !== null
+      ) {
+        openPeriods.push({
+          id: pendingOpen.id,
+          startTime: minutesToTime(pendingOpen.start),
+          endTime: minutesToTime(Math.min(seat.start, pendingOpen.end)),
+          locality: prevNeighborhood,
+          reason: pendingOpen.reason,
+          placed: true,
+        });
+      }
+      pendingOpen = null;
       places[place.id] = place;
+      const arriveBy = arriveByFor(prevCoords, place.coords);
       recordLeg(place.coords, place.id);
       slots.push({
         id: `s-${intent.id}`,
@@ -544,18 +1041,77 @@ export function composeDay(input: ComposeInput): ComposedDay {
         startTime: minutesToTime(seat.start),
         endTime: minutesToTime(seat.start + seat.dwell),
         placeId: place.id,
-        arriveBy: modeFor(
-          prevCoords && place.coords ? haversineKm(prevCoords, place.coords) : 0,
-          request.transport,
-        ),
+        arriveBy,
+        ...(intent.role === undefined ? {} : { role: intent.role }),
       });
       cursor = seat.start + seat.dwell;
       prevCoords = place.coords;
+      prevNeighborhood = place.neighborhood === "" ? null : place.neighborhood;
       seated = true;
+
+      // Reserve the arc's free time by moving the cursor: the next stop is
+      // pushed later ON PURPOSE. This is what "placed, not residue" means.
+      const open = openAfter.get(intent.id);
+      if (open !== undefined && open.minutes > 0) {
+        const anchorSeated = slots.some((s) => s.role === "anchor");
+        pendingOpen = {
+          id: open.id,
+          start: cursor,
+          end: cursor + open.minutes,
+          reason: anchorSeated ? "after the anchor" : "before the anchor",
+        };
+        cursor += open.minutes;
+      }
       break;
     }
     if (!seated) unfilled.push(intent.id);
   }
+
+  // --- name every gap the day actually has -------------------------------
+  //
+  // CP2 finding, and the fix for it. Reserved periods alone were not enough:
+  // only four of ten templates carry an `open` step, so days built from the
+  // other six still handed the founder an unexplained hole — the A/B measured
+  // 135 minutes of it, WORSE than the 133 they complained about. And their
+  // complaint was never that free time exists ("too much free time; that too
+  // in the middle of nowhere") — it was that it had no location and no
+  // reason. So any gap worth noticing becomes a located, named period.
+  // `placed: false` keeps it honest about which ones the arc chose.
+  const ordered = [...slots].sort(
+    (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime),
+  );
+  const anchorAt = ordered.findIndex((s) => s.role === "anchor");
+  for (let i = 1; i < ordered.length; i += 1) {
+    const gapStart = timeToMinutes(ordered[i - 1].endTime);
+    const gapEnd = timeToMinutes(ordered[i].startTime);
+    if (gapEnd - gapStart < OPEN_PERIOD_NOTICEABLE_MINUTES) continue;
+    if (
+      openPeriods.some(
+        (p) =>
+          timeToMinutes(p.startTime) < gapEnd &&
+          gapStart < timeToMinutes(p.endTime),
+      )
+    ) {
+      continue; // the arc already named this stretch
+    }
+    const locality = places[ordered[i - 1].placeId]?.neighborhood ?? "";
+    openPeriods.push({
+      id: `g${i}`,
+      startTime: minutesToTime(gapStart),
+      endTime: minutesToTime(gapEnd),
+      // An unlocatable gap is exactly the "middle of nowhere" complaint, so
+      // it says so rather than inventing a neighbourhood.
+      locality: locality === "" ? "no fixed place" : locality,
+      reason:
+        anchorAt >= 0 && i - 1 < anchorAt
+          ? "before the anchor"
+          : gapStart >= timeToMinutes("17:00")
+            ? "evening drift"
+            : "after the anchor",
+      placed: false,
+    });
+  }
+  openPeriods.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   const day: GrammarDay = {
     id: `gen-${request.date}`,
@@ -573,7 +1129,47 @@ export function composeDay(input: ComposeInput): ComposedDay {
       Object.keys(anchorBaseline).length > 0 ? anchorBaseline : null,
     unfilled,
     legs,
+    openPeriods,
   };
+}
+
+/**
+ * The seat-choice objective (XXX-35 §1.2, COMPOSE_PARAMS v1).
+ *
+ * Three terms, and the tension between the first two IS the design: the
+ * founder complained both that lunch sat on the window's opening edge AND
+ * that 2h13 was wasted mid-day. Centering alone fixes the first and causes
+ * the second, so the idle term prices waiting.
+ */
+export function seatCost(input: {
+  start: number;
+  dwell: number;
+  arrival: number;
+  window: Span;
+  latestEnd: number;
+}): number {
+  const p = COMPOSE_PARAMS.seating;
+  const { start, dwell, arrival, window } = input;
+  const windowCenter = (window.start + window.end) / 2;
+  const half = Math.max(1, (window.end - window.start) / 2);
+  const centerDeviation = Math.min(
+    1,
+    Math.abs(start + dwell / 2 - windowCenter) / half,
+  );
+  const idleBefore = Math.min(
+    1,
+    Math.max(0, start - arrival) / p.idleNormalizerMinutes,
+  );
+  const tailPressure = Math.min(
+    1,
+    Math.max(0, start + dwell - (input.latestEnd - p.tailReserveMinutes)) /
+      p.tailNormalizerMinutes,
+  );
+  return (
+    p.wCenter * centerDeviation +
+    p.wIdle * idleBefore +
+    p.wTail * tailPressure
+  );
 }
 
 function clampDwell(

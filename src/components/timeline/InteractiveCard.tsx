@@ -253,6 +253,7 @@ export function InteractiveCard({
           <SlotCard
             kind={slot.kind}
             origin={slot.origin}
+            role={slot.role}
             startTime={startTime}
             endTime={endTime}
             place={occupant}

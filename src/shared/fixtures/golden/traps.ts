@@ -12,7 +12,11 @@
  * midnight constraint.
  */
 
-import { MatrixTravelProvider } from "../../day-grammar/travel";
+import {
+  ChainTravelProvider,
+  HaversineStubProvider,
+  MatrixTravelProvider,
+} from "../../day-grammar/travel";
 import type {
   GrammarDay,
   GrammarPlace,
@@ -227,6 +231,24 @@ function corridorBacktrackTrap(): TrapFixture {
     travel: new MatrixTravelProvider(matrix),
   };
 }
+
+/**
+ * Golden day 3's rink→PATH hop, lengthened to 35 minutes on foot and
+ * otherwise the ordinary stub. Only the walk is overridden, so transit on
+ * the same pair still prices through the stub — which is what makes the
+ * over-cap trap a VIOLATION (an alternative exists) and its walk-only
+ * sibling an advisory.
+ */
+const LONG_WINTER_WALK: TravelTimeProvider = new ChainTravelProvider([
+  new MatrixTravelProvider({
+    [MatrixTravelProvider.key({
+      origin: at(43.6525, -79.3839), // Nathan Phillips Square rink
+      destination: at(43.6455, -79.3807), // the PATH
+      mode: "walk",
+    })]: { minutes: 35, provenance: { source: "stub_haversine", tier: TIERS.judgment } },
+  }),
+  new HaversineStubProvider(),
+]);
 
 export const TRAP_FIXTURES: readonly TrapFixture[] = [
   // --- the seven founder trap classes -------------------------------------
@@ -541,6 +563,7 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
       g.day.places.distillery.coords = null;
     },
   ),
+
   // --- Session 11 (XXX-35) -------------------------------------------------
   broken(
     goldenDay3,
@@ -586,6 +609,53 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
         slot({ id: "s7", place: "pub", from: "20:45", to: "21:00", by: "walk" }),
       );
       g.day.dayEnd = "21:30";
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-over-cap",
+      title: "A 35-minute walk at -8 °C with a subway available",
+      expect: "exposure.leg-over-cap",
+      trapClass: null,
+      why: "The founder's own words: 'Winter days with 30+ mins of walking is illogical.' Before Session 11 no rule read a travel leg at any temperature, so this passed the whole grammar. Transit is available and priceable, so it is a violation rather than an advisory — the day is fixable.",
+      travel: LONG_WINTER_WALK,
+    },
+    (g) => {
+      // Two edits, and both are needed. The provider lengthens the WALK
+      // (moving the venue instead would change hours reachability and
+      // feasibility too, and a trap that breaks two things names neither);
+      // the retiming keeps the arrival legal, so the ONLY finding in the
+      // frame is the exposure.
+      g.day.slots[4].startTime = "16:25";
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-unavoidable",
+      title: "The same cold walk with nothing else to take",
+      expect: "exposure.leg-unavoidable",
+      trapClass: null,
+      why: "Conditional severity, and it is what keeps regeneration terminating: rejecting a day for an exposure it cannot fix would loop forever. Walk-only trip, same leg — advisory, and the traveller is told to dress for it.",
+      travel: LONG_WINTER_WALK,
+    },
+    (g) => {
+      g.day.slots[4].startTime = "16:25";
+      g.transport = ["walk"];
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-unknown",
+      title: "Winter walking legs on a day beyond the forecast horizon",
+      expect: "exposure.unknown",
+      trapClass: null,
+      why: "Absence must not pass as approval. With no weather row the cap has no input and the rule CANNOT fire, so it says the legs went unchecked — the same failure shape as Session 1's HEAD-based health check, which answered 'healthy' by not looking.",
+    },
+    (g) => {
+      g.windows = null;
     },
   ),
   broken(

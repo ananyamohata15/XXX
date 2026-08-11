@@ -26,6 +26,18 @@ export function TravelSegment({
           Travel not computed
         </span>
       )}
+      {/* Why this is not a walk (XXX-35). Deterministic: the temperature
+          shown is the one the cap function read, not a sentence an LLM
+          wrote about the weather. A mode swap the traveller cannot see is
+          care they never receive. */}
+      {leg?.exposureSwap && (
+        <span className="max-w-[15rem] py-0.5 text-center text-[11px] text-zinc-500 dark:text-zinc-400">
+          {MODE_LABEL[leg.mode]} rather than a{" "}
+          {formatDuration(leg.exposureSwap.exposedMinutes)}{" "}
+          {MODE_LABEL[leg.exposureSwap.fromMode].toLowerCase()} — it&apos;s{" "}
+          {Math.round(leg.exposureSwap.apparentTempC)}° out.
+        </span>
+      )}
       {freeMinutes > 0 && (
         <span className="py-1 text-[11px] font-medium uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-500">
           Free time · {formatDuration(freeMinutes)}

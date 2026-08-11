@@ -48,6 +48,7 @@ import {
   defaultMealPattern,
   modeFor,
   type ComposedLeg,
+  type ComposeInput,
   type Skeleton,
 } from "./compose";
 import { applyFounderGroundtruth } from "./groundtruth";
@@ -98,6 +99,17 @@ export interface EngineDeps {
    * callers must never set it — the trace records when it is used.
    */
   examEnvironmentOverride?: Environment;
+  /**
+   * Exam seam ONLY (XXX-35): receives the exact inputs `composeDay` was
+   * called with, once per validation pass.
+   *
+   * It exists so the seated-time A/B costs nothing. `composeDay` is pure
+   * given these, so the exam can recompose the SAME day with
+   * `seatingLegacyEarliest` and compare — a true before/after on identical
+   * candidates, selections and travel, with no second generation and no
+   * second Details call. Production never sets it.
+   */
+  onComposeInputs?: (input: ComposeInput) => void;
   /**
    * Written into the trace AT START and carried into the end summary, so
    * a caller's own tags survive a crash. The tasting room tags its
@@ -400,7 +412,7 @@ export async function generateDay(
         menus.map((m) => [m.intent.id, m.options.map((o) => o.place.id)]),
       );
       const tCompose = now().getTime();
-      let composed = composeDay({
+      const composeInput: ComposeInput = {
         request,
         skeleton,
         selections,
@@ -408,8 +420,11 @@ export async function generateDay(
         travel: travelProvider,
         outdoorLatestEnd: dusk,
         slackMinutes: repair?.slackMinutes ?? 0,
+        exposure: environment.windows?.hourlyExposure ?? null,
         alternates,
-      });
+      };
+      deps.onComposeInputs?.(composeInput);
+      let composed = composeDay(composeInput);
 
       // Phase B: fetch the day's transit legs once, request-scoped, then
       // recompose against real numbers (doc 003: never stored).
@@ -434,16 +449,13 @@ export async function generateDay(
               metadata: { answered: call.estimate !== null },
             });
           }
-          composed = composeDay({
-            request,
-            skeleton,
-            selections,
-            candidatesById,
+          // Same inputs, real transit numbers now in the provider.
+          const withTransit: ComposeInput = {
+            ...composeInput,
             travel: travelProvider,
-            outdoorLatestEnd: dusk,
-            slackMinutes: repair?.slackMinutes ?? 0,
-            alternates,
-          });
+          };
+          deps.onComposeInputs?.(withTransit);
+          composed = composeDay(withTransit);
         }
         transitFetched = true;
       }
@@ -472,6 +484,7 @@ export async function generateDay(
         lodging: request.lodging ?? null,
         anchorBaseline: composed.anchorBaseline,
         travel: travelProvider,
+        transport: request.transport,
       });
       const tValidate = now().getTime();
       const findings = validateDay(composed.day, context);
@@ -507,12 +520,21 @@ export async function generateDay(
           metadata: {
             ...deps.traceMetadata,
             ...traceSummary(stats, "ok", request, findings.length),
+            // The arc is auditable after the fact: a later session can ask
+            // which shape produced a day the founder rejected.
+            arc_template_id: skeleton.templateId,
+            elected_anchor: skeleton.electedAnchor,
+            open_periods: composed.openPeriods.length,
+            exposure_swaps: legs.filter((l) => l.exposureSwap !== null).length,
           },
         });
         return {
           status: "ok",
           day: composed.day,
           travel: legs,
+          openPeriods: composed.openPeriods,
+          electedAnchor: skeleton.electedAnchor,
+          arcTemplateId: skeleton.templateId,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,

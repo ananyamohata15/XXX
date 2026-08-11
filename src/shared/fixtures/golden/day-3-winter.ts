@@ -192,4 +192,13 @@ export const goldenDay3: GoldenDay = {
   budgetBand: { min: 0, max: 180, currency: "CAD" },
   lodging: null,
   anchorBaseline: null,
+  /**
+   * Stated in Session 11 so the leg-exposure rule can actually judge this
+   * day: the founder's winter day rides the TTC between neighbourhoods and
+   * walks the short hops (three slots carry `by: "transit"` already). With
+   * transport unstated the rule could not claim a sheltered alternative
+   * existed and would only ever advise — which would have let this
+   * fixture pass the new rule without exercising it.
+   */
+  transport: ["walk", "transit"],
 };

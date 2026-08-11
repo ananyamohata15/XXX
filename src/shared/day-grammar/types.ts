@@ -245,6 +245,9 @@ export interface TravelTimeProvider {
 
 import type { GrammarParams } from "./params";
 
+/** The exposure band table, named so the cap function can take just it. */
+export type GrammarParamsExposure = GrammarParams["exposure"];
+
 /**
  * Everything the validator needs that is not the day itself. Every
  * nullable field is a thing we may genuinely not know; each has a named
@@ -261,6 +264,14 @@ export interface GrammarContext {
   budgetBand: PriceRange | null;
   /** Trip circumstance the schema does not carry yet (trap class 5). */
   lodging: LatLng | null;
+  /**
+   * Modes this traveller will actually use (Trip owns it — constraint 3).
+   * The leg-exposure rule needs it to know whether an alternative to a
+   * too-cold walk EXISTS: `null` means we do not know, and a rule that
+   * does not know cannot claim one, so it downgrades to an advisory
+   * rather than rejecting a day over a guess.
+   */
+  transport: TransportMode[] | null;
   /** null = no baseline supplied; anchor-mutation checking is skipped. */
   anchorBaseline: Record<string, AnchorBaseline> | null;
   travel: TravelTimeProvider;
@@ -295,6 +306,10 @@ export const RULE_IDS = [
   "weather.outdoor-in-adverse-window",
   "weather.outdoor-unavoidable-adverse",
   "weather.unknown",
+  // leg exposure — the first rules that read a travel leg, not a slot
+  "exposure.leg-over-cap",
+  "exposure.leg-unavoidable",
+  "exposure.unknown",
   // travel
   "travel.infeasible",
   "travel.tight-transfer",

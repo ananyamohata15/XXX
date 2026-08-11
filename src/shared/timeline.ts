@@ -128,6 +128,19 @@ export const travelLegSchema = z.strictObject({
   mode: z.enum(TRANSPORT_MODES),
   minutes: z.number().int().positive(),
   /**
+   * Why this is not a walk (XXX-35 item 1). Present only when the composer
+   * moved the traveller off an over-cap walk, and it carries the
+   * temperature the cap function actually read — so the pill can say "it's
+   * -8 out" without an LLM inventing the number.
+   */
+  exposureSwap: z
+    .strictObject({
+      fromMode: z.enum(TRANSPORT_MODES),
+      exposedMinutes: z.number().int().positive(),
+      apparentTempC: z.number(),
+    })
+    .optional(),
+  /**
    * Per-leg provenance. Optional because the hand-authored fixture
    * carries one provenance for the whole matrix (travelProvenance); a
    * live day's legs come from different providers — stored matrix, live

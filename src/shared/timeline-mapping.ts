@@ -46,6 +46,12 @@ export interface MappedLeg {
   mode: TransportMode;
   source: string;
   tier: Tier;
+  /** Set when the composer took the traveller off an over-cap walk. */
+  exposureSwap?: {
+    fromMode: TransportMode;
+    exposedMinutes: number;
+    apparentTempC: number;
+  } | null;
 }
 
 export interface MappingInput {
@@ -151,6 +157,15 @@ export function toTimelineDay(input: MappingInput): TimelineDay {
       minutes: leg.minutes,
       source: leg.source,
       tier: leg.tier,
+      ...(leg.exposureSwap
+        ? {
+            exposureSwap: {
+              fromMode: leg.exposureSwap.fromMode,
+              exposedMinutes: leg.exposureSwap.exposedMinutes,
+              apparentTempC: leg.exposureSwap.apparentTempC,
+            },
+          }
+        : {}),
     };
     travel[travelKey(leg.fromPlaceId, leg.toPlaceId)] = view;
   }

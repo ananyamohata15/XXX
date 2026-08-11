@@ -21,7 +21,7 @@ import {
   type SchedulingWindows,
 } from "@/shared/scheduling-windows";
 import type { PriceRange } from "@/shared/timeline";
-import type { City } from "@/shared/vocabulary";
+import type { City, TransportMode } from "@/shared/vocabulary";
 import { computeDaylight, type DaylightFact } from "../weather/ephemeris";
 import { getWeatherDay } from "../weather/repo";
 
@@ -63,6 +63,8 @@ export function buildGrammarContext(options: {
   lodging: GrammarContext["lodging"];
   anchorBaseline: Record<string, AnchorBaseline> | null;
   travel: TravelTimeProvider;
+  /** Trip circumstance — the leg-exposure rule needs it (XXX-35). */
+  transport: TransportMode[];
 }): GrammarContext {
   return {
     daylight: options.environment.daylight,
@@ -73,6 +75,7 @@ export function buildGrammarContext(options: {
     lodging: options.lodging ?? null,
     anchorBaseline: options.anchorBaseline,
     travel: options.travel,
+    transport: options.transport,
     params: GRAMMAR_PARAMS,
   };
 }

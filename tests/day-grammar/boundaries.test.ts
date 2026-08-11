@@ -71,6 +71,7 @@ function ctxOf(over: Partial<GrammarContext> = {}): GrammarContext {
     lodging: at(43.6532, -79.3832),
     anchorBaseline: null,
     travel: new HaversineStubProvider(),
+    transport: ["walk", "transit"],
     params: GRAMMAR_PARAMS,
     ...over,
   };

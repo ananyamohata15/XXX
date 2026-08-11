@@ -262,6 +262,76 @@ export const GRAMMAR_PARAMS = {
    */
   route: { detourThresholdMinutes: 20 },
 
+  /**
+   * Leg exposure (XXX-35 item 1) — the first rules in this file that read
+   * a travel LEG rather than a slot. Every weather and daylight rule
+   * before this one checked slot spans, so a 35-minute walk at -8 °C
+   * between two indoor venues passed everything. It is the founder's
+   * "Winter days with 30+ mins of walking is illogical", as a number.
+   *
+   * These bands are the GRAMMAR's judgment, deliberately NOT
+   * WINDOW_PARAMS': that file classifies an HOUR ("is this a bad hour to
+   * stand outdoors"), this one bounds a WALK. One number cannot answer
+   * two questions. `WINDOW_PARAMS.coldApparentC` (-12) is untouched by
+   * this session's ruling — see SESSION_NOTES §1.4 for the blast radius
+   * if it ever moves.
+   *
+   * All Tier 3, all founder-calibrated at CP3 from felt experience. The
+   * -2 °C row is the one that answers the recorded complaint: -8 °C lands
+   * in it, capping the walk at 20 minutes.
+   */
+  exposure: {
+    /** A pleasant day has no effective cap; 45 minutes is a long walk anyway. */
+    baseWalkCapMinutes: 45,
+    /**
+     * RECALIBRATED by golden day-3 (Session 11 Step 2), and the correction
+     * is worth keeping: the caps ruled at CP1 were 10 min at ≤-10 °C and
+     * 20 min at ≤-2 °C, and the ≤-10 row **flagged the founder's own
+     * winter day** — Nathan Phillips Square rink to the PATH is a
+     * ~16-minute walk at -10 °C apparent, authored and verified by the
+     * founder as a good day.
+     *
+     * So the fixture set the floor and the corpus set the ceiling:
+     *   16 min at -10 °C must PASS  (golden day-3, founder-authored)
+     *   35 min at  -8 °C must FAIL  ("Winter days with 30+ mins of
+     *                                 walking is illogical")
+     * 20 / 25 satisfies both with headroom at each end.
+     */
+    cold: {
+      severeApparentC: -10,
+      severeCapMinutes: 20,
+      briskApparentC: -2,
+      briskCapMinutes: 25,
+    },
+    /**
+     * UNCALIBRATED by any founder-authored day — Toronto's golden set has
+     * no 32 °C afternoon in it. These are the CP1 numbers, and they are
+     * the first thing Delhi will correct.
+     */
+    heat: {
+      severeApparentC: 32,
+      severeCapMinutes: 10,
+      warmApparentC: 28,
+      warmCapMinutes: 20,
+    },
+    /**
+     * Delhi-ready from day one: AQI binds walks, not just outdoor slots.
+     * Also uncalibrated — Toronto AQI never approaches these bands, so no
+     * fixture exercises them and no founder has felt them.
+     */
+    air: {
+      unhealthyUsAqi: 100,
+      unhealthyCapMinutes: 15,
+      severeUsAqi: 150,
+      severeCapMinutes: 8,
+    },
+    precipitation: {
+      probPct: 50,
+      mm: 0.5,
+      capMinutes: 15,
+    },
+  },
+
   budget: {
     /**
      * Toronto transit, founder-confirmed and recorded in XXX-5 comment
