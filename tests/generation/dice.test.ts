@@ -28,6 +28,7 @@ import {
   type Persona,
 } from "@/shared/persona";
 import { PLACE_CATEGORIES, type PlaceCategory } from "@/shared/vocabulary";
+import { collapseByPlace } from "@/server/generation/score";
 
 const SEEDS = [0, 1, 42, 7, 1234, 99, 2026, 31337];
 const personas = Object.entries(GOLDEN_PERSONAS);
@@ -284,5 +285,47 @@ describe("the funnel rule: a diced order survives a downstream filter", () => {
         expect(positions).toEqual([...positions].sort((a, b) => a - b));
       }
     }
+  });
+});
+
+describe("collapseByPlace — a place competes as its BEST-fitting category", () => {
+  it("keeps the highest-scoring variant, not the last one", () => {
+    // The regression this replaces: `new Map(scored.map(...))` over a
+    // score-DESCENDING list is last-wins, which handed every multi-category
+    // place to its worst-fitting category. Brazen Head Irish Pub entered
+    // composition as a bar (0.560) rather than a restaurant (0.722), and was
+    // therefore unreachable by any meal.
+    const at = (id: string, category: PlaceCategory, score: number) =>
+      ({
+        place: { id, name: id, neighborhood: "z", coords: { lat: 0, lng: 0 }, tags: {} },
+        category,
+        googlePlaceId: null,
+        rating: null,
+        userRatingCount: null,
+        detailsFetched: false,
+        score,
+      }) as unknown as Parameters<typeof collapseByPlace>[0][number];
+
+    const scored = [
+      at("brazen-head", "restaurants", 0.722),
+      at("solo", "parks", 0.5),
+      at("brazen-head", "nightlife_bars", 0.56),
+    ];
+    const out = collapseByPlace(scored);
+    expect(out.length).toBe(2);
+    expect(out.find((c) => c.place.id === "brazen-head")!.category).toBe(
+      "restaurants",
+    );
+  });
+
+  it("is order-independent — the rule is the score, not the position", () => {
+    const at = (category: PlaceCategory, score: number) =>
+      ({ place: { id: "p" }, category, score }) as unknown as Parameters<
+        typeof collapseByPlace
+      >[0][number];
+    const forward = collapseByPlace([at("cafes", 0.2), at("markets", 0.9)]);
+    const backward = collapseByPlace([at("markets", 0.9), at("cafes", 0.2)]);
+    expect(forward[0].category).toBe("markets");
+    expect(backward[0].category).toBe("markets");
   });
 });

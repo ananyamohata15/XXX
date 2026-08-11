@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { buildSkeleton, composeDay } from "@/server/generation/compose";
 import { buildMenus } from "@/server/generation/engine";
 import { hardFilter } from "@/server/generation/filters";
@@ -7,7 +8,7 @@ import {
   retrieveCandidates,
   zonesFor,
 } from "@/server/generation/retrieve";
-import { scoreAll } from "@/server/generation/score";
+import { collapseByPlace, scoreAll } from "@/server/generation/score";
 import { DeterministicSelector } from "@/server/generation/select";
 import type { Candidate, GenerationRequest, Selection } from "@/server/generation/types";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
   const roleSeq = new Map<string, string[]>();
   const catSeq = new Map<string, string[]>();
   const venues = new Map<string, Set<string>>();
+  const templateHasClose = new Map<string, boolean>();
 
   for (const key of keys) {
     const persona = GOLDEN_PERSONAS[key];
@@ -109,14 +111,19 @@ async function main(): Promise<void> {
     // for a meal and then composed with the same place's `nightlife_bars`
     // variant. A bar seated as a meal — Session 11's symptom exactly.
     //
-    // So: collapse first (same rule, same place in the order), then filter,
-    // then re-score, then build menus over the FULL re-scored pool — which is
-    // what `engine.ts:431` passes, not the shortlist. `pickShortlist` governs
-    // only which candidates earn paid Details calls, and offline there are
-    // none.
-    const preById = new Map(pool.map((c: Candidate) => [c.place.id, c]));
+    // So the engine's order is mirrored step for step (engine.ts:287-397):
+    // score, collapse, hard-filter, re-score, menus over the FULL re-scored
+    // pool — which is what `engine.ts:431` passes, NOT the shortlist
+    // (`pickShortlist` governs only which candidates earn paid Details calls,
+    // and offline there are none).
+    //
+    // The SEQUENCE is as load-bearing as the functions. Collapse must follow
+    // scoring, because `collapseByPlace` keeps the best-SCORING category and
+    // scores do not exist before `scoreAll`. Collapsing first picks a
+    // different survivor, and the offline day stops being the live day.
+    const prescored = scoreAll(pool, persona, request.budgetBand, seed);
     const { kept } = hardFilter(
-      [...preById.values()],
+      collapseByPlace(prescored),
       date,
       skeleton.daySpan,
       (c) => GRAMMAR_PARAMS.dwellMinutes[c.category].min,
@@ -161,6 +168,12 @@ async function main(): Promise<void> {
       ),
     );
     venues.set(key, new Set(composed.day.slots.map((sl) => sl.placeId)));
+    templateHasClose.set(
+      key,
+      (ARC_TEMPLATES.find((t) => t.id === skeleton.templateId)?.steps ?? []).includes(
+        "close",
+      ),
+    );
 
     const anchorIntent = skeleton.intents.find((i) => i.role === "anchor");
     const anchorSlot = composed.day.slots.find((s) => s.role === "anchor");
@@ -241,8 +254,18 @@ async function main(): Promise<void> {
   );
   console.log(`  role-sequence [n=${roleN}]: mean=${(roleSum / roleN).toFixed(3)} (non-gating)`);
   console.log(`  venue overlap [n=${vN}]: mean=${(vSum / vN).toFixed(3)} max=${vMax.toFixed(2)}`);
-  const closes = keys.filter((k) => roleSeq.get(k)!.includes("close")).length;
-  console.log(`  closes present: ${closes}/${keys.length}`);
+  // Closes, RESTATED (Session 12 CP2 ruling 1): seated closes over the
+  // templates that HAVE a close step. Three templates — `moderate-d`,
+  // `packed-c`, `relaxed-d` — end on a meal by design, which was Session 11
+  // §7.3's own fix for the unrecorded `lastStep = "close"` invariant. Scoring
+  // those as a missing close measured the template table, not the composer.
+  const wanted = keys.filter((k) => templateHasClose.get(k) === true);
+  const closes = wanted.filter((k) => roleSeq.get(k)!.includes("close")).length;
+  const raw = keys.filter((k) => roleSeq.get(k)!.includes("close")).length;
+  console.log(
+    `  closes [restated: seated / templates WITH a close step]: ${closes}/${wanted.length}` +
+      ` → ${closes === wanted.length ? "PASS" : "MISS"}   (raw, for the record: ${raw}/${keys.length})`,
+  );
   console.log(`  role sequences:`);
   for (const k of keys) console.log(`    ${k.padEnd(17)}${roleSeq.get(k)!.join(">")}`);
   console.log(`  category sequences:`);

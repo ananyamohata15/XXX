@@ -64,12 +64,6 @@ export const COMPOSE_PARAMS = {
      * sets WHICH bucket — an icons persona never draws a corners zone.
      */
     zone: 0.3,
-    /**
-     * How much of the lens bucket a single day reaches. Below 1.0 so two
-     * personas sharing a lens draw different emphases; high enough that the
-     * bbox still covers a day's worth of walking.
-     */
-    zoneKeepFraction: 0.7,
   },
 
   seating: {

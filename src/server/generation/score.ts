@@ -128,6 +128,37 @@ export function scoreCandidate(
   return base + jitter;
 }
 
+/**
+ * One Candidate per place — the highest-scoring of its categories wins.
+ *
+ * `retrieveCandidates` emits one Candidate per (place, CATEGORY), because a
+ * place legitimately maps to several: Brazen Head Irish Pub is a real
+ * `restaurants` row AND a real `nightlife_bars` row. 79 Toronto places carry
+ * more than one, 45 of them straddling the food boundary. Composition needs
+ * exactly one answer to "what is this place", so the duplicates collapse —
+ * and WHICH one survives decides what role the place can ever play in a day.
+ *
+ * This used to be `new Map(scored.map(...))` at `engine.ts:292`. Because
+ * `scored` is score-DESCENDING, last-wins handed every multi-category place
+ * to its **worst**-fitting category: for a food-first persona, Brazen Head
+ * entered composition as a bar and was unreachable by any meal. Nothing was
+ * wrong with the facts — Session 11 filed this as the pool's facts
+ * disagreeing, and they do not. It was a collision rule nobody chose on
+ * purpose (Session 12 CP2 ruling 3).
+ *
+ * Highest-score-wins is the rule that means something: a place competes in
+ * the category it best fits THIS persona, which is what the score already
+ * encodes.
+ */
+export function collapseByPlace(scored: Candidate[]): Candidate[] {
+  const best = new Map<string, Candidate>();
+  for (const c of scored) {
+    const held = best.get(c.place.id);
+    if (held === undefined || c.score > held.score) best.set(c.place.id, c);
+  }
+  return [...best.values()];
+}
+
 export function scoreAll(
   candidates: Candidate[],
   persona: Persona,

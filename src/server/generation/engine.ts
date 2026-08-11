@@ -56,7 +56,7 @@ import { applyFounderGroundtruth } from "./groundtruth";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
-import { scoreAll } from "./score";
+import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE } from "./select";
 import type {
   Candidate,
@@ -289,7 +289,13 @@ export async function generateDay(
 
     // -- link-on-demand + request-time facts (in-memory only) --------------
     const tDetails = now().getTime();
-    const byId = new Map(scored.map((c) => [c.place.id, c]));
+    // One Candidate per place, its best-fitting category winning. See
+    // `collapseByPlace` — this line was `new Map(scored.map(...))`, which
+    // over a score-descending list handed every multi-category place to its
+    // WORST-fitting category (XXX-35, Session 12 CP2 ruling 3).
+    const byId = new Map(
+      collapseByPlace(scored).map((c) => [c.place.id, c] as const),
+    );
     await inBatches(shortlist, DETAILS_CONCURRENCY, async (candidate) => {
       let googlePlaceId = candidate.googlePlaceId;
       let minted = false;

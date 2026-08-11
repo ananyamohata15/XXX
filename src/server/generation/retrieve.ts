@@ -29,6 +29,13 @@ const PER_CATEGORY_CAP = 400;
 /** How far past a zone anchor's own radius a candidate may sit. */
 const ZONE_SLACK_KM = 1.0;
 
+/**
+ * The smallest zone set a day is still composed from. Below this the bbox
+ * stops holding enough venues to seat a full arc — found by losing a close
+ * (XXX-35, Session 12 CP2).
+ */
+const MIN_ZONES_FOR_A_DAY = 4;
+
 const ICON_ZONES = new Set([
   "downtown_core",
   "st_lawrence",
@@ -82,14 +89,21 @@ export function zonesFor(
 
   // Every zone in the bucket is equally on-lens, so this is a flat draw
   // rather than a weighted one — dressing it as weighted would be false
-  // precision. Keeping a majority of the bucket keeps the bbox wide enough
-  // for a day's walking; dropping the rest is what makes two personas
-  // sharing a lens search differently.
-  const keep = Math.max(
-    2,
-    Math.round(bucket.length * COMPOSE_PARAMS.dice.zoneKeepFraction),
-  );
-  if (keep >= bucket.length) return bucket;
+  // precision.
+  //
+  // Exactly ONE zone is dropped, and only from a bucket that can spare it.
+  // The first cut took a fraction of the bucket, which read fine against the
+  // 5-zone `icons` list and quietly broke `corners`: at 4 zones it dropped a
+  // quarter of the day's geography, and `day-4-budget` lost its close because
+  // the bars that could seat it lived in the dropped zone. Measured, not
+  // reasoned — restoring the full bucket restored the close.
+  //
+  // The trade is stated rather than hidden: a `corners` persona gets no zone
+  // variety at all. Its distinctiveness comes from the category dice and the
+  // pool-window rotation instead, and a day that cannot be composed is worth
+  // less than a day that searched the same four neighbourhoods as its twin.
+  if (bucket.length <= MIN_ZONES_FOR_A_DAY) return bucket;
+  const keep = bucket.length - 1;
   const drawn = weightedOrderBy(
     bucket,
     () => 0,
