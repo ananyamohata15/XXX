@@ -1,3 +1,834 @@
+# Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
+
+Branch: `session-11-composition-quality`. Status: **Step 2 complete and
+committed; Tier 2/3 exam HELD for the founder's explicit go, then CP3.**
+Scope: making LEGAL days GOOD. Five builds, all named by XXX-35 comment
+10299 (the revised premises of record): (1) skeleton/intent-sequence arc
+design, (2) seat-choice objective replacing earliest-legal-minute, (3) the
+food-cap predicate fix, (4) a leg-exposure rule family, (5) weather-horizon
+disclosure on the tasting page. Then the machine exam, then the founder
+re-review on their own phone against their own recorded complaints.
+
+Out of scope, explicitly: retrieval quotas (**withdrawn by evidence** —
+10299 item 4), XXX-31's pool quality signal, XXX-34's trust engine, E5 edit
+persistence, XXX-20 streaming, real auth (XXX-17), London/Delhi.
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### Prior-art reads (all done before any work)
+
+- **XXX-35 description** — read as HISTORY, per the session's own
+  instruction. Its four named items are superseded where 10299 speaks.
+- **XXX-35 comment 10299** — the truth of record. Item 1 leg-exposure
+  STANDS + weather-horizon disclosure added; item 2 RELOCATED from params
+  to the **seat-choice objective**; item 3 replaced by the **food-cap
+  predicate defect** (+ grazing's dead-code ruling); item 4 **WITHDRAWN**,
+  rhythm moves to skeleton/intent-sequence design.
+- **XXX-5 comment 10294** (distinctiveness, in force): accuracy is the
+  validator's job, DISTINCTIVENESS is the ranker's, and homogenization is
+  the #1 failure mode to design against. Point 4 is the one arc work can
+  break — "variety WITHIN a day and across a trip". Its measurable check
+  is the N-persona overlap matrix, thresholds set at E4 design time
+  (Session 9 set venue-overlap mean ≤0.35 / max ≤0.50).
+- **XXX-5 comment 10290** (meal patterns are patterns, daylight is a
+  scheduling fact, prep-kit notes are an output) — the arc must not
+  re-hardcode breakfast/lunch/dinner it spent Session 7 un-hardcoding.
+- **Session 10 trace-audit section** (SESSION_NOTES §Trace audit, both
+  days re-derived exactly, `pool_candidates` reproduced to the row) — the
+  evidence base for every premise above.
+- **Golden set v2.2** (`src/shared/fixtures/golden`): six founder days
+  that must validate clean + **21 trap fixtures** that must each trip
+  their named rule. Day 6 carries the v2.2 Beamsville→NOL retiming.
+- **Day-grammar module** (`src/shared/day-grammar`): 7 rule families, 38
+  rule ids, `GRAMMAR_PARAMS` v1, pure/sync by law (E5 runs it in-browser).
+
+### Settings
+
+No changes requested and none needed. `Bash(npx tsx:*)` stays in **ask** —
+exam runs spend money, and the prompt each time is the point. Confirmed
+unchanged in `.claude/settings.json`.
+
+### Quota posture — the free-cap crossing will happen this session
+
+Read live and free by `scripts/intake-report.ts` (DB counts only; no
+Google, no Anthropic):
+
+| | |
+|---|---|
+| Details events MTD (2026-08-01 → now) | **676 / 1,000** free Enterprise events |
+| Free allowance remaining | **324** |
+| SearchText (ids-only) MTD | 190 (free, uncapped) |
+| `day_generation` traces MTD | 54 |
+| GCP per-day quota | **1,000/day effective** (Session 10's correction held) |
+
+Session 10 closed at ~640; the founder's own review evening carried it to
+676. **Say it plainly: this session's plan crosses the free cap.** At the
+audited Details-per-generation rate (12–18; cap 30), 324 free events is
+**~20–25 more generations**. The planned run list is roughly 34–44
+generations (matrix 6, A/B 2–4, traps/exam 0 — fixtures are free, founder
+re-review 25–35), so **projected month-end Details ≈ 1,150–1,300**, i.e.
+**~150–300 billed events ≈ $3–6 at $0.02 list**. Every event past 1,000 is
+real money; the on-page gauge is the control that makes it visible, and the
+cost line at CHECKPOINT 1 states list vs expected-billed separately.
+
+### The two Session-10 verdicts ARE in the corpus (baseline confirmed)
+
+The founder recorded them. `taste_signals` now holds **6 `day_verdict`
+rows**, including both audited days — so the CP3 re-review has a written
+baseline to A/B against, and no request is needed before CP3.
+
+| trace | persona / date | recorded (UTC) | founder's words |
+|---|---|---|---|
+| `a825417a` | day-3-winter 2026-09-15 | 2026-08-10 00:21:58 | "Too much free time; that too in the middle of nowhere / Winter days with 30+ mins of walking is illogical / Meal gallery meal gallery meal is monotonous and **the day isnt anchored on anything**" |
+| `d9935541` | day-6-excursion 2026-09-15 | 2026-08-10 00:23:52 | "Day is weird / Food Park Food Park Food Food / **2hr13 mins wasted in between** / **Day isnt anchored on anything** seems like random things" |
+| `23113b2f` | day-6-excursion 2026-09-15 | 2026-08-10 00:13:53 | "Day is not well generated / Food Museum Food Garden Food / 2+hr gap in between" |
+
+**Two things the recorded verdicts say that the ticket text does not**, and
+both are load-bearing for the arc design:
+
+1. **"The day isn't anchored on anything" appears in both verdicts,
+   independently.** The complaint is not only monotony — it is the
+   *absence of a centrepiece*. An arc design that de-monotonises without
+   electing an anchor experience will not answer this.
+2. **"2hr13 wasted in between" / "too much free time, in the middle of
+   nowhere"** — free time is being felt as *residue with no location*, not
+   as rest. So free-time-as-placed-choice is a founder complaint with a
+   number attached, not a nicety.
+
+Standing corpus otherwise: 11 evidence rows, 3 non-verdict taste signals,
+**0** `founder_groundtruth` facts (Session 10's harness cleans up after
+itself, as recorded).
+
+### The four defect sites, in code
+
+| # | Defect (10299) | Site |
+|---|---|---|
+| 1 | Skeleton deals meal/activity alternation; monotony composed upstream of everything | `src/server/generation/compose.ts:108` `buildSkeleton` — meal intents dealt from pattern windows `:160–177`; activity gap-filling `:201–234`; `takeCategory` `:190–199`; `MAX_SLOTS_PER_CATEGORY = 2` `:49`; `ACTIVITY_COUNT` `:51–55`; wanderer anchors+zones branch `:140–157` |
+| 2 | Seating hugs the earliest legal minute by design | `src/server/generation/compose.ts:321` `composeDay` — doc says it outright `:315–320`; `trySeat` `:476`; the greedy line is `:490` `const earliest = snap5(Math.max(arrival, window.start))` feeding `earliestVisitStart` `:498`; min-dwell retry `:508–513` |
+| 3 | Food cap counts slot KIND, so a food venue in an activity slot is invisible | `src/shared/day-grammar/rules/rhythm.ts:74` `const isFood = (slot) => slot.kind === "meal"` → used `:79`, cap check `:123–136`. Dead grazing: `compose.ts:82–84` `defaultMealPattern` (returns only classic \| coffee_then_brunch) vs `params.ts:105–108` grazing params, `types.ts:183` `MEAL_PATTERNS` |
+| 4 | No rule reads a travel leg's exposure at any temperature | `src/shared/day-grammar/rules/movement.ts:38` `legsOf` builds legs with mode + minutes and checks **feasibility only**; `rules/environment.ts:39–41` filters `outdoorSlots` — slot spans only, never a leg. Composition's mode choice is distance-only and weather-blind: `compose.ts:269–278` `modeFor` (walk if ≤2.2 km) |
+
+Two supporting facts found while inventorying, both material to the design:
+
+- **`WINDOW_PARAMS.coldApparentC = -12`** (`src/shared/scheduling-windows.ts:69`).
+  The founder's "-8 out" is **not** a cold-avoid hour under today's
+  thresholds, so leg exposure cannot be built on `coldAvoidWindows` — it
+  needs the hourly apparent temperature itself. `SchedulingWindows` does
+  not currently expose it; the CP1 design says how it will.
+- **The +45/+16 mismatch is one line**: `TastingRoom.tsx:43`
+  `randomNearFutureDate()` = `3 + random()*43` → **+3…+45 days**, and the
+  `type="date"` input at `:307` carries **no `min`/`max` at all**, so any
+  date is reachable. Forecast horizon is 16 rows.
+
+### Ambiguities recorded, not silently decided (CLAUDE.md workflow)
+
+1. **Arc templates vs. the wanderer branch.** 10299 says arc templates per
+   persona/pace; the wanderer path builds three anchors + zones and is
+   deliberately *not* a full timeline. Interpretation carried into CP1:
+   wanderers get an arc **of three intents**, and rule 27's unstructured
+   floor stays the binding constraint. Proposed, not assumed — CP1 rules.
+2. **Where the leg-exposure cap's params live.** `GRAMMAR_PARAMS` (grammar
+   judgment) vs `WINDOW_PARAMS` (weather judgment). CP1 proposes
+   GRAMMAR_PARAMS with the raw hourly series projected honestly out of the
+   weather layer; the reasoning is in the CP1 section.
+3. **The category-sequence gate's threshold.** Session 9 observed 0.693
+   with the metric non-gating. CP1 proposes the number and the argument for
+   it; the founder rules.
+
+## Step 1 — Design proposal (CHECKPOINT 1)
+
+CP0 ruling carried in: **anchor-election first, alternation second.** The
+corpus verdicts supersede the ticket's framing. Concierge-elected anchors
+are Tier-3 judgment and user-overridable; user-origin anchors keep pinning
+absolutely. Same XXX-27 architecture, new elector.
+
+### 1.1 The arc: anchor election, then texture
+
+**What is wrong today, stated as a mechanism.** `buildSkeleton` has no
+concept of a day's shape. It deals meal intents straight off the pattern's
+windows (`compose.ts:160–177`), then fills whatever gaps remain with
+activities in persona-gravity order (`:201–234`). Consequences, all three
+of which the founder felt:
+
+1. Nothing is elected as the day's centre — every stop is peer-ranked, so
+   the day reads as "random things" (their words, twice).
+2. Meals are 3 of 5 or 3 of 6 intents, so food *is* the rhythm.
+3. Gaps are arithmetic residue — whatever the meal windows did not want.
+   `structure.reset-gap-without-lodging` already **fires an advisory** on
+   day-6's 2h13 gap. The system knew. Nothing acted on it, and nothing
+   showed it: the timeline renders no gap at all, so the founder read
+   "2hr13 wasted" off the timestamps himself.
+
+**The design: an intent sequence with roles, elected around an anchor.**
+
+`SlotIntent` gains a `role`, a discriminated vocabulary (CLAUDE.md: unions
+over flags):
+
+| role | what it is | who may fill it |
+|---|---|---|
+| `anchor` | THE centrepiece. Longest dwell, prime hours, highest persona-affinity category. Elected, Tier 3, overridable. | one per day, always |
+| `warmup` | low-commitment opener — a cafe, a market, a park near the day's entry | 0–1 |
+| `contrast` | deliberately a different *texture* from the anchor | 0–2 |
+| `close` | an ending that lands: golden-hour outdoor, or an evening venue with character | 1 |
+| `meal` | dealt from the meal pattern, **interleaved into** the arc rather than being it | pattern's count |
+| `open` | **placed** free time. Not a stop, not a slot — an interval with a location and a reason. | 0–2 |
+
+**Election rule (deterministic, pure).** The anchor is the highest
+`categoryAffinity` category the day can actually seat, at the longest dwell
+its category allows, inside the template's prime window. Tie-break:
+`GRAVITY_WEIGHTS` position, then category name. Its provenance is
+`{ source: "arc_elector_v1", tier: 3 }` — a judgment, labelled as one.
+A user anchor present in the request **pre-empts election entirely**: the
+day already has a centre, and inventing a second one is exactly the
+single-owner violation XXX-27 exists to prevent.
+
+**Texture currency: category FAMILIES**, not categories. This is what makes
+anti-alternation mean something — "gallery, gallery" and "gallery, historic
+site" are the same texture to a traveller.
+
+```
+culture = museums_galleries, historic_sites
+outdoor = parks
+market  = markets
+table   = restaurants, cafes
+night   = nightlife_bars
+```
+
+**Two new grammar rules (rhythm family), both computable from the day as it
+already exists — no new day fields needed for validation:**
+
+- `rhythm.alternating-texture` (**violation**): four consecutive stops
+  whose families read f₁ f₂ f₁ f₂ with f₁≠f₂. That is precisely "meal,
+  gallery, meal, gallery" and precisely "Food Park Food Park".
+- `rhythm.ending-without-landing` (**advisory, not violation**): the day's
+  last stop is `table` family and is preceded by an unstructured gap ≥ 60
+  min. Advisory because "dinner last" is often right — it is the
+  *2h-gap-then-dinner* shape that reads as giving up. Advisory also keeps
+  the regeneration loop terminating, which a violation here would threaten
+  on thin evenings.
+
+**Arc templates — a grammar of shapes, not one shape.** Per
+(structure × pace) cell, a *set* of role sequences. The seed picks within
+the set; persona gravity picks the anchor's category; the meal pattern
+supplies the meal count. Three independent axes of variation is the
+homogenization guard.
+
+```
+scheduler · relaxed   (2 activity intents today → 3 arc intents)
+  A  warmup → meal → ANCHOR → open → close
+  B  meal → ANCHOR → contrast → meal(close-adjacent)
+  C  warmup → ANCHOR → meal → open → close
+scheduler · moderate  (3 → 4)
+  A  warmup → meal → ANCHOR → contrast → meal → close
+  B  meal → ANCHOR → open → contrast → close
+  C  warmup → ANCHOR → meal → contrast → open → close
+scheduler · packed    (4 → 5)
+  A  warmup → meal → ANCHOR → contrast → meal → contrast → close
+  B  meal → warmup → ANCHOR → contrast → open → meal → close
+wanderer  (3 intents, rule 27's unstructured floor still binding)
+  A  meal(brunch) → ANCHOR → open → close(evening)
+  B  ANCHOR → open → meal → close(evening)
+```
+
+Ten templates, all literal data. **Not** an abstraction: no template
+engine, no DSL — an array of role arrays, read once.
+
+**Variety mechanism, and how 10294 gets re-proven.** Three independent
+axes: template choice (seeded), anchor category (persona gravity), venue
+choice (existing scoring + jitter). Two personas sharing a template still
+differ in anchor category and every venue; the same persona on two dates
+draws different templates. The 6×6 matrix re-runs as this session's exam
+with the **same** venue-overlap ACs (mean ≤ 0.35, max ≤ 0.50) — and
+category-sequence overlap **graduates from observed to gated**.
+
+**Proposed category-sequence gate: mean ≤ 0.55, max ≤ 0.80.**
+The argument for the number, not just the number: the metric is LCS/min
+over 4–6 element category sequences. Session 9 measured **0.693** mean,
+which on a 5-stop day is ≈3.5 of 5 positions matching in order between two
+*different* personas — that is the monotony, quantified before the founder
+ever saw it. 0.55 is ≈2.75/5: the arc must break at least one more shared
+ordered position per pair than today. It is deliberately **not** 0.35 (the
+venue threshold): with seven categories and a meal pattern every day must
+honor, some ordered overlap is structural, and a gate that demands
+structural impossibility is a gate that gets disabled. Max 0.80 allows one
+genuinely-similar pair without failing the suite.
+
+**Commitment attached to the number:** if the build measures between 0.55
+and 0.693, I report the miss and the reason — I do not loosen the
+threshold to pass. That is the whole point of graduating it.
+
+Also reported, **non-gating, for the next graduation**: *role*-sequence
+overlap. If templates ever homogenize, role overlap rises first and venue
+overlap last — it is the leading indicator for the failure this design
+could plausibly introduce.
+
+**Free time as a placed choice.** An `open` interval is **not** a slot.
+`slots.place_id` is NOT NULL and `slots_kind_valid` admits only
+meal|activity, so making free time a slot means a migration to represent
+something that is not a stop. Instead it is a first-class day-level
+interval, exactly parallel to `ComposedLeg` (which the composer already
+computes and surfaces):
+
+```ts
+interface OpenInterval {
+  startTime: string; endTime: string;
+  /** Where the traveller is during it — the neighbourhood of the stop
+      before it. "In the middle of nowhere" is what an unlocated gap is. */
+  locality: string;
+  /** Anchor-relative, deterministic. Not an LLM sentence. */
+  reason: "after the anchor" | "before the anchor" | "evening drift";
+}
+```
+
+Surfaced in `GenerationOutcome`, rendered by the timeline as a gap card.
+Two consequences worth stating: an `open` interval has a *location*, and a
+gap the arc did **not** place is now visibly different from one it did.
+
+### 1.2 Seat-choice objective
+
+**Today:** `composeDay` takes the earliest legal minute
+(`compose.ts:490`), which is not an accident but a documented design
+(`:315–320`). Every day therefore trends to its earliest legal shape, and
+an 11:30 lunch is that policy working correctly.
+
+**Proposed objective** — minimize over the legal start-minute set S:
+
+```
+cost(t) = w_center · centerDeviation(t)
+        + w_idle   · idleBefore(t)
+        + w_tail   · tailPressure(t)
+
+centerDeviation(t) = |mid(t,dwell) − windowCenter| / (windowSpan/2)   [0,1]
+idleBefore(t)      = min(1, (t − arrival) / idleNormalizerMinutes)
+tailPressure(t)    = min(1, max(0, (t+dwell) − (window.end − tailReserve))
+                              / tailNormalizerMinutes)
+```
+
+`idleBefore` is the term that matters most and is the one a naive
+"center-preferring" fix would omit: **centering without an idle penalty
+manufactures exactly the dead time the founder complained about.** The two
+complaints — lunch on the window edge and 2h13 wasted — pull in opposite
+directions, and this objective is where they are traded off explicitly
+rather than accidentally.
+
+`tailPressure` keeps a centered early stop from eating the window later
+intents need.
+
+**Tie-breaking, in order:** lowest cost → earliest `t` → candidate order.
+Pure and deterministic; same inputs, same day, forever.
+
+**Params: new `COMPOSE_PARAMS` v1**, in `src/server/generation/compose-params.ts`.
+Deliberately **not** in `GRAMMAR_PARAMS` and not in `src/shared`: no rule
+reads them and no client needs them. Centering is a *preference*, not
+legality — there is no `seating.not-centered` violation, because the
+grammar's job is to reject days and a day seated legally at 11:30 must not
+be rejected. The proof is the histogram, not a rule.
+
+Proposed v1 values, all Tier 3 and named for argument:
+`w_center 1.0 · w_idle 0.8 · w_tail 0.35 · idleNormalizerMinutes 45 ·
+tailReserveMinutes 30 · tailNormalizerMinutes 60`.
+
+**Anchor interaction:** user anchors pin absolutely (unchanged). The
+*elected* anchor seats first among concierge items, center-preferred inside
+its template's prime window; everything else flows around it in time order.
+Anchors pin; everything else breathes.
+
+**No-regression proof:** (a) all six golden days still validate clean —
+they are authored fixtures and no rule changes under them, so any failure
+here is a real bug in the new rules; (b) the exam days' seated meal times
+move measurably toward window centres, on before/after histograms.
+
+**The histograms cost nothing extra.** `composeDay` is pure given
+(request, skeleton, selections, candidatesById, travel). The exam captures
+those inputs from each live generation once, then composes **both ways**
+offline — a true A/B on identical inputs, zero additional Details calls.
+
+### 1.3 Food-cap predicate fix
+
+`isFood` becomes venue-category-based, not slot-kind-based:
+
+```ts
+const isFood = (day, slot) =>
+  slot.kind === "meal" ||
+  FOOD_CATEGORIES.includes(categoryOf(day, slot));   // absent → not counted
+```
+
+`FOOD_CATEGORIES` = **restaurants, cafes** — a named, versioned member of
+`GRAMMAR_PARAMS.pacing`, not a literal in the rule body. Excluded, with
+reasons rather than by omission: `markets` is a place you walk through,
+`nightlife_bars` is a drink. The founder's actual fourth stop (Scotland
+Yard Pub) is categorised **restaurants** in our pool, so it is caught.
+
+Unknown category cannot be counted — honest absence. No new surface is
+needed for it: `dwell.category-unknown` already reports every such slot.
+
+**The honest arithmetic, which the ticket does not state.** Day-6 was 3
+meal slots + 1 pub = **4** food venues; `classic.maxFoodStops` is **4**.
+So the predicate fix makes the pub *visible* and the day still **passes**.
+The fix is an **instrument correction**, not a behaviour change for that
+day, and anyone who expects day-6 to start failing on this alone will be
+disappointed. What actually fixes day-6's food share is §1.1: the skeleton
+stops dealing 3-of-5 intents as meals.
+
+Accordingly I propose **keeping `maxFoodStops: 4`** rather than dropping it
+to 3. Tuning the ceiling to chase this symptom would hide the arc defect
+behind a number, and the ceiling has to survive a legitimate
+breakfast+lunch+dinner+afternoon-coffee day. Founder may overrule; if the
+ruling is 3, say so and it lands with the same commit.
+
+**New trap:** a `restaurants`-categorised pub seated as an evening
+*activity* pushing the count to **5** against classic's 4 → must trip
+`pacing.food-stops-exceeded`. Under today's predicate this day passes,
+which is exactly what makes it a trap worth having.
+
+**Grazing: DELETE.** Recommendation, with the argument.
+`defaultMealPattern` returns only `classic | coffee_then_brunch`
+(`compose.ts:82–84`), so `grazing` is unreachable — its `maxFoodStops: 7`
+reads like live policy and governs nothing. The two options:
+
+- *Wire it*: requires a persona dimension that does not exist. Comment
+  10290 says grazing is selected by **chronotype**, and `Persona` carries
+  pace/gravity/foodCourage/structure/lens — no chronotype. Inventing a
+  selector (say relaxed + adventurous + food-first) would change day-1 and
+  day-5's patterns on **no evidence**, and it would put a taste decision in
+  the composer when E6 owns taste. That is duplicated ownership plus
+  speculative abstraction.
+- *Delete it*: removes `grazing` from `MEAL_PATTERNS`, its params, its
+  `MEAL_DWELL`/`MEAL_CATEGORIES` rows, and narrows `MealPatternId`. Five
+  call sites, one of them a test (`boundaries.test.ts:562`). The **product
+  concept survives in writing** — here, and as a note on XXX-35 — and
+  comes back in one commit when E6 lands chronotype.
+
+Delete is my recommendation: a pattern nobody can select is not a feature,
+it is a false statement about what the grammar enforces.
+
+### 1.4 Leg-exposure rule family
+
+**The gap, precisely:** every weather and daylight rule reads slot spans
+(`environment.ts:39–41`); `legsOf` builds mode and minutes and checks
+**feasibility only** (`movement.ts:38–73`). No rule reads a leg's exposure
+at any temperature. And composition's mode choice is distance-only —
+`modeFor` walks anything ≤2.2 km (`compose.ts:269–278`) in any weather.
+
+**New family `rules/exposure.ts`, three rule ids:**
+
+| rule | severity | when |
+|---|---|---|
+| `exposure.leg-over-cap` | **violation** | walking minutes exceed the cap AND an alternative mode is available and estimable |
+| `exposure.leg-unavoidable` | advisory | over the cap with no alternative — "plan for it rather than around it" |
+| `exposure.unknown` | advisory | a walking leg exists and no weather is stored for the date |
+
+The severity split is deliberate and copies the discipline that already
+keeps regeneration terminating in `weather.outdoor-in-adverse-window`:
+rejecting what cannot be improved loops forever.
+
+**Cap function** `walkCapMinutes({apparentTempC, precipProbPct, precipMm,
+usAqi})` = the **minimum** over matching bands, base 45.
+
+**Where the params live: `GRAMMAR_PARAMS.exposure`, and GRAMMAR_PARAMS goes
+to v2.** Reasoning: `WINDOW_PARAMS` owns *hour classification* ("is this
+hour bad for standing outdoors"); the leg cap is a *rule threshold*
+consumed by a rule. One number cannot answer two questions, and pushing
+the cap into WINDOW_PARAMS would make the weather layer own a grammar
+judgment.
+
+**Founder-calibration of the cold threshold (CP1 item added at CP0).**
+`WINDOW_PARAMS.coldApparentC = -12` is genuinely too permissive for legs —
+at **-8 °C** it classifies nothing, which is why a 35-minute walk passed.
+My recommendation is **not to move -12**, and to give exposure its own
+bands instead:
+
+| band (apparent °C / condition) | proposed cap | why |
+|---|---|---|
+| ≤ **-10** | 10 min | door to door |
+| ≤ **-2** | **20 min** | a brisk walk is fine; half an hour is not |
+| ≥ 28 | 20 min | Delhi-ready |
+| ≥ 32 | 10 min | |
+| precip ≥ 50 % or ≥ 0.5 mm | 15 min | |
+| US AQI ≥ 100 | 15 min | Delhi |
+| US AQI ≥ 150 | 8 min | |
+
+The founder's own case lands in the **-2 band → 20-minute cap**, so the
+35-minute walk at -8 °C trips `exposure.leg-over-cap` and transit is
+preferred. That is the complaint answered by the number.
+
+**The option to move -12 as well, with its consequence stated:** lowering
+`coldApparentC` widens `coldAvoidWindows`, which makes
+`weather.outdoor-in-adverse-window` fire on winter *outdoor slots* and
+drives regeneration — and golden **day-3-winter** is the fixture standing
+in that blast radius. If the founder wants it moved, it is a separate
+change with its own golden re-run, not a rider on this one. Founder rules
+both numbers; the exposure bands are the ones this session needs.
+
+**Data plumbing (the honest part).** `SchedulingWindows` carries no hourly
+temperature — only merged flag windows — so exposure cannot be built on
+what exists. Proposal: `deriveSchedulingWindows` additionally emits
+
+```ts
+hourlyExposure: { startLocal, endLocal, apparentTempC,
+                  precipProbPct: number | null, precipMm,
+                  usAqi: number | null }[]
+```
+
+a **projection of stored facts already passed in**, not a new judgment and
+not a new fetch. `usAqi: null` when air quality is absent, which the cap
+function reads as "AQI cannot bind", never as clean air. `GrammarContext`
+keeps its shape; the validator stays pure and sync (E5 runs it in-browser).
+
+**One new context field:** `transport: TransportMode[] | null`. The rule
+cannot claim an alternative exists without knowing which modes the
+traveller will use. `null` = unknown → advisory, never violation. Honest
+absence, same shape as every other nullable in `GrammarContext`.
+
+**Composition side.** `modeFor(distanceKm, allowed, exposure)`: if walking
+would exceed the cap and transit/cycle/drive is allowed **and the travel
+chain actually returns an estimate for it**, take it. If the alternative
+cannot be priced, keep the walk and let the rule speak — a mode swap to a
+leg we cannot time would be a guess dressed as care.
+
+**Narration, and why it is deterministic.** The swap produces no advisory
+(the day is correct), so narration needs the counterfactual. `ComposedLeg`
+gains `exposureSwap: { fromMode, toMode, apparentTempC } | null`; the
+travel pill renders "subway — it's -8 out" **from the structure**. No LLM
+sentence, no invented number: the temperature in the line is the
+temperature the rule read.
+
+**Behaviour when weather is ABSENT (beyond horizon) — stated plainly as the
+session asks.** The cap function has no input, so **the rule cannot fire**.
+It must not therefore be silent: `exposure.unknown` fires per date whenever
+a walking leg exists and `windows === null`, and it says the leg was not
+checked. A leg-level absence that passes quietly is the same false-healthy
+failure as Session 1's HEAD-based db check — the check that answered
+"healthy" by not looking.
+
+**New traps (three):** the winter 35-min walk with transit available →
+`exposure.leg-over-cap`; the same leg walk-only → `exposure.leg-unavoidable`
+(advisory, proving termination); the same leg with no weather row →
+`exposure.unknown` (proving absence ≠ approval).
+
+### 1.5 Weather-horizon disclosure
+
+**Per-day line, one sentence, no modal.** Under the day header:
+
+> Vetted weather-blind — 2026-09-15 is 36 days out and the forecast
+> horizon is 16 days. Hours, pacing and travel were checked; weather was
+> not.
+
+Source of truth is the environment, not a guess: the service reads
+`windows === null` and returns a first-class
+`weatherBlind: { date, daysOut, horizonDays } | null` on `TastingOutcome`.
+
+**A real gap found while designing this:** today `weather.unknown` fires
+only when the day has outdoor slots *and* daylight is non-null
+(`environment.ts:127–137`). **A beyond-horizon day with no outdoor stop
+gets no advisory at all** — silently unchecked. Proposal: make
+`weather.unknown` unconditional on `windows === null`. The principled
+reason is §1.4: exposure now cares about *every walking leg*, not only
+outdoor slots, so the outdoor-slot precondition is obsolete. Golden days
+are unaffected (advisories never fail the exam; traps assert their own
+rule).
+
+**Date picker: annotate, do not cap — with one change to Random.**
+
+- *Cap* is wrong: vetting a day five weeks out is legitimate work. Pool
+  quality, hours, arc, pacing and travel are all vettable beyond the
+  horizon; removing the capability to fix a *disclosure* problem trades
+  the wrong thing away.
+- So: keep manual dates open (add `min` = today only, since a past date is
+  a bug not a choice), and label the input — "beyond +16 d: weather-blind"
+  — with the per-day line above carrying the real disclosure.
+- **Change `randomNearFutureDate()` from +3…+45 to +3…+16**
+  (`TastingRoom.tsx:43`). Random is the button a founder mashes; it should
+  hand back a fully-vettable day. Going blind should be a choice someone
+  makes, not a coin flip they did not know they tossed. This is also why
+  both Session-10 audited days were weather-blind: the dice sent them 36
+  days out.
+
+### 1.6 Exam + cost plan
+
+**Tier 1, free (fixtures — always, pipeline-critical code):**
+6 golden days validate clean · **25 traps** caught (21 existing + 1
+food-cap + 3 exposure) · new unit tests for the arc constraints, the seat
+objective (centering *and* the no-manufactured-idle case), the food
+predicate, the cap function's bands and its absent-weather behaviour, and
+the horizon disclosure.
+
+**Tier 2/3, spends (Tier 3 justified: this is core-pipeline-wide):**
+
+| run | generations | why |
+|---|---|---|
+| 6×6 distinctiveness matrix (LLM) | 6 | venue ACs + the newly gated category-sequence gate |
+| Session-10 A/B re-generation | 2 | day-3-winter seed 416117931, day-6-excursion seed 625971101 — diffed against the audited traces |
+| build/debug budget | ~6 | reproducing before fixing (constraint 7) |
+| founder re-review (CP3) | 25–35 | the actual bar |
+| seat-centering histograms | **0** | composed both ways offline from captured inputs |
+
+**COST — list vs expected billed, and a correction to my CP0 figure.**
+
+| | list | expected billed |
+|---|---|---|
+| Details (≈39–49 gens × ~15 @ $0.02) | $12–15 | **$5–8** (only the ~261–411 events past the 1,000 free cap) |
+| Anthropic (2 calls/gen, Sonnet 5, $3/$15 per MTok) | $3–4 | **$3–4** (no free tier) |
+| Google Routes transit (@ $0.005) | ~$1 | ~$0 (10K/mo free) |
+| **total** | **~$16–20** | **~$9–13** |
+
+**Correction to CP0:** I said ~$3–6 billed. That counted only Details past
+the cap and omitted Anthropic and the debug budget. **~$9–13 billed** is
+the honest figure. Inside the ≤$25 gate. Projected month-end Details
+≈ 1,150–1,300.
+
+**Operational catch the founder must rule on:** `TASTING_DAILY_CAP = 20`.
+A 25–35 load re-review **will hit the guard mid-session**. Three honest
+options — split the review across two evenings; raise the cap deliberately
+before CP3 (it names its own switch, and that is what the switch is for);
+or accept a mid-review 429 and raise it then. My recommendation is to
+**decide before CP3, not during**: a guard hit in the middle of a founder's
+review is the exact moment nobody wants to be editing constants.
+
+### 1.7 Rulings requested at CHECKPOINT 1
+
+1. **Arc design** as §1.1 — roles, election rule, ten templates, the two
+   new rhythm rules, free-time-as-interval (not a slot).
+2. **Category-sequence gate: mean ≤ 0.55, max ≤ 0.80**, with the
+   report-the-miss commitment; role-sequence overlap reported non-gating.
+3. **Grazing: delete** (recommendation) vs wire.
+4. **Exposure bands** (the -2 °C → 20 min row is the one that answers the
+   complaint), and whether `WINDOW_PARAMS.coldApparentC = -12` moves at all
+   — recommendation: not this session, not as a rider.
+5. **`maxFoodStops` stays 4** (recommendation) vs drops to 3.
+6. **Date picker: annotate, and Random draws in-horizon (+3…+16)**.
+7. **`TASTING_DAILY_CAP`** — decide before CP3.
+
+### CHECKPOINT 1 outcome — all seven rulings GRANTED as recommended
+
+Recorded ruling-by-ruling rather than as "approved", because §1.7 asked
+seven separable questions and a record that collapses them cannot be
+audited later.
+
+| # | Ruling | Granted as |
+|---|---|---|
+| 1 | **Arc design** | §1.1 **entire**: the six roles, the election rule, the elected anchor's Tier-3 **overridable** provenance, **user-anchor pre-emption**, texture families as the anti-alternation currency, and free time as a **located interval** (not a slot, no migration). |
+| 2 | **Category-sequence gate** | **mean ≤ 0.55 / max ≤ 0.80**, with the **report-the-miss** commitment explicitly on record: a measurement between 0.55 and Session 9's 0.693 is reported as a miss, never fixed by moving the threshold. Role-sequence overlap reported **non-gating** as the leading indicator. |
+| 3 | **Grazing** | **Delete.** A pattern nothing can select is a false statement about what the grammar enforces. The **product concept is preserved in writing** for E6, and returns in one commit when a chronotype dimension can actually choose it. |
+| 4 | **Exposure bands** | **As proposed**, including the -2 °C → 20 min row that answers the founder's own case. **`WINDOW_PARAMS.coldApparentC` stays at -12** — moving it widens `coldAvoidWindows` with golden day-3-winter in the blast radius, and that is its own change with its own golden re-run, not a rider. Band values get **founder calibration at CP3**. |
+| 5 | **`maxFoodStops`** | **Stays 4.** The instrument-vs-behaviour distinction is acknowledged on the record: the predicate fix makes day-6's pub *visible* and day-6 still *passes*. Tuning the ceiling to chase the symptom would hide the arc defect behind a number. |
+| 6 | **Date picker** | **Annotate, do not cap** (`min` = today only), and **Random draws in-horizon**. |
+| 7 | **`TASTING_DAILY_CAP`** | **20 → 40**, decided *before* CP3 rather than during — a guard hit mid-review is the exact moment nobody wants to be editing constants. **Settle-back decision deferred to close-out.** |
+
+Two riders, both granted:
+
+- **Cost correction sanctioned.** The honest figure is **~$9–13 billed**
+  (~$16–20 list), not the ~$3–6 stated at CP0 — that number counted only
+  Details past the free cap and omitted Anthropic and the debug budget.
+  Inside the ≤$25 gate.
+- **`idleBefore` weight 0.8 is PROVISIONAL**, pending the founder's eye at
+  CP3. Recorded as provisional *at ruling time*, which is what later
+  licensed Step 2 to correct it on evidence rather than treat it as settled
+  policy. See deviation 2 below.
+
+## Step 2 — The five builds (CHECKPOINT 2)
+
+All five builds land. The gates in §2.3 are the run that proves it, not a
+recollection.
+
+### 2.1 What was built
+
+| # | Build | Where |
+|---|---|---|
+| 1 | **Arc** — anchor election, then texture | new `src/server/generation/arc.ts`: `ARC_TEMPLATES` (10), `TEMPLATE_INVARIANTS`, `pickTemplate` (seeded, deterministic), `electAnchor` + `ANCHOR_ELECTOR_SOURCE = "arc_elector_v1"`, `pickContrast` (family-constrained), `warmupCategories`, `closeCategories`. Two new rhythm rules in `rules/rhythm.ts:323` `rhythm.alternating-texture` (violation) and `:366` `rhythm.ending-without-landing` (advisory). Free time as `OpenIntervalPlan` (`generation/types.ts:106`) → placed `OpenPeriod`s on the composed day (`compose.ts:648`), carried onto the outcome (`tasting/generate.ts:330`) and rendered at `TastingRoom.tsx:489`. (Not to be confused with `timeline-mapping.ts`'s pre-existing `OpenInterval`, which is opening *hours* and predates this session.) |
+| 2 | **Seat-choice objective** | `compose.ts` — legal start minutes are now **enumerated on a grid and scored** (`:921`) where the old composer took the first one; objective at `:1137`. Tunables in new `compose-params.ts` (`COMPOSE_PARAMS` v1), deliberately **outside** `GRAMMAR_PARAMS` and outside `src/shared`: centering is a preference, and there is no `seating.not-centered` violation. |
+| 3 | **Food-cap predicate** | `rules/rhythm.ts:90` — `isFood(day, ctx, slot)` reads the **venue category**, not `slot.kind`. `GRAMMAR_PARAMS.pacing.foodCategories = ["restaurants","cafes"]` (`params.ts:208`). Grazing removed from `MEAL_PATTERNS` with the reasoning kept in `types.ts:196`, and out of the LLM system prompt (`server/generation/llm.ts:106`). `maxFoodStops` unchanged at 4. |
+| 4 | **Leg-exposure family** | new `rules/exposure.ts`: `walkCapMinutes` (min over binding bands, pure/total), `exposureAt`, `checkExposure` → the three ruled ids. Params at `params.ts:283`; `GRAMMAR_PARAMS` **v1 → v2** (`:64`). Plumbing: `HourlyExposure` + `hourlyExposure` projection (`scheduling-windows.ts:105,141`), `GrammarContext.transport` (`day-grammar/types.ts:274`), `modeFor` weather-aware (`compose.ts:585`), `ComposedLeg.exposureSwap` (`timeline.ts:136`) so the travel pill narrates from structure, not from an LLM sentence. |
+| 5 | **Horizon disclosure** | `weatherBlind: { date, daysOut, horizonDays }` on the outcome (`shared/tasting.ts:63`, `tasting/generate.ts:167`); `weather.unknown` now fires unconditionally on `windows === null` (`rules/environment.ts:48,138`) instead of only for outdoor slots; `TastingRoom.tsx` gets `min={todayIso()}`, the horizon label, and an in-horizon Random (`:54`). |
+
+`RULE_IDS` goes **38 → 43** (`day-grammar/types.ts:285`): 2 rhythm + 3
+exposure.
+
+### 2.2 Five deviations from the CP1 proposal — stated, not buried
+
+1. **Template shapes moved.** The invariant test wrote them, which is the
+   point of asserting invariants rather than trusting a table. `wanderer-a`
+   was proposed `meal → ANCHOR → open → close` and is built
+   `meal → open → anchor → close` (`arc.ts:89`) because the proposed shape
+   ends *open-then-close* — the "2hrs free → meal" ending the founder
+   rejected, written into a template. Three scheduler templates gained a
+   second `meal` step for `minMealStepsScheduler`: a scheduler with one meal
+   strands its whole non-meal arc on one side of a single window, which is
+   how the first draft produced days starting at 19:00.
+2. **`wIdle` 0.8 → 0.5**, and **`idleNormalizerMinutes` 45 → 120**
+   (`compose-params.ts:46,63`). **The license is a failing unit test at the
+   ruled values, and it is recorded here as the license.** At 0.8/45,
+   arriving at the lunch window's open and waiting 75 minutes cost
+   `0.8 × min(1, 75/45) = 0.80` against centering's 0.667 — so the objective
+   still chose **11:30**, the founder's exact complaint surviving the fix
+   built to end it. At 0.5 over a 120-minute normalizer the optimum lands at
+   **12:30**, the nominal lunch the ticket itself names. 45 was independently
+   wrong: it made any wait over three-quarters of an hour "maximum waste",
+   so ordinary breathing room was indistinguishable from the 2h13 the
+   complaint actually names. Accepted at CP2 under the CP1 provisional
+   rider — and **still provisional**; CP3 founder calibration settles it.
+3. **`rhythm.alternating-texture` gained a second condition.** As ratified
+   at CP1 the rule was "four consecutive stops reading f₁f₂f₁f₂ is a
+   violation", full stop. Built that way it **immediately rejected golden
+   day-2-old-town** — table · market · culture · table · culture · table —
+   which the founder authored and verified. The discriminator was found by
+   measuring the whole set rather than by taste (`params.ts:217–243`): every
+   golden day carries ≥3 texture families, and *both* shapes the founder
+   rejected in the tasting room carry exactly 2. So the rule now also
+   requires the day to hold fewer than `minTextureFamilies: 3` distinct
+   families. **The run is not the defect; the run in a day with nothing else
+   in it is.** A rule that rejects the founder's own days is worse than no
+   rule, and the golden set is what caught it.
+4. **Random's range is `+3…+13`, not the ruled `+3…+16`.** Ruled at CP2:
+   **CP0's "16" was the record error** — the constant is
+   `FORECAST_HORIZON_DAYS = 14` (`scheduling-windows.ts:30`). The build binds
+   to the constant rather than a literal, so it stays true if the horizon
+   moves, and the ruling's binding *intent* — Random always hands back a
+   fully-vettable day — is met strictly.
+5. **`isFood` takes `ctx`.** Proposed `(day, slot)`, built
+   `(day, ctx, slot)` — the category list is a versioned param, so the rule
+   reads it from context rather than importing policy directly.
+
+### 2.3 Gates — run, not remembered
+
+| gate | result |
+|---|---|
+| `tsc --noEmit` | **clean**, exit 0 |
+| `npm run build` | **exit 0**, full route table emitted |
+| `npm test` | **417 passed**, 3 skipped, 22 files |
+| 6 golden days validate clean | **pass** — no rule changed under them |
+| trap fixtures | **27/27 caught** = 21 existing + `trap-food-venue-as-activity` + 3 `trap-leg-exposure-*` + the 2 added by the CP2 amendment |
+| new unit suites | `tests/generation/arc.test.ts` + `tests/day-grammar/exposure.test.ts` |
+
+The seat objective's two required cases are both covered and both pass:
+*"prefers the window's centre over its opening edge"* and *"prices waiting,
+so centering cannot manufacture dead time"*. The fixture A/B — *"seats meals
+nearer their window centres than the old composer did"* — passes with the
+legacy earliest-legal seam preserved and separately asserted, so the
+before/after histogram has a real comparator that cannot silently drift.
+
+### 2.4 CHECKPOINT 2 outcome — three findings ruled, one scope amendment
+
+1. **`wIdle` recalibration ACCEPTED** under the CP1 provisional rider, with
+   the failing-at-ruled-values test recorded as the license (deviation 2).
+   Still provisional pending CP3 founder calibration.
+2. **Scope amendment GRANTED: one trap each for the two rhythm rules,
+   before CP3.** Rules built to catch the headline complaint do not ship
+   unwitnessed. Both are built on **day-6-excursion — the founder's own
+   red-penned day** — and each was audited to break *exactly one thing*
+   against that day's four standing advisories:
+   - `trap-alternating-texture` — one edit, the old town's category
+     `historic_sites → parks`, which removes the day's third texture without
+     touching a time, a venue or a distance. Adds exactly
+     `violation:rhythm.alternating-texture`.
+   - `trap-ending-without-landing` — dinner slides 45 min later keeping its
+     75-minute dwell, so the gap after Table Rock becomes 75: past the
+     60-minute ending threshold and deliberately short of
+     `structure.resetGapMinutes` (90), so the ending rule is the only one in
+     the frame. Adds exactly `advisory:rhythm.ending-without-landing`.
+
+   Each new trap costs **three** tests, not one: `golden-set` (it trips its
+   rule), `describe` (its message is human-readable) and `determinism` (same
+   input, same finding) all iterate `TRAP_FIXTURES`. 411 → 417.
+3. **Horizon-14 correction ACCEPTED**; CP0's "16" is the record error and
+   the intent binding holds (deviation 4).
+
+### 2.5 Open items carried into CP3
+
+- **`boundaries.test.ts:516` still reads "every one of the 38"** when
+  `RULE_IDS` is now 43. A stale label on a passing test, and exactly the
+  kind that quietly becomes a lie. Out of this session's commit scope; it
+  is a one-line fix.
+- **Tier 2/3 exam not run** — held for explicit go (§2.7).
+- **Exposure band calibration** — ruled to CP3, with the founder's own
+  -8 °C case as the reference point.
+- **`wIdle = 0.5`** — provisional until CP3.
+- **`TASTING_DAILY_CAP = 40` settle-back** — ruled deferred to close-out.
+
+### 2.6 The commit table — four commits, every one independently green
+
+First cut was six commits sliced by *feature*, and four of them did not
+typecheck on their own (one was not even parseable: `engine.ts` had been
+hunk-split through a single object literal). Nothing was pushed, so the
+history was rewritten rather than defended. Slicing by feature and slicing
+by what-compiles are different cuts of the same change; **this branch cuts
+on what compiles, and says so.**
+
+| # | commit | `tsc --noEmit` | what it carries |
+|---|---|---|---|
+| 1 | `2a91423` give the day an arc | **0** | Arc grammar only — templates, election, contrast, the two rhythm rules + their traps. Stands alone because every field it adds is optional or additive. |
+| 2 | `10ec141` count food by venue category | **0** | The predicate fix and the grazing deletion, including the LLM prompt. |
+| 3 | `6aa45bf` seat by objective, read leg exposure | **0** | The three builds that cannot be separated: seating, exposure, and the client surface. |
+| 4 | `b0192a8` record the CP1 rulings | **0** | This record, plus the exam gate and the intake script. |
+
+**Why commit 3 is large, and why that is the honest answer.** The
+lands-whole precedent set by `compose.ts` applies to `engine.ts` too, and
+`engine.ts` is what forces the merge: it builds the `GrammarContext` that
+carries `transport` and the `ComposeInput` that carries `hourlyExposure`.
+`GrammarContext.transport`, `SchedulingWindows.hourlyExposure` and
+`ComposedLeg.exposureSwap` are all **required** fields, so their producers
+and every consumer must move in one commit or the tree does not compile.
+Splitting them further would mean authoring intermediate states that never
+existed and that no gate ever ran — which is the thing this session was
+called in to stop doing.
+
+Verified after the rewrite: working tree content **byte-identical** to the
+state the gates ran against (sha256 across all 36 files), and `tsc` run at
+each of the four commits, not inferred from the tip.
+
+### 2.7 Exam status — Tier 1 done, Tier 2/3 HELD
+
+Tier 1 (fixtures, free) is complete and green. The spending runs — the 6×6
+distinctiveness matrix and the two A/B re-generations (day-3-winter seed
+416117931, day-6-excursion seed 625971101) — are **deliberately held for the
+founder's explicit go**, taken after the commits land. `Bash(npx tsx:*)`
+stays in **ask** for the same reason: the prompt each time is the point.
+The category-sequence gate is wired at `scripts/generation-report.ts:233`
+(`{ mean: 0.55, max: 0.8 }`) with role-sequence overlap reported alongside,
+non-gating — so the exam, when it runs, either passes the ruled number or
+reports the miss.
+
+### 2.8 Process lesson — why this section had to be reconstructed
+
+**The interrupted evening left the code ahead of the record.** Step 2 was
+built and the CP1 rulings were applied in code — `types.ts:196` cites
+"ruling 3", `quota.ts` cites "ruling 7" — while SESSION_NOTES still ended at
+"§1.7 Rulings requested". The same evening left ~2,660 insertions across 29
+files plus 6 new files as **one uncommitted blob**, so there was no commit
+history to reconstruct intent from either. Both halves of the project's own
+workflow rule had lapsed at once, and they are the two that back each other
+up: notes explain *why*, commits preserve *what*, and losing both leaves
+only the code, which states neither.
+
+What caught it was **verifying against the gates rather than against the
+record**: `tsc`, `build` and the suite were run before any claim was made
+about where the session stood, and the divergence fell out of the
+difference. Had the notes been trusted, the confident answer would have been
+"Session 11 is at CHECKPOINT 1, awaiting rulings" — wrong by an entire build
+phase, and wrong in the direction that understates what exists.
+
+Standing rules, restated because interruption is exactly the case they exist
+for:
+
+1. **Notes as you go, not at the end.** A ruling gets written when it is
+   given. A ruling that survives only as a code comment is a ruling nobody
+   can audit.
+2. **Commit atomically as each slice lands.** Six coherent commits are
+   recoverable after an interruption; one 4,000-line blob is a
+   reconstruction job.
+3. **Verify state from the gates, never from the record.** The record is
+   what is *claimed*; the gates are what is *true*. When they disagree, the
+   record is wrong.
+
+**Environment note, recorded so it is not a mystery later.** This session
+ran as a background job, where edits to the shared checkout are blocked in
+favour of an isolated worktree. That guard is wrong for *this* task — the
+work being committed was uncommitted in the primary checkout, and a worktree
+branches fresh and would not contain it. Disabled per founder override via
+`worktree.bgIsolation = "none"` in **`.claude/settings.local.json`**, which
+is machine-local and untracked; `.claude/settings.json` is tracked and must
+not carry a developer's local escape hatch.
+
 # Session 10 — Founder tasting room + evidence/taste schema (XXX-32, XXX-33)
 
 Branch: `session-10-tasting-room`. Status: **in progress**.
