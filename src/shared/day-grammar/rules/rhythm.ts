@@ -23,6 +23,7 @@ import {
   violation,
   type Span,
 } from "../internal";
+import { CATEGORY_FAMILY, type CategoryFamily } from "../../vocabulary";
 import type { GrammarContext, GrammarDay, GrammarSlot, Violation } from "../types";
 
 interface NamedWindow {
@@ -71,12 +72,41 @@ export function windowsFor(day: GrammarDay, ctx: GrammarContext): NamedWindow[] 
   return out;
 }
 
-const isFood = (slot: GrammarSlot) => slot.kind === "meal";
+/**
+ * A food stop is a food VENUE, whatever kind of slot it was seated into
+ * (XXX-35 comment 10299 item 3).
+ *
+ * The defect this replaces counted `slot.kind === "meal"`, so a
+ * restaurant-categorised venue seated as an evening ACTIVITY — Scotland
+ * Yard Pub, dealt from the nightlife menu — was invisible to the one rule
+ * whose job is bounding food stops. The founder counted four meals; the
+ * rule counted three and passed the day at a ceiling of four.
+ *
+ * Which categories count is a versioned judgment in
+ * GRAMMAR_PARAMS.pacing.foodCategories, not a literal here. An unknown
+ * category cannot be counted — honest absence; `dwell.category-unknown`
+ * already reports every such slot, so nothing goes unsaid.
+ */
+const isFood = (
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slot: GrammarSlot,
+): boolean => {
+  if (slot.kind === "meal") return true;
+  const category = readFact(placeOf(day, slot)?.category);
+  return (
+    category.state === "present" &&
+    ctx.params.pacing.foodCategories.includes(category.value)
+  );
+};
 
 export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   const found: Violation[] = [];
   const slots = orderedSlots(day);
-  const meals = slots.filter(isFood);
+  /** Slots seated as meals — the set the pattern's WINDOWS apply to. */
+  const meals = slots.filter((s) => s.kind === "meal");
+  /** Food venues — the set the pattern's CEILING applies to. */
+  const foodStops = slots.filter((s) => isFood(day, ctx, s));
 
   // --- meal pattern --------------------------------------------------------
   if (ctx.mealPattern === null) {
@@ -84,8 +114,8 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
       advisory(
         "meal.pattern-unknown",
         [],
-        `No meal pattern was supplied for this day, so the ${meals.length} food stop${meals.length === 1 ? "" : "s"} were not checked against one. The taste profile owns that choice.`,
-        { foodStopCount: meals.length },
+        `No meal pattern was supplied for this day, so the ${foodStops.length} food stop${foodStops.length === 1 ? "" : "s"} were not checked against one. The taste profile owns that choice.`,
+        { foodStopCount: foodStops.length, mealSlotCount: meals.length },
       ),
     );
   } else {
@@ -120,15 +150,26 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
       );
     }
 
-    if (meals.length > pattern.maxFoodStops) {
+    if (foodStops.length > pattern.maxFoodStops) {
+      // Named separately because the interesting case is the one the old
+      // predicate could not see: food venues seated as activities.
+      const asActivities = foodStops.filter((s) => s.kind !== "meal");
       found.push(
         violation(
           "pacing.food-stops-exceeded",
-          meals.map((m) => m.id),
-          `This day has ${meals.length} food stops; the ${ctx.mealPattern.replace(/_/g, " ")} pattern allows ${pattern.maxFoodStops}.`,
+          foodStops.map((m) => m.id),
+          `This day has ${foodStops.length} food stops; the ${ctx.mealPattern.replace(/_/g, " ")} pattern allows ${pattern.maxFoodStops}.${
+            asActivities.length > 0
+              ? ` ${asActivities.length} of them ${asActivities.length === 1 ? "is" : "are"} seated as an activity rather than a meal (${asActivities
+                  .map((s) => describePlace(placeOf(day, s), s.placeId))
+                  .join(", ")}) — a food venue is a food stop wherever it sits.`
+              : ""
+          }`,
           {
             pattern: ctx.mealPattern,
-            foodStopCount: meals.length,
+            foodStopCount: foodStops.length,
+            mealSlotCount: meals.length,
+            foodAsActivitySlotIds: asActivities.map((s) => s.id),
             maxFoodStops: pattern.maxFoodStops,
           },
         ),
@@ -141,7 +182,9 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   // eating spans time, and treating a meal as an instant made every day
   // in the golden set look starved.
   const maxGap = ctx.params.pacing.maxFoodGapMinutes;
-  const fedSpans = meals.map(spanOf).sort((a, b) => a.start - b.start);
+  // Anything that feeds you counts — a pub with a kitchen ends a hungry
+  // stretch whether the composer called the slot a meal or not.
+  const fedSpans = foodStops.map(spanOf).sort((a, b) => a.start - b.start);
   const gaps: { from: number; to: number }[] = [];
   let cursor = timeToMinutes(day.dayStart);
   for (const fed of fedSpans) {
@@ -196,6 +239,12 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
     }
   }
 
+  // --- texture: no A-B-A-B ------------------------------------------------
+  found.push(...checkTexture(day, ctx, slots));
+
+  // --- an ending that lands -----------------------------------------------
+  found.push(...checkEnding(day, ctx, slots));
+
   // --- wanderer structure --------------------------------------------------
   if (ctx.persona?.structure === "wanderer") {
     const span =
@@ -222,6 +271,109 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   }
 
   return found;
+}
+
+/** The texture family of a slot's venue, or null when unknowable. */
+function familyOf(day: GrammarDay, slot: GrammarSlot): CategoryFamily | null {
+  const category = readFact(placeOf(day, slot)?.category);
+  return category.state === "present" ? CATEGORY_FAMILY[category.value] : null;
+}
+
+/**
+ * A-B-A-B in a day that has nothing else in it. The founder said it twice,
+ * in two different days' words — "meal, gallery, meal, gallery, meal" and
+ * "Food Park Food Park Food Food" — and the old max-2-per-category rule
+ * permitted both, because two galleries and three meals IS two per
+ * category.
+ *
+ * Measured in FAMILIES (see CATEGORY_FAMILY), over four CONSECUTIVE stops.
+ * Four is the shortest window in which alternation is a pattern rather
+ * than a coincidence: A-B-A is just a sandwich, and sandwiches are fine.
+ *
+ * The second condition — the day carries fewer than
+ * `minTextureFamilies` distinct families — is not decoration. Without it
+ * this rule rejects golden day-2, which the founder authored: see the
+ * measurements recorded at that param. Alternation is only monotony when
+ * there is no third texture anywhere in the day.
+ *
+ * Unknown families break the chain rather than match it — an absence is
+ * not evidence of monotony.
+ */
+function checkTexture(
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slots: GrammarSlot[],
+): Violation[] {
+  const found: Violation[] = [];
+  const distinct = new Set(
+    slots.map((s) => familyOf(day, s)).filter((f): f is CategoryFamily => f !== null),
+  );
+  if (distinct.size >= ctx.params.pacing.minTextureFamilies) return found;
+
+  for (let i = 3; i < slots.length; i += 1) {
+    const window = [slots[i - 3], slots[i - 2], slots[i - 1], slots[i]];
+    const families = window.map((s) => familyOf(day, s));
+    if (families.some((f) => f === null)) continue;
+    const [a, b, c, d] = families;
+    if (a !== c || b !== d || a === b) continue;
+    // A user's own commitments are not ours to call monotonous.
+    if (window.every((s) => s.origin === "user")) continue;
+    found.push(
+      violation(
+        "rhythm.alternating-texture",
+        window.map((s) => s.id),
+        `Four stops in a row alternate ${a} and ${b}: ${window
+          .map((s) => describePlace(placeOf(day, s), s.placeId))
+          .join(" → ")} — and the whole day holds only ${distinct.size} kind${distinct.size === 1 ? "" : "s"} of place. A day needs texture, not a rhythm: put something in it that is neither ${a} nor ${b}.`,
+        {
+          families: [a, b, c, d],
+          distinctFamilies: distinct.size,
+          minTextureFamilies: ctx.params.pacing.minTextureFamilies,
+          slotIds: window.map((s) => s.id),
+        },
+      ),
+    );
+  }
+  return found;
+}
+
+/**
+ * Endings that land (XXX-35 §1.1). The founder's second day finished
+ * "2hrs free → meal", which is not a finale — it is the day running out.
+ *
+ * ADVISORY, deliberately. "Dinner last" is usually exactly right; the
+ * defect is the dead gap in front of it. A violation here would also put
+ * the regeneration loop at risk on a thin evening, which is the same
+ * discipline that governs the unavoidable-weather advisory.
+ */
+function checkEnding(
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slots: GrammarSlot[],
+): Violation[] {
+  const last = slots[slots.length - 1];
+  const previous = slots[slots.length - 2];
+  if (last === undefined || previous === undefined) return [];
+  if (last.origin === "user") return []; // the user chose their own ending
+  if (familyOf(day, last) !== "table") return [];
+
+  const gap = timeToMinutes(last.startTime) - timeToMinutes(previous.endTime);
+  const threshold = ctx.params.pacing.endingGapMinutes;
+  if (gap < threshold) return [];
+
+  return [
+    advisory(
+      "rhythm.ending-without-landing",
+      [previous.id, last.id],
+      `The day ends on ${describePlace(placeOf(day, last), last.placeId)} at ${last.startTime}, ${gap} minutes after ${describePlace(placeOf(day, previous), previous.placeId)} finishes, with nothing in between. That reads as the day running out rather than closing — put something in the gap or bring the ending forward.`,
+      {
+        gapMinutes: gap,
+        endingGapMinutes: threshold,
+        lastSlotId: last.id,
+        previousSlotId: previous.id,
+      },
+    ),
+  ];
 }
 
 function isHeavyweight(

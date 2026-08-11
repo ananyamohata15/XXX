@@ -23,6 +23,7 @@ import type {
   City,
   PlaceCategory,
   SlotKind,
+  SlotRole,
   Tier,
   TransportMode,
 } from "@/shared/vocabulary";
@@ -84,6 +85,63 @@ export interface SlotIntent {
   window: Span;
   categories: PlaceCategory[];
   dwellMinutes: number;
+  /** What this stop is FOR in the day's arc (XXX-35). */
+  role?: SlotRole;
+}
+
+/**
+ * The concierge's elected centrepiece (XXX-35). Tier 3 and labelled: it is
+ * a judgment about the day's shape, and the founder can overrule it — a
+ * user-origin anchor pre-empts election entirely.
+ */
+export interface ElectedAnchorRecord {
+  category: PlaceCategory;
+  dwellMinutes: number;
+  reason: string;
+  source: string;
+  tier: Tier;
+}
+
+/** Free time the arc reserved, before seating decides its exact bounds. */
+export interface OpenIntervalPlan {
+  id: string;
+  /** The intent this period follows; null = the start of the day. */
+  afterIntentId: string | null;
+  minutes: number;
+}
+
+/**
+ * Free time as a PLACED choice: it has a location and a reason.
+ *
+ * Deliberately not a slot. `slots.place_id` is NOT NULL and
+ * `slots_kind_valid` admits only meal|activity, so representing free time
+ * as a slot would mean a migration to store something that is not a stop.
+ * It rides alongside the day exactly as `ComposedLeg` does.
+ *
+ * The founder's complaint was not that free time existed — it was "too
+ * much free time; that too in the middle of nowhere". `locality` is the
+ * answer to the second half.
+ */
+export interface OpenPeriod {
+  id: string;
+  startTime: string;
+  endTime: string;
+  /** The neighbourhood the traveller is in for it. */
+  locality: string;
+  reason: "before the anchor" | "after the anchor" | "evening drift";
+  /**
+   * true  = the arc RESERVED this time: a template `open` step moved the
+   *         cursor on purpose, so the next stop was pushed later.
+   * false = the day produced it and we are NAMING it rather than hiding it.
+   *
+   * The distinction is kept because collapsing it would be a small lie, and
+   * because it is the honest answer to the CP2 finding: the first build
+   * only surfaced reserved periods, so the templates without an `open` step
+   * still delivered the founder's unexplained gap — 135 minutes of it,
+   * worse than the 133 they complained about. A traveller experiences both
+   * kinds identically; a reviewer should be able to tell them apart.
+   */
+  placed: boolean;
 }
 
 /** The bounded choice offered to the selector: legal options only. */
@@ -174,6 +232,22 @@ export interface ComposedLeg {
   mode: TransportMode;
   source: string;
   tier: Tier;
+  /**
+   * Present when the composer took the traveller off an over-cap walk
+   * (XXX-35 item 1). It exists so the narration can be DETERMINISTIC: the
+   * swap produces no advisory — the day is correct — so without the
+   * counterfactual recorded here, "I put you on the subway, it's -8 out"
+   * could only be an LLM sentence with an invented number in it. The
+   * temperature rendered is the temperature the cap function read.
+   */
+  exposureSwap: {
+    fromMode: TransportMode;
+    toMode: TransportMode;
+    exposedMinutes: number;
+    capMinutes: number;
+    apparentTempC: number;
+    drivers: string[];
+  } | null;
 }
 
 export interface CardReason {
@@ -188,6 +262,12 @@ export type GenerationOutcome =
       day: GrammarDay;
       /** The hops the scheduler priced, with provenance. */
       travel: ComposedLeg[];
+      /** Free time the arc placed — located and reasoned, never residue. */
+      openPeriods: OpenPeriod[];
+      /** null = a user anchor pre-empted election. */
+      electedAnchor: ElectedAnchorRecord | null;
+      /** Which arc shape built this day (XXX-35) — auditable after the fact. */
+      arcTemplateId: string;
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];
       narrated: NarratedDay;

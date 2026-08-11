@@ -71,6 +71,49 @@ export type SlotOrigin = (typeof SLOT_ORIGINS)[number];
 export const SLOT_KINDS = ["meal", "activity"] as const;
 export type SlotKind = (typeof SLOT_KINDS)[number];
 
+/**
+ * What a stop is FOR in the day's arc (XXX-35 §1.1). Distinct from
+ * `SlotKind` (what you do there) and from `SlotOrigin` (who put it there):
+ * a role is the concierge's judgment about the day's shape, so it is
+ * Tier 3 and only ever carried by concierge slots. `anchor` is the elected
+ * centrepiece — the answer to the founder's "the day isnt anchored on
+ * anything", recorded twice in the corpus.
+ */
+export const SLOT_ROLES = [
+  "anchor",
+  "warmup",
+  "contrast",
+  "close",
+  "meal",
+] as const;
+export type SlotRole = (typeof SLOT_ROLES)[number];
+
+/**
+ * Texture families. Anti-alternation is measured in FAMILIES rather than
+ * categories because a traveller does not feel the difference between two
+ * galleries and a gallery-then-historic-house: both read as "more of the
+ * same". "meal, gallery, meal, gallery" and "Food Park Food Park" — the
+ * founder's own two verdicts — are the same defect in this vocabulary.
+ */
+export const CATEGORY_FAMILIES = [
+  "table",
+  "culture",
+  "outdoor",
+  "market",
+  "night",
+] as const;
+export type CategoryFamily = (typeof CATEGORY_FAMILIES)[number];
+
+export const CATEGORY_FAMILY: Record<PlaceCategory, CategoryFamily> = {
+  restaurants: "table",
+  cafes: "table",
+  museums_galleries: "culture",
+  historic_sites: "culture",
+  parks: "outdoor",
+  markets: "market",
+  nightlife_bars: "night",
+};
+
 export const TRANSPORT_MODES = ["walk", "cycle", "drive", "transit"] as const;
 export type TransportMode = (typeof TRANSPORT_MODES)[number];
 

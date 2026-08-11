@@ -4,6 +4,7 @@ import {
   CITIES,
   SLOT_KINDS,
   SLOT_ORIGINS,
+  SLOT_ROLES,
   TIERS,
   TIER_VALUES,
   TRANSPORT_MODES,
@@ -109,6 +110,16 @@ export const slotViewSchema = z
      */
     reason: reasonSchema.nullable(),
     alternates: z.array(alternateViewSchema),
+    /**
+     * What this stop is FOR in the day's arc (XXX-35). The card marks the
+     * `anchor` so the day's centrepiece is VISIBLE — the founder's verdict
+     * on two separate days was "the day isnt anchored on anything", and a
+     * centre nobody can see is not much better than no centre.
+     *
+     * Optional because the hand-authored fixture predates the arc, and
+     * absent is the honest reading: that day was not composed around one.
+     */
+    role: z.enum(SLOT_ROLES).optional(),
   })
   .refine((s) => s.endTime > s.startTime, "endTime must be after startTime");
 export type SlotView = z.infer<typeof slotViewSchema>;
@@ -116,6 +127,19 @@ export type SlotView = z.infer<typeof slotViewSchema>;
 export const travelLegSchema = z.strictObject({
   mode: z.enum(TRANSPORT_MODES),
   minutes: z.number().int().positive(),
+  /**
+   * Why this is not a walk (XXX-35 item 1). Present only when the composer
+   * moved the traveller off an over-cap walk, and it carries the
+   * temperature the cap function actually read — so the pill can say "it's
+   * -8 out" without an LLM inventing the number.
+   */
+  exposureSwap: z
+    .strictObject({
+      fromMode: z.enum(TRANSPORT_MODES),
+      exposedMinutes: z.number().int().positive(),
+      apparentTempC: z.number(),
+    })
+    .optional(),
   /**
    * Per-leg provenance. Optional because the hand-authored fixture
    * carries one provenance for the whole matrix (travelProvenance); a

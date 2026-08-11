@@ -12,7 +12,11 @@
  * midnight constraint.
  */
 
-import { MatrixTravelProvider } from "../../day-grammar/travel";
+import {
+  ChainTravelProvider,
+  HaversineStubProvider,
+  MatrixTravelProvider,
+} from "../../day-grammar/travel";
 import type {
   GrammarDay,
   GrammarPlace,
@@ -227,6 +231,24 @@ function corridorBacktrackTrap(): TrapFixture {
     travel: new MatrixTravelProvider(matrix),
   };
 }
+
+/**
+ * Golden day 3's rink→PATH hop, lengthened to 35 minutes on foot and
+ * otherwise the ordinary stub. Only the walk is overridden, so transit on
+ * the same pair still prices through the stub — which is what makes the
+ * over-cap trap a VIOLATION (an alternative exists) and its walk-only
+ * sibling an advisory.
+ */
+const LONG_WINTER_WALK: TravelTimeProvider = new ChainTravelProvider([
+  new MatrixTravelProvider({
+    [MatrixTravelProvider.key({
+      origin: at(43.6525, -79.3839), // Nathan Phillips Square rink
+      destination: at(43.6455, -79.3807), // the PATH
+      mode: "walk",
+    })]: { minutes: 35, provenance: { source: "stub_haversine", tier: TIERS.judgment } },
+  }),
+  new HaversineStubProvider(),
+]);
 
 export const TRAP_FIXTURES: readonly TrapFixture[] = [
   // --- the seven founder trap classes -------------------------------------
@@ -539,6 +561,141 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
     },
     (g) => {
       g.day.places.distillery.coords = null;
+    },
+  ),
+
+  // --- Session 11 (XXX-35) -------------------------------------------------
+  broken(
+    goldenDay3,
+    {
+      key: "trap-food-venue-as-activity",
+      title: "A pub seated as an evening activity, invisible to the food cap",
+      expect: "pacing.food-stops-exceeded",
+      trapClass: null,
+      why: "The Session-10 defect, as a fixture. pacing.food-stops-exceeded counted slot.kind==='meal', so a restaurants-categorised venue seated as an ACTIVITY was invisible to the one rule that bounds food stops — the founder counted four meals and the rule counted three. Under the OLD predicate this day passes, which is what makes it worth having.",
+    },
+    (g) => {
+      // Day 3 already carries three meal slots. A fourth and fifth food
+      // VENUE arrive as activities: legal kinds, food categories.
+      g.day.places.pub = {
+        id: "pub",
+        name: "Scotland Yard Pub",
+        neighborhood: "Entertainment District",
+        coords: at(43.6462, -79.3901),
+        tags: tags(),
+        category: present("restaurants", CONCIERGE, TIERS.observed),
+        hours: present(hours({ default: [["11:00", "24:00"]] }), PLACES_API, TIERS.verified),
+        businessStatus: present("operational", PLACES_API, TIERS.verified),
+        priceRange: present(cad(20, 35), PLACES_API, TIERS.observed),
+      };
+      g.day.places.espresso = {
+        id: "espresso",
+        name: "Dark Horse Espresso",
+        neighborhood: "Financial District",
+        coords: at(43.6459, -79.3812),
+        tags: tags(),
+        category: present("cafes", CONCIERGE, TIERS.observed),
+        hours: present(hours({ default: [["07:00", "19:00"]] }), PLACES_API, TIERS.verified),
+        businessStatus: present("operational", PLACES_API, TIERS.verified),
+        priceRange: present(cad(5, 12), PLACES_API, TIERS.observed),
+      };
+      // Both as `activity`, both inside their own hours, both feasible.
+      g.day.slots.splice(
+        5,
+        0,
+        slot({ id: "s5b", place: "espresso", from: "18:05", to: "18:25" }),
+      );
+      g.day.slots.push(
+        slot({ id: "s7", place: "pub", from: "20:45", to: "21:00", by: "walk" }),
+      );
+      g.day.dayEnd = "21:30";
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-over-cap",
+      title: "A 35-minute walk at -8 °C with a subway available",
+      expect: "exposure.leg-over-cap",
+      trapClass: null,
+      why: "The founder's own words: 'Winter days with 30+ mins of walking is illogical.' Before Session 11 no rule read a travel leg at any temperature, so this passed the whole grammar. Transit is available and priceable, so it is a violation rather than an advisory — the day is fixable.",
+      travel: LONG_WINTER_WALK,
+    },
+    (g) => {
+      // Two edits, and both are needed. The provider lengthens the WALK
+      // (moving the venue instead would change hours reachability and
+      // feasibility too, and a trap that breaks two things names neither);
+      // the retiming keeps the arrival legal, so the ONLY finding in the
+      // frame is the exposure.
+      g.day.slots[4].startTime = "16:25";
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-unavoidable",
+      title: "The same cold walk with nothing else to take",
+      expect: "exposure.leg-unavoidable",
+      trapClass: null,
+      why: "Conditional severity, and it is what keeps regeneration terminating: rejecting a day for an exposure it cannot fix would loop forever. Walk-only trip, same leg — advisory, and the traveller is told to dress for it.",
+      travel: LONG_WINTER_WALK,
+    },
+    (g) => {
+      g.day.slots[4].startTime = "16:25";
+      g.transport = ["walk"];
+    },
+  ),
+  broken(
+    goldenDay3,
+    {
+      key: "trap-leg-exposure-unknown",
+      title: "Winter walking legs on a day beyond the forecast horizon",
+      expect: "exposure.unknown",
+      trapClass: null,
+      why: "Absence must not pass as approval. With no weather row the cap has no input and the rule CANNOT fire, so it says the legs went unchecked — the same failure shape as Session 1's HEAD-based health check, which answered 'healthy' by not looking.",
+    },
+    (g) => {
+      g.windows = null;
+    },
+  ),
+  broken(
+    goldenDay6,
+    {
+      key: "trap-alternating-texture",
+      title: "Outdoor, table, outdoor, table — in a day that holds nothing else",
+      expect: "rhythm.alternating-texture",
+      trapClass: null,
+      why: "The founder's headline complaint, as a fixture: 'Food Park Food Park Food Food' and 'Meal gallery meal gallery meal', recorded independently on two different days. The old max-2-per-category rule permitted both — two parks and three meals IS two per category — so nothing in the grammar could see the rhythm the founder saw immediately.",
+    },
+    (g) => {
+      // ONE edit: the old town stops being a historic site and becomes
+      // another green space. That is deliberately the smallest possible
+      // break — it removes the day's third texture without touching a
+      // time, a venue or a distance, so the run and the poverty of texture
+      // arrive together and nothing else moves. Dwell stays legal (70 min
+      // sits inside parks' 20-150 band), the stop was already tagged
+      // outdoor, and the geometry is untouched.
+      g.day.places.nol.category = present("parks", CONCIERGE, TIERS.observed);
+    },
+  ),
+  broken(
+    goldenDay6,
+    {
+      key: "trap-ending-without-landing",
+      title: "A 75-minute hole, and then dinner",
+      expect: "rhythm.ending-without-landing",
+      trapClass: null,
+      why: "The founder's '2hr13 mins wasted in between' and 'too much free time; that too in the middle of nowhere', at the one place it hurts most — the end of the day. ADVISORY on purpose: 'dinner last' is usually exactly right, and the defect is the dead gap in front of it, not the dinner. A violation here would also threaten loop termination on a thin evening.",
+    },
+    (g) => {
+      // Dinner slides 45 minutes later and keeps its 75-minute dwell. The
+      // gap after Table Rock becomes 75 min: past the 60-minute ending
+      // threshold, and deliberately short of structure.resetGapMinutes
+      // (90), so the ending rule is the only one in the frame. Napoli is
+      // open 16:00-22:00 and the day already ran to 21:00, so nothing
+      // about the seating becomes illegal — it just stops landing.
+      g.day.slots[4].startTime = "18:45";
+      g.day.slots[4].endTime = "20:00";
     },
   ),
 ];

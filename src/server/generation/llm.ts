@@ -103,7 +103,7 @@ Toronto context (stable):
 - Category vocabulary (the only seven): restaurants, cafes,
   museums_galleries, historic_sites, markets, nightlife_bars, parks.
 - Meal patterns: classic (breakfast 07:00-11:00, lunch 11:30-14:30,
-  dinner 17:30-21:30), coffee_then_brunch, grazing. The pattern is an
+  dinner 17:30-21:30) and coffee_then_brunch. The pattern is an
   input; you never move a meal outside its window.
 - Seasonal truths: summer sunsets run past 20:30, winter light dies
   before 17:00 and outdoor time is front-loaded; markets are at their

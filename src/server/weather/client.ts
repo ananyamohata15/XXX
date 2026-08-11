@@ -15,7 +15,13 @@ import {
  * stored hour lives in the frame the day-grammar schedules in.
  */
 
-export const FORECAST_HORIZON_DAYS = 14;
+/**
+ * Re-exported, not redeclared: the tasting page bounds its date picker by
+ * this number and may not import `src/server`, so it moved to
+ * `src/shared/scheduling-windows` where both sides read the same one.
+ */
+import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
+export { FORECAST_HORIZON_DAYS };
 export const AIR_QUALITY_HORIZON_DAYS = 5;
 
 const FORECAST_HOURLY = [

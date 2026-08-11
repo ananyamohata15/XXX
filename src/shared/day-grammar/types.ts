@@ -20,6 +20,7 @@ import type {
   PlaceCategory,
   SlotKind,
   SlotOrigin,
+  SlotRole,
   Tier,
   TransportMode,
   Weekday,
@@ -153,6 +154,15 @@ export interface GrammarSlot {
    * Matched against the place's `offerings` by label.
    */
   requiresOffering?: string;
+  /**
+   * What this stop is FOR in the day's arc (XXX-35). Tier-3 judgment, so
+   * only ever present on `origin: "concierge"` slots — a user's own
+   * commitment is the day's centre by definition and needs no election.
+   * Absent = the day was built without an arc (every day before Session
+   * 11, and every hand-authored fixture): the arc rules then report what
+   * they can see from categories alone rather than assuming a shape.
+   */
+  role?: SlotRole;
 }
 
 export const DAY_ARCHETYPES = ["city", "excursion"] as const;
@@ -180,7 +190,18 @@ export interface GrammarDay {
 // Context
 // ---------------------------------------------------------------------------
 
-export const MEAL_PATTERNS = ["classic", "coffee_then_brunch", "grazing"] as const;
+/**
+ * Meal patterns, not fixed slots (XXX-5 comment 10290).
+ *
+ * `grazing` was removed in Session 11 (XXX-35 ruling 3) because nothing
+ * could select it: comment 10290 selects grazing by CHRONOTYPE, and
+ * `Persona` carries pace/gravity/foodCourage/structure/lens — no
+ * chronotype. Its params advertised `maxFoodStops: 7` while governing
+ * nothing, which is a false statement about what the grammar enforces.
+ * The product concept is intact and recorded; it returns in one commit
+ * when E6 lands a chronotype dimension that can actually choose it.
+ */
+export const MEAL_PATTERNS = ["classic", "coffee_then_brunch"] as const;
 export type MealPatternId = (typeof MEAL_PATTERNS)[number];
 
 export const PERSONA_STRUCTURES = ["scheduler", "wanderer"] as const;
@@ -224,6 +245,9 @@ export interface TravelTimeProvider {
 
 import type { GrammarParams } from "./params";
 
+/** The exposure band table, named so the cap function can take just it. */
+export type GrammarParamsExposure = GrammarParams["exposure"];
+
 /**
  * Everything the validator needs that is not the day itself. Every
  * nullable field is a thing we may genuinely not know; each has a named
@@ -240,6 +264,14 @@ export interface GrammarContext {
   budgetBand: PriceRange | null;
   /** Trip circumstance the schema does not carry yet (trap class 5). */
   lodging: LatLng | null;
+  /**
+   * Modes this traveller will actually use (Trip owns it — constraint 3).
+   * The leg-exposure rule needs it to know whether an alternative to a
+   * too-cold walk EXISTS: `null` means we do not know, and a rule that
+   * does not know cannot claim one, so it downgrades to an advisory
+   * rather than rejecting a day over a guess.
+   */
+  transport: TransportMode[] | null;
   /** null = no baseline supplied; anchor-mutation checking is skipped. */
   anchorBaseline: Record<string, AnchorBaseline> | null;
   travel: TravelTimeProvider;
@@ -274,6 +306,10 @@ export const RULE_IDS = [
   "weather.outdoor-in-adverse-window",
   "weather.outdoor-unavoidable-adverse",
   "weather.unknown",
+  // leg exposure — the first rules that read a travel leg, not a slot
+  "exposure.leg-over-cap",
+  "exposure.leg-unavoidable",
+  "exposure.unknown",
   // travel
   "travel.infeasible",
   "travel.tight-transfer",
@@ -288,6 +324,9 @@ export const RULE_IDS = [
   "pacing.no-breather",
   "pacing.wanderer-overscheduled",
   "pacing.long-gap-without-food",
+  // arc / rhythm — texture, and endings that land
+  "rhythm.alternating-texture",
+  "rhythm.ending-without-landing",
   // meals
   "meal.outside-pattern-window",
   "meal.pattern-unknown",

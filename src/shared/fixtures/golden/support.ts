@@ -38,7 +38,12 @@ import {
   type SchedulingWindows,
 } from "../../scheduling-windows";
 import type { PriceRange } from "../../timeline";
-import { WEEKDAYS, type Tier, type Weekday } from "../../vocabulary";
+import {
+  WEEKDAYS,
+  type Tier,
+  type TransportMode,
+  type Weekday,
+} from "../../vocabulary";
 
 /** One timestamp for the whole golden set, as the E2 fixture does. */
 export const GOLDEN_FETCHED_AT = "2026-08-06T23:05:00-04:00";
@@ -141,6 +146,14 @@ export const at = (lat: number, lng: number): LatLng => ({ lat, lng });
 export function clearWindows(
   light: DaylightTimes,
   maxUsAqi: number | null = 34,
+  /**
+   * Apparent temperature every hour of this fixture day. 18 °C is a day
+   * nobody has an opinion about — no exposure band binds it — which is
+   * exactly what a "clear" fixture should mean now that leg exposure
+   * reads hourly readings (XXX-35). A fixture wanting winter legs passes
+   * its own number.
+   */
+  apparentTempC = 18,
 ): SchedulingWindows {
   const floorHour = (hm: string) => `${hm.slice(0, 2)}:00`;
   const ceilHour = (hm: string) =>
@@ -162,6 +175,14 @@ export function clearWindows(
     aqiConsidered: maxUsAqi !== null,
     aqi: maxUsAqi === null ? { status: "absent" } : { status: "present", maxUsAqi },
     daylight: light,
+    hourlyExposure: Array.from({ length: 24 }, (_, hour) => ({
+      startLocal: `${String(hour).padStart(2, "0")}:00`,
+      endLocal: `${String(hour + 1).padStart(2, "0")}:00`,
+      apparentTempC,
+      precipProbPct: 0,
+      precipMm: 0,
+      usAqi: maxUsAqi,
+    })),
   };
 }
 
@@ -181,6 +202,13 @@ export interface GoldenDay {
   budgetBand: PriceRange | null;
   lodging: LatLng | null;
   anchorBaseline: Record<string, AnchorBaseline> | null;
+  /**
+   * Modes this day's traveller uses. Optional: absent means the fixture
+   * does not state them, which is exactly the `null` the leg-exposure rule
+   * reads as "cannot claim an alternative exists" — so an unstated fixture
+   * gets an advisory rather than a rejection.
+   */
+  transport?: TransportMode[];
 }
 
 /** Builds the validator context for a golden day. Stub travel by default. */
@@ -197,6 +225,7 @@ export function contextFor(
     lodging: golden.lodging,
     anchorBaseline: golden.anchorBaseline,
     travel,
+    transport: golden.transport ?? null,
     params: GRAMMAR_PARAMS,
   };
 }

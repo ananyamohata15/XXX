@@ -130,6 +130,11 @@ describe("composeDay", () => {
     candidate("museum1", "museums_galleries", 43.6677, -79.3948, { open: "10:00", close: "17:30" }),
     candidate("resto1", "restaurants", 43.6503, -79.3592, { open: "11:30", close: "23:00" }),
     candidate("resto2", "restaurants", 43.6531, -79.367, { open: "09:00", close: "22:00" }),
+    // Added in Session 11: the arc asks for contrast and close steps in
+    // families this pool did not carry, so a six-row pool could not
+    // exercise a full day. The assertions below are unchanged.
+    candidate("park1", "parks", 43.6465, -79.3733, { open: "06:00", close: "23:00" }),
+    candidate("bar1", "nightlife_bars", 43.6445, -79.4, { open: "16:00", close: "02:00" }),
   ];
   const byId = new Map(pool.map((c) => [c.place.id, c]));
 

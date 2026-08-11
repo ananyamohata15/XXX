@@ -20,6 +20,9 @@ import { getServerSupabase } from "../supabase";
 import { buildTastingContext, TASTING_SURFACE } from "../feedback/shown";
 import { buildSyntheticDay } from "./synthetic";
 import { toTimelineDay } from "@/shared/timeline-mapping";
+import type { Violation } from "@/shared/day-grammar/types";
+import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
+import type { WeatherBlindNotice } from "@/shared/tasting";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import {
   capReached,
@@ -103,6 +106,10 @@ async function runSyntheticDay(
     status: "ok",
     synthetic: true,
     day,
+    // A fabricated day is not a weather claim either way, and the preview
+    // exists to feel the page rather than to vet a date.
+    weatherBlind: null,
+    openPeriods: [],
     headline: built.headline,
     advisories: built.advisories,
     dayNotes: built.dayNotes,
@@ -132,6 +139,32 @@ async function runSyntheticDay(
       },
       quota: await readQuota(supabase, nowIso),
     },
+  };
+}
+
+/**
+ * Whether this day was vetted weather-blind, and how far out it is.
+ *
+ * Read off the grammar's own `weather.unknown` advisory rather than
+ * recomputed from the date: the advisory fires because the environment had
+ * no row, which is the fact. Date arithmetic would only ever be a guess
+ * about what the table holds — and it would be a confident guess on
+ * exactly the days the table is stale.
+ */
+export function weatherBlindNotice(
+  findings: Violation[],
+  date: string,
+  nowIso: string,
+): WeatherBlindNotice | null {
+  const blind = findings.some((f) => f.ruleId === "weather.unknown");
+  if (!blind) return null;
+  const dayMs = 86_400_000;
+  const today = Date.parse(`${nowIso.slice(0, 10)}T00:00:00Z`);
+  const target = Date.parse(`${date}T00:00:00Z`);
+  return {
+    date,
+    daysOut: Math.round((target - today) / dayMs),
+    horizonDays: FORECAST_HORIZON_DAYS,
   };
 }
 
@@ -293,6 +326,8 @@ export async function runTastingGeneration(
     status: "ok",
     synthetic: false,
     day,
+    weatherBlind: weatherBlindNotice(outcome.findings, input.date, nowIso),
+    openPeriods: outcome.openPeriods,
     headline: outcome.narrated.headline,
     advisories: outcome.narrated.advisories.map((a) => ({
       ruleId: a.ruleId,

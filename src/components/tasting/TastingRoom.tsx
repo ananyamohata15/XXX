@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { InteractiveTimeline } from "@/components/timeline/InteractiveTimeline";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
 import type { TastingOutcome } from "@/shared/tasting";
 import { Meter } from "./Meter";
 import { VerdictControls } from "./VerdictControls";
@@ -39,12 +40,27 @@ const STAGES: { label: string; atMs: number }[] = [
   { label: "Writing the reasons", atMs: 9000 },
 ];
 
-/** A random near-future date, which is what "vet something new" means. */
+/**
+ * A random near-future date, which is what "vet something new" means —
+ * and since Session 11 (XXX-35 §1.5) it stays INSIDE the forecast horizon.
+ *
+ * It used to draw +3…+45 against a 14-day horizon, so most of its range
+ * produced weather-blind days and the page never said so. Both of the days
+ * the founder red-penned in Session 10 were 36 days out: the dice sent
+ * them there. Going weather-blind should be a choice someone makes on
+ * purpose, not a coin flip they did not know they tossed — so Random stays
+ * vettable and the date field below is left open for the deliberate case.
+ */
 function randomNearFutureDate(): string {
-  const days = 3 + Math.floor(Math.random() * 43);
+  const days = 3 + Math.floor(Math.random() * (FORECAST_HORIZON_DAYS - 3));
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** Today, city-local enough for a date input's floor. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function Skeleton({ startedAt }: { startedAt: number }) {
@@ -306,6 +322,7 @@ export function TastingRoom() {
             <input
               type="date"
               value={date}
+              min={todayIso()}
               disabled={synthetic}
               onChange={(e) => setDate(e.target.value)}
               className="flex-1 rounded-xl border border-zinc-200 bg-white p-3 text-sm disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
@@ -319,6 +336,17 @@ export function TastingRoom() {
               Random
             </button>
           </div>
+          {/* The picker is deliberately NOT capped at the horizon: vetting a
+              day five weeks out is real work (pool, hours, arc, pacing and
+              travel are all checkable without weather). It is labelled
+              instead, and the day itself says so when it happens. */}
+          {!synthetic && date !== "" && (
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              Weather is forecast {FORECAST_HORIZON_DAYS} days out. Past that a
+              day is still worth vetting — hours, pacing and travel all hold —
+              but it is vetted weather-blind, and the day will say so.
+            </p>
+          )}
           <input
             type="number"
             inputMode="numeric"
@@ -414,6 +442,21 @@ export function TastingRoom() {
             </div>
           )}
 
+          {/* One honest line, not a modal (XXX-35 §1.5). It is driven by
+              the environment the generation actually had — a missing
+              forecast row — not by arithmetic on the date. */}
+          {outcome.weatherBlind !== null && (
+            <div className="mx-auto mt-6 w-full max-w-md px-4">
+              <p className="rounded-xl border border-zinc-300 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+                <strong>Vetted weather-blind.</strong>{" "}
+                {outcome.weatherBlind.date} is {outcome.weatherBlind.daysOut}{" "}
+                days out and the forecast reaches{" "}
+                {outcome.weatherBlind.horizonDays}. Hours, pacing and travel
+                were checked; weather and walking exposure were not.
+              </p>
+            </div>
+          )}
+
           <div className="mx-auto mt-6 w-full max-w-md space-y-2 px-4">
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
               {outcome.headline}
@@ -437,6 +480,19 @@ export function TastingRoom() {
                 className="text-xs text-zinc-500 dark:text-zinc-400"
               >
                 Unfilled: {u.label} ({u.cause}) — a thinner day, said out loud.
+              </p>
+            ))}
+            {/* Free time, shown. The founder read "2hr13 mins wasted in
+                between" off the timestamps because the timeline rendered
+                nothing at all in the gap; a placed period says where the
+                traveller is and why. */}
+            {outcome.openPeriods.map((period) => (
+              <p
+                key={period.id}
+                className="text-xs text-zinc-600 dark:text-zinc-300"
+              >
+                Open time {period.startTime}–{period.endTime} in{" "}
+                {period.locality} — placed {period.reason}, not left over.
               </p>
             ))}
           </div>

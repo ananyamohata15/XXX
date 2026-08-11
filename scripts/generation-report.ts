@@ -11,6 +11,10 @@ import type {
   GenerationRequest,
 } from "@/server/generation/types";
 import type { Environment } from "@/server/generation/context";
+import { composeDay, type ComposeInput } from "@/server/generation/compose";
+import { timeToMinutes } from "@/shared/time";
+import { CATEGORY_FAMILY } from "@/shared/vocabulary";
+import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { computeDaylight } from "@/server/weather/ephemeris";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
@@ -32,7 +36,17 @@ import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
  *                       ANTHROPIC_API_KEY, self-reported)
  *   --inject            --llm with a prompt-injection probe in a candidate name;
  *                       proves the output contract rejects it (CP3 proof f)
- *   --matrix            the 6-persona distinctiveness matrix, same date (CP3 b)
+ *   --matrix            the 6-persona distinctiveness matrix, same date (CP3 b).
+ *                       Since Session 11 it also GATES category-sequence
+ *                       overlap (≤0.55/0.80), reports role-sequence overlap,
+ *                       and prints the seat-centering A/B histograms — the
+ *                       A/B costs nothing, because composeDay is pure and
+ *                       both seatings run on one generation's inputs.
+ *   --session10-ab      the two days the founder red-penned, re-run at their
+ *                       exact persona/date/seed and read against their own
+ *                       recorded verdicts (XXX-35 CP2)
+ *   --in-horizon <date> with --session10-ab: also re-run inside the forecast
+ *                       horizon, so leg exposure can actually be exercised
  *   --variety <n>       n unseeded --llm runs of --persona; overlap in [0.40, 0.85]
  *   --json              machine-readable output
  *
@@ -121,6 +135,16 @@ function rainAfternoon(date: string): Environment {
       aqiConsidered: true,
       aqi: { status: "present", maxUsAqi: 30 },
       daylight,
+      // 14 °C: warm enough that no exposure band binds, so the repair demo
+      // still demonstrates the RAIN repair and nothing else.
+      hourlyExposure: Array.from({ length: 24 }, (_, hour) => ({
+        startLocal: `${String(hour).padStart(2, "0")}:00`,
+        endLocal: `${String(hour + 1).padStart(2, "0")}:00`,
+        apparentTempC: 14,
+        precipProbPct: hour >= 12 && hour < 18 ? 80 : 0,
+        precipMm: hour >= 12 && hour < 18 ? 1.2 : 0,
+        usAqi: 30,
+      })),
     },
   };
 }
@@ -178,6 +202,84 @@ function sequenceOverlap(a: string[], b: string[]): number {
     }
   }
   return dp[a.length][b.length] / Math.min(a.length, b.length);
+}
+
+/** Ordered ARC-ROLE sequence of the day's concierge slots (XXX-35). */
+function roleSequence(outcome: GenerationOutcome): string[] {
+  if (outcome.status !== "ok") return [];
+  return [...outcome.day.slots]
+    .sort((x, y) => x.startTime.localeCompare(y.startTime))
+    .filter((s) => s.origin === "concierge")
+    .map((s) => s.role ?? "unroled");
+}
+
+/** Distinct texture families in a day — the anti-monotony denominator. */
+function familyCount(outcome: GenerationOutcome): number {
+  if (outcome.status !== "ok") return 0;
+  const families = new Set<string>();
+  for (const slot of outcome.day.slots) {
+    const c = outcome.day.places[slot.placeId]?.category;
+    if (c?.status === "present") families.add(CATEGORY_FAMILY[c.value]);
+  }
+  return families.size;
+}
+
+/**
+ * Session 11 gate (XXX-35 ruling 2): category-sequence overlap GRADUATES
+ * from observed to gated. Session 9 measured 0.693 with the metric
+ * non-gating; the founder's monotony verdict is the evidence that earned
+ * the graduation.
+ */
+const CATEGORY_SEQUENCE_GATE = { mean: 0.55, max: 0.8 };
+const VENUE_OVERLAP_GATE = { mean: 0.35, max: 0.5 };
+
+/**
+ * Mean absolute distance (minutes) from each seated slot's midpoint to its
+ * intent window's centre. Lower is more centred; this is the number the
+ * seat-choice objective exists to move.
+ */
+function centreDeviation(
+  composed: { day: { slots: { id: string; startTime: string; endTime: string }[] } },
+  skeleton: { intents: { id: string; window: { start: number; end: number } }[] },
+  mealsOnly: boolean,
+  kindOf: (slotId: string) => string | undefined,
+): { mean: number; samples: number[] } {
+  const samples: number[] = [];
+  for (const slot of composed.day.slots) {
+    const intent = skeleton.intents.find((i) => `s-${i.id}` === slot.id);
+    if (intent === undefined) continue;
+    if (mealsOnly && kindOf(slot.id) !== "meal") continue;
+    const centre = (intent.window.start + intent.window.end) / 2;
+    const mid =
+      (timeToMinutes(slot.startTime) + timeToMinutes(slot.endTime)) / 2;
+    samples.push(Math.abs(mid - centre));
+  }
+  const mean =
+    samples.length === 0
+      ? 0
+      : samples.reduce((a, b) => a + b, 0) / samples.length;
+  return { mean, samples };
+}
+
+/** A crude terminal histogram — the shape matters, not the pixels. */
+function histogram(label: string, values: number[], bucketMinutes = 15): void {
+  if (values.length === 0) {
+    console.log(`  ${label}: (no samples)`);
+    return;
+  }
+  const buckets = new Map<number, number>();
+  for (const v of values) {
+    const b = Math.floor(v / bucketMinutes);
+    buckets.set(b, (buckets.get(b) ?? 0) + 1);
+  }
+  const max = Math.max(...buckets.keys());
+  console.log(`  ${label} (n=${values.length}, mean=${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)}min):`);
+  for (let b = 0; b <= max; b++) {
+    const n = buckets.get(b) ?? 0;
+    console.log(
+      `    ${String(b * bucketMinutes).padStart(3)}–${String((b + 1) * bucketMinutes - 1).padEnd(3)}min │${"█".repeat(n)}${n === 0 ? "" : ` ${n}`}`,
+    );
+  }
 }
 
 function printNarration(outcome: GenerationOutcome): void {
@@ -287,15 +389,33 @@ async function main() {
     console.log(`generation-report MATRIX: date=${date} seed=${seed} [llm]`);
     const keys = Object.keys(GOLDEN_PERSONAS);
     const outcomes = new Map<string, GenerationOutcome>();
+    // The A/B costs nothing: composeDay is pure given these inputs, so the
+    // last ones the engine used get recomposed the OLD way for comparison.
+    const lastComposeInput = new Map<string, ComposeInput>();
     for (const key of keys) {
-      const outcome = await generateDay(buildDeps(), {
-        ...request,
-        persona: GOLDEN_PERSONAS[key],
-        budgetBand: key === "day-4-budget" ? { min: 0, max: 70, currency: "CAD" } : null,
-      });
+      const deps = buildDeps();
+      const outcome = await generateDay(
+        { ...deps, onComposeInputs: (input) => lastComposeInput.set(key, input) },
+        {
+          ...request,
+          persona: GOLDEN_PERSONAS[key],
+          budgetBand: key === "day-4-budget" ? { min: 0, max: 70, currency: "CAD" } : null,
+        },
+      );
       outcomes.set(key, outcome);
       console.log(`\n${key}: ${digest(outcome)}`);
       console.log(`  categories: ${categorySequence(outcome).join(" > ")}`);
+      console.log(`  roles:      ${roleSequence(outcome).join(" > ")}`);
+      if (outcome.status === "ok") {
+        console.log(
+          `  arc: template=${outcome.arcTemplateId} anchor=${outcome.electedAnchor?.category ?? "(user-pinned)"} families=${familyCount(outcome)} open=${outcome.openPeriods.length} swaps=${outcome.travel.filter((l) => l.exposureSwap !== null).length}`,
+        );
+        for (const period of outcome.openPeriods) {
+          console.log(
+            `    open ${period.startTime}-${period.endTime} in ${period.locality} (${period.reason})`,
+          );
+        }
+      }
       printNarration(outcome);
       const s = outcome.stats;
       console.log(
@@ -307,6 +427,20 @@ async function main() {
     let max = 0;
     let pairs = 0;
     let seqSum = 0;
+    let seqMax = 0;
+    let roleSum = 0;
+    // The gate's DOMAIN is comparable-shape pairs (XXX-35 CP2 ruling a).
+    // A three-stop day is almost automatically a subsequence of a six-stop
+    // one under an LCS normalised by the shorter sequence, which measures
+    // the length difference, not monotony. Thresholds and normalization are
+    // untouched: what is refined is which pairs the number is ABOUT.
+    let cmpSum = 0;
+    let cmpMax = 0;
+    let cmpPairs = 0;
+    let crossSum = 0;
+    let crossMax = 0;
+    let crossPairs = 0;
+    const cmpWorst: string[] = [];
     for (let i = 0; i < keys.length; i++) {
       const row: string[] = [];
       for (let j = 0; j < keys.length; j++) {
@@ -322,8 +456,29 @@ async function main() {
           categorySequence(outcomes.get(keys[i])!),
           categorySequence(outcomes.get(keys[j])!),
         );
+        const ro = sequenceOverlap(
+          roleSequence(outcomes.get(keys[i])!),
+          roleSequence(outcomes.get(keys[j])!),
+        );
         sum += o;
         seqSum += so;
+        seqMax = Math.max(seqMax, so);
+        roleSum += ro;
+        const sizeI = categorySequence(outcomes.get(keys[i])!).length;
+        const sizeJ = categorySequence(outcomes.get(keys[j])!).length;
+        if (Math.abs(sizeI - sizeJ) <= 1) {
+          cmpSum += so;
+          cmpPairs++;
+          if (so > cmpMax) {
+            cmpMax = so;
+            cmpWorst.length = 0;
+            cmpWorst.push(`${keys[i]} (${sizeI}) vs ${keys[j]} (${sizeJ})`);
+          }
+        } else {
+          crossSum += so;
+          crossPairs++;
+          crossMax = Math.max(crossMax, so);
+        }
         max = Math.max(max, o);
         pairs++;
         row.push(o.toFixed(2));
@@ -331,20 +486,208 @@ async function main() {
       console.log(`  ${keys[i].padEnd(18)} ${row.join("  ")}`);
     }
     const mean = sum / pairs;
+    const venuePass =
+      mean <= VENUE_OVERLAP_GATE.mean && max <= VENUE_OVERLAP_GATE.max;
     console.log(
-      `\n  venue overlap: mean=${mean.toFixed(3)} (AC ≤0.35) max=${max.toFixed(2)} (AC ≤0.50) → ${
-        mean <= 0.35 && max <= 0.5 ? "PASS" : "FAIL"
+      `\n  venue overlap: mean=${mean.toFixed(3)} (AC ≤${VENUE_OVERLAP_GATE.mean}) max=${max.toFixed(2)} (AC ≤${VENUE_OVERLAP_GATE.max}) → ${
+        venuePass ? "PASS" : "FAIL"
       }`,
     );
+    const seqMean = seqSum / pairs;
+    const cmpMean = cmpPairs > 0 ? cmpSum / cmpPairs : 0;
+    const seqPass =
+      cmpMean <= CATEGORY_SEQUENCE_GATE.mean &&
+      cmpMax <= CATEGORY_SEQUENCE_GATE.max;
     console.log(
-      `  category-sequence overlap: mean=${(seqSum / pairs).toFixed(3)} (observed, non-gating)`,
+      `  category-sequence overlap [GATED, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} (GATE ≤${CATEGORY_SEQUENCE_GATE.mean}) max=${cmpMax.toFixed(2)} (GATE ≤${CATEGORY_SEQUENCE_GATE.max}) → ${
+        seqPass ? "PASS" : "FAIL"
+      }`,
     );
+    if (cmpMax > 0) {
+      console.log(`      worst comparable pair: ${cmpWorst[0] ?? "n/a"}`);
+    }
+    console.log(
+      `  category-sequence overlap [cross-shape, |Δstops|≥2, n=${crossPairs}]: mean=${(crossPairs > 0 ? crossSum / crossPairs : 0).toFixed(3)} max=${crossMax.toFixed(2)} (reported, NON-GATING — a short day is a subsequence of a long one by arithmetic)`,
+    );
+    console.log(
+      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   [Session 9 baseline 0.693; Session 11 pre-fix 0.711]`,
+    );
+    console.log(
+      `  role-sequence overlap:     mean=${(roleSum / pairs).toFixed(3)} (observed, non-gating — the leading indicator of template homogenization)`,
+    );
+
+    // ---- seated-time A/B, both composers on identical inputs -------------
+    // composeDay is pure given its inputs, so the OLD seating is recomputed
+    // from the very inputs the new one used. No second generation, no
+    // second Details call, and nothing to argue about in the comparison.
+    console.log(
+      "\n  seat-centering A/B (same candidates, selections and travel):",
+    );
+    const beforeAll: number[] = [];
+    const afterAll: number[] = [];
+    for (const key of keys) {
+      const input = lastComposeInput.get(key);
+      if (input === undefined) continue;
+      const kindOf = (slotId: string) =>
+        input.skeleton.intents.find((i) => `s-${i.id}` === slotId)?.kind;
+      const after = centreDeviation(composeDay(input), input.skeleton, true, kindOf);
+      const before = centreDeviation(
+        composeDay({ ...input, seatingLegacyEarliest: true }),
+        input.skeleton,
+        true,
+        kindOf,
+      );
+      beforeAll.push(...before.samples);
+      afterAll.push(...after.samples);
+      console.log(
+        `    ${key.padEnd(18)} meals: before ${before.mean.toFixed(0)}min from centre → after ${after.mean.toFixed(0)}min`,
+      );
+    }
+    histogram("BEFORE (earliest legal minute)", beforeAll);
+    histogram("AFTER  (seat-choice objective)", afterAll);
+    const beforeMean =
+      beforeAll.reduce((x, y) => x + y, 0) / Math.max(1, beforeAll.length);
+    const afterMean =
+      afterAll.reduce((x, y) => x + y, 0) / Math.max(1, afterAll.length);
+    console.log(
+      `    → mean distance from window centre: ${beforeMean.toFixed(1)}min → ${afterMean.toFixed(1)}min ${
+        afterMean < beforeMean ? "(IMPROVED)" : "(NO IMPROVEMENT)"
+      }`,
+    );
+
     const failed = [...outcomes.entries()].filter(([, o]) => o.status !== "ok");
     console.log(
       `  exam: ${outcomes.size - failed.length}/${outcomes.size} days validated clean${
         failed.length > 0 ? ` — FAILED: ${failed.map(([k]) => k).join(", ")}` : ""
       }`,
     );
+    return;
+  }
+
+  // ---- the Session-10 A/B (XXX-35 CP2) --------------------------------
+  //
+  // The two days the founder red-penned, regenerated at their EXACT
+  // persona, date and seed, and read against their own recorded words.
+  if (has("--session10-ab")) {
+    const audited = [
+      {
+        trace: "a825417a",
+        personaKey: "day-3-winter",
+        date: "2026-09-15",
+        seed: 416117931,
+        verdict: [
+          "Too much free time; that too in the middle of nowhere",
+          "Winter days with 30+ mins of walking is illogical",
+          "Meal gallery meal gallery meal is monotonous and the day isnt anchored on anything",
+        ],
+      },
+      {
+        trace: "d9935541",
+        personaKey: "day-6-excursion",
+        date: "2026-09-15",
+        seed: 625971101,
+        verdict: [
+          "Day is weird / Food Park Food Park Food Food",
+          "2hr13 mins wasted in between",
+          "Day isnt anchored on anything seems like random things",
+        ],
+      },
+    ];
+    const inHorizon = arg("--in-horizon");
+    console.log(
+      "generation-report SESSION-10 A/B: the founder's own two days, re-run [llm]",
+    );
+    for (const day of audited) {
+      const dates = [day.date, ...(inHorizon === null ? [] : [inHorizon])];
+      for (const date of dates) {
+        const outcome = await generateDay(buildDeps(), {
+          ...request,
+          date,
+          persona: GOLDEN_PERSONAS[day.personaKey],
+          seed: day.seed,
+        });
+        console.log(
+          `\n══ ${day.personaKey} ${date} seed ${day.seed}${date === day.date ? `  (was trace ${day.trace})` : "  (IN-HORIZON re-run)"}`,
+        );
+        if (date === day.date) {
+          for (const line of day.verdict) console.log(`   founder: "${line}"`);
+        }
+        if (outcome.status !== "ok") {
+          console.log(`   OUTCOME: ${outcome.status} — ${outcome.narrated.headline}`);
+          continue;
+        }
+        const slots = [...outcome.day.slots].sort((a, b) =>
+          a.startTime.localeCompare(b.startTime),
+        );
+        console.log(`   ${digest(outcome)}`);
+        console.log(`   categories: ${categorySequence(outcome).join(" > ")}`);
+        console.log(`   roles:      ${roleSequence(outcome).join(" > ")}`);
+
+        // 1. lunch off the edge
+        const meals = slots.filter((s) => s.kind === "meal");
+        console.log(
+          `   [1] first meal seats ${meals[0]?.startTime ?? "—"} (was 11:30, the window's opening minute)`,
+        );
+
+        // 2. no 30-min walks, or narrated transit instead
+        const walks = outcome.travel.filter((l) => l.mode === "walk");
+        const longest = walks.reduce((m, l) => Math.max(m, l.minutes), 0);
+        const swaps = outcome.travel.filter((l) => l.exposureSwap !== null);
+        console.log(
+          `   [2] longest walk ${longest}min · exposure swaps ${swaps.length}` +
+            (swaps.length > 0
+              ? ` (${swaps.map((s) => `${s.exposureSwap!.exposedMinutes}min walk → ${s.mode} at ${s.exposureSwap!.apparentTempC}°C`).join("; ")})`
+              : ""),
+        );
+        const blind = outcome.findings.some((f) => f.ruleId === "weather.unknown");
+        if (blind) {
+          console.log(
+            `       NOTE: ${date} is beyond the forecast horizon, so exposure could NOT be` +
+              ` checked here — the honest half of this A/B. Pass --in-horizon <date> to exercise the rule.`,
+          );
+        }
+
+        // 3. no meal-sandwich rhythm
+        console.log(
+          `   [3] texture families ${familyCount(outcome)} (monotony needs <${GRAMMAR_PARAMS.pacing.minTextureFamilies})` +
+            ` · anchor=${outcome.electedAnchor?.category ?? "(user-pinned)"} · template=${outcome.arcTemplateId}`,
+        );
+
+        // 4. the pub visible to the food cap
+        const foodVenues = slots.filter((s) => {
+          const c = outcome.day.places[s.placeId]?.category;
+          return (
+            c?.status === "present" &&
+            GRAMMAR_PARAMS.pacing.foodCategories.includes(c.value)
+          );
+        });
+        console.log(
+          `   [4] food VENUES ${foodVenues.length} of ${slots.length} stops (meal-kind slots: ${meals.length})` +
+            ` — the ceiling is ${GRAMMAR_PARAMS.mealPatterns.classic.maxFoodStops}, and the predicate now counts venues, not kinds`,
+        );
+
+        // 5. free time, placed and located
+        const gaps: number[] = [];
+        for (let i = 1; i < slots.length; i++) {
+          gaps.push(
+            timeToMinutes(slots[i].startTime) - timeToMinutes(slots[i - 1].endTime),
+          );
+        }
+        console.log(
+          `   [5] longest gap between stops ${Math.max(0, ...gaps)}min (was 133min, unexplained)` +
+            ` · placed open periods ${outcome.openPeriods.length}`,
+        );
+        for (const period of outcome.openPeriods) {
+          console.log(
+            `       ${period.startTime}–${period.endTime} in ${period.locality} — ${period.reason}`,
+          );
+        }
+        const s = outcome.stats;
+        console.log(
+          `   passes=${s.validationPasses} details=${s.detailsCalls} cost=$${s.estCostUsd.toFixed(3)} total=${s.timings.totalMs}ms`,
+        );
+      }
+    }
     return;
   }
 

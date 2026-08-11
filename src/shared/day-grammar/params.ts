@@ -54,7 +54,14 @@ export interface MealPatternSpec {
 }
 
 export const GRAMMAR_PARAMS = {
-  version: "v1",
+  /**
+   * v2 (XXX-35, Session 11 CP1): adds `pacing.foodCategories` (the
+   * food-cap predicate now counts food-category VENUES, not slot kinds)
+   * and the `exposure` band table (the first rules that read a travel LEG
+   * rather than a slot). `grazing` left the meal patterns in the same
+   * change — see SESSION_NOTES §1.3.
+   */
+  version: "v2",
 
   /**
    * Plausible time in a place, by category. Applied ONLY to
@@ -101,10 +108,6 @@ export const GRAMMAR_PARAMS = {
         { label: "dinner", open: "17:30", close: "21:30" },
       ],
       maxFoodStops: 4,
-    },
-    grazing: {
-      windows: [{ label: "grazing", open: "08:00", close: "22:00" }],
-      maxFoodStops: 7,
     },
   } satisfies Record<MealPatternId, MealPatternSpec>,
 
@@ -191,6 +194,54 @@ export const GRAMMAR_PARAMS = {
     /** Longer than this between food stops earns an advisory. */
     maxFoodGapMinutes: 300,
     /**
+     * What counts as a FOOD STOP for the pattern's ceiling — by the
+     * venue's category, not by the slot's kind (XXX-35 comment 10299
+     * item 3). The Session-10 defect: a `restaurants` venue seated as an
+     * evening activity (Scotland Yard Pub, off the nightlife menu) was
+     * invisible to the rule whose whole job is bounding food stops.
+     *
+     * `markets` is a place you walk through and `nightlife_bars` is a
+     * drink; neither is definitionally a meal, so both are excluded ON
+     * PURPOSE rather than by oversight. The founder's own fourth stop is
+     * categorised `restaurants` in our pool, so it is caught.
+     */
+    foodCategories: ["restaurants", "cafes"] as readonly PlaceCategory[],
+    /**
+     * An ending that lands (XXX-35 §1.1): a day whose last stop is a
+     * table after a gap this long reads as giving up rather than as a
+     * finale. The founder's second day ended "2hrs free → meal".
+     * ADVISORY only — "dinner last" is usually right, and a violation
+     * here would threaten loop termination on thin evenings.
+     */
+    endingGapMinutes: 60,
+    /**
+     * How many distinct texture families a day needs before an A-B-A-B run
+     * inside it stops reading as monotony.
+     *
+     * THREE, and the number was corrected by the golden set rather than
+     * chosen: the rule as ratified at CP1 was "an A-B-A-B run is a
+     * violation", and it immediately rejected golden **day-2-old-town** —
+     * table · market · culture · table · culture · table — which the
+     * founder authored and verified. Measured across the whole set:
+     *
+     *   day-1  5 families / 8 stops   no run
+     *   day-2  3 / 6                  HAS a run   ← founder-approved
+     *   day-3  3 / 6                  no run
+     *   day-4  3 / 7                  no run
+     *   day-5  2 / 3                  no run (A-B-A is a sandwich, not a rhythm)
+     *   day-6  3 / 5                  no run
+     *
+     * And the two shapes the founder REJECTED in the tasting room:
+     *
+     *   "meal gallery meal gallery meal"   2 families   HAS a run
+     *   "Food Park Food Park Food Food"    2 families   HAS a run
+     *
+     * So the discriminator is not the run — it is the run in a day that
+     * has nothing else in it. A third texture somewhere earns the
+     * tolerance; two families alternating is the complaint.
+     */
+    minTextureFamilies: 3,
+    /**
      * A wanderer's day must be mostly unscheduled — golden Day 5: "A
      * fully-scheduled output for this persona is a FAILURE."
      */
@@ -210,6 +261,76 @@ export const GRAMMAR_PARAMS = {
    * with the optimizer that needs it.
    */
   route: { detourThresholdMinutes: 20 },
+
+  /**
+   * Leg exposure (XXX-35 item 1) — the first rules in this file that read
+   * a travel LEG rather than a slot. Every weather and daylight rule
+   * before this one checked slot spans, so a 35-minute walk at -8 °C
+   * between two indoor venues passed everything. It is the founder's
+   * "Winter days with 30+ mins of walking is illogical", as a number.
+   *
+   * These bands are the GRAMMAR's judgment, deliberately NOT
+   * WINDOW_PARAMS': that file classifies an HOUR ("is this a bad hour to
+   * stand outdoors"), this one bounds a WALK. One number cannot answer
+   * two questions. `WINDOW_PARAMS.coldApparentC` (-12) is untouched by
+   * this session's ruling — see SESSION_NOTES §1.4 for the blast radius
+   * if it ever moves.
+   *
+   * All Tier 3, all founder-calibrated at CP3 from felt experience. The
+   * -2 °C row is the one that answers the recorded complaint: -8 °C lands
+   * in it, capping the walk at 20 minutes.
+   */
+  exposure: {
+    /** A pleasant day has no effective cap; 45 minutes is a long walk anyway. */
+    baseWalkCapMinutes: 45,
+    /**
+     * RECALIBRATED by golden day-3 (Session 11 Step 2), and the correction
+     * is worth keeping: the caps ruled at CP1 were 10 min at ≤-10 °C and
+     * 20 min at ≤-2 °C, and the ≤-10 row **flagged the founder's own
+     * winter day** — Nathan Phillips Square rink to the PATH is a
+     * ~16-minute walk at -10 °C apparent, authored and verified by the
+     * founder as a good day.
+     *
+     * So the fixture set the floor and the corpus set the ceiling:
+     *   16 min at -10 °C must PASS  (golden day-3, founder-authored)
+     *   35 min at  -8 °C must FAIL  ("Winter days with 30+ mins of
+     *                                 walking is illogical")
+     * 20 / 25 satisfies both with headroom at each end.
+     */
+    cold: {
+      severeApparentC: -10,
+      severeCapMinutes: 20,
+      briskApparentC: -2,
+      briskCapMinutes: 25,
+    },
+    /**
+     * UNCALIBRATED by any founder-authored day — Toronto's golden set has
+     * no 32 °C afternoon in it. These are the CP1 numbers, and they are
+     * the first thing Delhi will correct.
+     */
+    heat: {
+      severeApparentC: 32,
+      severeCapMinutes: 10,
+      warmApparentC: 28,
+      warmCapMinutes: 20,
+    },
+    /**
+     * Delhi-ready from day one: AQI binds walks, not just outdoor slots.
+     * Also uncalibrated — Toronto AQI never approaches these bands, so no
+     * fixture exercises them and no founder has felt them.
+     */
+    air: {
+      unhealthyUsAqi: 100,
+      unhealthyCapMinutes: 15,
+      severeUsAqi: 150,
+      severeCapMinutes: 8,
+    },
+    precipitation: {
+      probPct: 50,
+      mm: 0.5,
+      capMinutes: 15,
+    },
+  },
 
   budget: {
     /**

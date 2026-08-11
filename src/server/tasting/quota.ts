@@ -23,16 +23,20 @@ import { TASTING_SURFACE } from "../feedback/shown";
  * refusal message points founders here on purpose, because a guard that
  * cannot be found is a guard that gets disabled in anger.
  *
- * Raised 12 → 20 (Session 10 Step 3, deliberate per the CP1 doctrine)
- * after the first real review session showed 12 is a short evening.
- * Worst case at the wall: 20 × ~$0.40 ≈ $8 list per day.
+ * Raised 12 → 20 (Session 10 Step 3) after the first real review session
+ * showed 12 is a short evening, then 20 → 40 (Session 11 CP1 ruling 7)
+ * BEFORE the re-review rather than during it: a 25–35 load session would
+ * have hit the guard mid-review, and the middle of a founder's review is
+ * the worst possible moment to be editing constants.
+ * Worst case at the wall: 40 × ~$0.40 ≈ $16 list per day.
+ * Settle-back decision belongs to Session 11 close-out.
  *
- * It is NOT a budget and must not be treated as one. Sustained 20/day is
- * ~$214/month once past Google's 1,000 free Details events. The budget
+ * It is NOT a budget and must not be treated as one. Sustained 40/day is
+ * ~$430/month once past Google's 1,000 free Details events. The budget
  * controls are the on-page meter and the GCP billing alerts; this only
  * stops a loop.
  */
-export const TASTING_DAILY_CAP = 20;
+export const TASTING_DAILY_CAP = 40;
 
 /** Named in the refusal so the guard tells its owner how to raise it. */
 export const TASTING_CAP_CONFIG_LOCATION =

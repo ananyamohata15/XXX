@@ -194,9 +194,9 @@ export async function buildSyntheticDay(
     // Mixed provenance on purpose: the attribution marks are conditional
     // on which providers actually contributed, so the preview has to
     // contain more than one.
-    { fromPlaceId: ids[0], toPlaceId: ids[1], minutes: 12, mode: "walk", source: "openrouteservice", tier: 2 },
-    { fromPlaceId: ids[1], toPlaceId: ids[2], minutes: 18, mode: "transit", source: "google_routes", tier: 1 },
-    { fromPlaceId: ids[2], toPlaceId: ids[3], minutes: 9, mode: "walk", source: "openrouteservice", tier: 2 },
+    { fromPlaceId: ids[0], toPlaceId: ids[1], minutes: 12, mode: "walk", source: "openrouteservice", tier: 2, exposureSwap: null },
+    { fromPlaceId: ids[1], toPlaceId: ids[2], minutes: 18, mode: "transit", source: "google_routes", tier: 1, exposureSwap: null },
+    { fromPlaceId: ids[2], toPlaceId: ids[3], minutes: 9, mode: "walk", source: "openrouteservice", tier: 2, exposureSwap: null },
   ];
 
   return {

@@ -23,6 +23,8 @@ Concierge, not construction kit. The app presents a finished, fact-checked day; 
 - No speculative abstraction. Build for the current ticket; extract patterns on the third occurrence, not the first.
 - Migrations are forward-only and reviewed. Never edit a merged migration.
 - Naming: if a name needs a comment to explain it, the name is wrong.
+- A constant is suspect if its correctness depends on a behaviour nobody wrote down — when changing behaviour, hunt the constants that assumed it. (Session 11 hit this three times in one ticket: a meal bound that assumed edge-hugging seating, a nominal dwell that doubled as a drop floor, and day-ends that assumed days stopped after dinner. None was a bug when written.)
+- Invariants are rulings: an unrecorded tightening is legislation nobody voted for — every invariant cites its ruling or gets proposed as one. (Session 11: `TEMPLATE_INVARIANTS.lastStep = "close"` was never proposed and never ruled on, and it was what forced every generated day to end identically.)
 - `src/shared/` holds dependency-free vocabulary, view-model types, and pure functions usable by both client and server. `src/shared` imports nothing from `src/server` or `src/app`/`src/components`; both may import it. No I/O, no React, no secrets in shared.
 
 ## Workflow

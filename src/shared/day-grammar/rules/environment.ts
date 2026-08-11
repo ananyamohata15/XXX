@@ -125,12 +125,19 @@ export function checkEnvironment(
 
   // --- weather ------------------------------------------------------------
   if (ctx.windows === null) {
-    if (outdoorSlots.length > 0 && ctx.daylight !== null) {
+    // Unconditional on outdoor stops since Session 11 (XXX-35 §1.5). The
+    // old precondition (`outdoorSlots.length > 0`) meant a beyond-horizon
+    // day with no outdoor stop was silently unchecked — and it is now
+    // plainly wrong as well as quiet: leg exposure reads every walking
+    // LEG, so a day of indoor venues joined by winter walks has weather
+    // to answer for. The daylight branch above already spoke if daylight
+    // is also missing; this one is about the forecast.
+    if (ctx.daylight !== null) {
       found.push(
         advisory(
           "weather.unknown",
           [],
-          `No weather forecast is stored for ${day.date} — beyond the forecast horizon — so the ${outdoorSlots.length} outdoor stop${outdoorSlots.length === 1 ? "" : "s"} could not be weather-checked.`,
+          `No weather forecast is stored for ${day.date} — beyond the forecast horizon — so this day was not weather-checked${outdoorSlots.length > 0 ? `, including its ${outdoorSlots.length} outdoor stop${outdoorSlots.length === 1 ? "" : "s"}` : ""}.`,
           { date: day.date, outdoorSlotCount: outdoorSlots.length },
         ),
       );

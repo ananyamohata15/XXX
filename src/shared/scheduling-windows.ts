@@ -12,6 +12,23 @@
  * ranges as "HH:MM". Same-day lexical comparison is exact for both.
  */
 
+/**
+ * How many days of forecast we ask Open-Meteo for, and therefore how far
+ * ahead a day can be weather-checked at all.
+ *
+ * It lives in `src/shared` because BOTH sides need it and they must not
+ * disagree: the ingest job requests it, and the tasting page bounds its
+ * date picker by it (XXX-35 §1.5 — the page offered +45 days against this
+ * number and said nothing about the gap).
+ *
+ * It is the CONFIGURED horizon, not a promise about the table. Rows from
+ * an earlier run linger until the sweep takes them — Session 10's audit
+ * counted 16 dates present against this 14 — so the horizon explains a
+ * weather-blind day, while `windows === null` is what PROVES one. Only the
+ * second is load-bearing in any disclosure.
+ */
+export const FORECAST_HORIZON_DAYS = 14;
+
 /** One Open-Meteo hourly forecast entry, normalized at the Zod boundary. */
 export interface HourlyWeather {
   timeLocal: string; // "YYYY-MM-DDTHH:mm"
@@ -72,6 +89,28 @@ export const WINDOW_PARAMS = {
 } as const;
 export type WindowParams = typeof WINDOW_PARAMS;
 
+/**
+ * One hour's raw exposure readings, city-local. A PROJECTION of the stored
+ * weather facts, not a judgment: no threshold has been applied and none of
+ * these numbers is derived from another. The leg-exposure rule
+ * (XXX-35 item 1) needs the readings themselves because a walk's cap is a
+ * function of temperature, not of whether an hour cleared a slot-level
+ * avoid threshold — at -8 °C nothing is flagged and a 35-minute walk still
+ * should not happen.
+ *
+ * `null` on `precipProbPct` / `usAqi` means the provider published no
+ * value for that hour. The cap function reads null as "this input cannot
+ * bind", never as a clean reading.
+ */
+export interface HourlyExposure {
+  startLocal: string; // "HH:MM"
+  endLocal: string; // "HH:MM", exclusive
+  apparentTempC: number;
+  precipProbPct: number | null;
+  precipMm: number;
+  usAqi: number | null;
+}
+
 export interface SchedulingWindows {
   date: string;
   timezone: string;
@@ -95,6 +134,11 @@ export interface SchedulingWindows {
     | { status: "present"; maxUsAqi: number | null }
     | { status: "absent" };
   daylight: DaylightTimes;
+  /**
+   * Per-hour readings, in `hourly` order. Consumed by the leg-exposure
+   * rule; merged windows above cannot serve it (see HourlyExposure).
+   */
+  hourlyExposure: HourlyExposure[];
 }
 
 /** "YYYY-MM-DDTHH:mm" → "HH:MM" (start of the hour the entry covers). */
@@ -146,10 +190,20 @@ export function deriveSchedulingWindows(
   const cold: string[] = [];
   const aqiBad: string[] = [];
   const outdoor: string[] = [];
+  const exposure: HourlyExposure[] = [];
 
   for (const hour of day.hourly) {
     const start = hourStart(hour.timeLocal);
     const end = hourEnd(start);
+
+    exposure.push({
+      startLocal: start,
+      endLocal: end,
+      apparentTempC: hour.apparentTempC,
+      precipProbPct: hour.precipProbPct,
+      precipMm: hour.precipMm,
+      usAqi: aqiByHour.get(start) ?? null,
+    });
 
     const isRain =
       hour.precipProbPct !== null && hour.precipProbPct >= params.rainProbPct;
@@ -194,5 +248,6 @@ export function deriveSchedulingWindows(
           }
         : { status: "absent" },
     daylight,
+    hourlyExposure: exposure,
   };
 }

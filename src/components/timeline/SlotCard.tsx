@@ -2,7 +2,12 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import type { FactView, PlaceView, PriceRange, Reason } from "@/shared/timeline";
-import { TIER_LABELS, type SlotKind, type SlotOrigin } from "@/shared/vocabulary";
+import {
+  TIER_LABELS,
+  type SlotKind,
+  type SlotOrigin,
+  type SlotRole,
+} from "@/shared/vocabulary";
 import { ANCHOR_WIGGLE_PX } from "./constants";
 import { ProvenanceChip } from "./ProvenanceChip";
 import {
@@ -97,11 +102,14 @@ export function SlotCard({
   place,
   reason,
   alternates,
+  role,
   expanded = false,
   refusing = false,
 }: {
   kind: SlotKind;
   origin: SlotOrigin;
+  /** What this stop is FOR in the day's arc (XXX-35); absent on fixtures. */
+  role?: SlotRole;
   startTime: string;
   endTime: string;
   place: PlaceView;
@@ -134,8 +142,21 @@ export function SlotCard({
             {formatDuration(slotDurationMinutes(startTime, endTime))}
           </span>
         </span>
-        <span className="text-[11px] font-medium uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-500">
-          {kind === "meal" ? "Meal" : "Activity"}
+        {/* The elected centrepiece is NAMED. The founder's verdict on two
+            separate days was "the day isnt anchored on anything", and a
+            centre the traveller cannot see is barely a centre. */}
+        <span
+          className={
+            role === "anchor"
+              ? "text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-700 dark:text-zinc-200"
+              : "text-[11px] font-medium uppercase tracking-[0.15em] text-zinc-400 dark:text-zinc-500"
+          }
+        >
+          {role === "anchor"
+            ? "The anchor"
+            : kind === "meal"
+              ? "Meal"
+              : "Activity"}
         </span>
       </div>
 

@@ -47,6 +47,23 @@ export interface NarratedLineView {
   text: string;
 }
 
+/**
+ * Stated when a day was vetted without weather (XXX-35 §1.5).
+ *
+ * The page offers dates well past the forecast horizon, so a founder can
+ * spend an evening vetting days whose weather nobody checked — and until
+ * now the page did not say so. Driven by the environment (`windows ===
+ * null` is the fact), never by arithmetic on the date: the horizon is the
+ * EXPLANATION, the missing row is the evidence.
+ *
+ * `null` = the day was weather-checked.
+ */
+export interface WeatherBlindNotice {
+  date: string;
+  daysOut: number;
+  horizonDays: number;
+}
+
 export type TastingOutcome =
   | {
       status: "ok";
@@ -59,6 +76,20 @@ export type TastingOutcome =
       synthetic: boolean;
       /** Distinct fact/travel sources on this day — attribution keys off it. */
       sources: string[];
+      /** Non-null = generated weather-blind. One honest line, not a modal. */
+      weatherBlind: WeatherBlindNotice | null;
+      /**
+       * Free time the arc placed, with the neighbourhood it happens in
+       * (XXX-35). The timeline renders these as gap cards: an unshown gap
+       * is what the founder read off the timestamps as "2hr13 wasted".
+       */
+      openPeriods: {
+        id: string;
+        startTime: string;
+        endTime: string;
+        locality: string;
+        reason: string;
+      }[];
       meter: TastingMeter;
     }
   | {
