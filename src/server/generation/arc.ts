@@ -125,12 +125,41 @@ export function templatesFor(persona: Persona): ArcTemplate[] {
   return matching.length > 0 ? matching : [ARC_TEMPLATES[3]];
 }
 
-/** Deterministic template choice — the seed is the variety axis. */
+/** Deterministic 32-bit hash (FNV-1a) — content in, spread out. */
+function hashIdentity(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * Deterministic template choice, keyed on WHO the traveller is and then
+ * varied by seed.
+ *
+ * The first version mixed the seed with `persona.gravity.join(",").length`
+ * — the character count of the interest list, not the interests. Two
+ * personas whose gravity strings happened to be the same length drew the
+ * same template on a shared seed, which is the Session 9 jitter bug's
+ * signature exactly: similar inputs, identical dice. The Session 11 matrix
+ * ran all six personas on one date and measured role-sequence overlap
+ * 0.850 with two personas landing on `moderate-b`.
+ *
+ * Hashing the persona's identity CONTENT fixes the cause rather than the
+ * symptom. Seed still varies the draw, so one persona on two dates gets
+ * two shapes — the property the arc needs to avoid trip-level monotony.
+ */
 export function pickTemplate(persona: Persona, seed: number): ArcTemplate {
   const options = templatesFor(persona);
-  // Mixed with the persona so two personas on one seed rarely agree, and
-  // Math.abs because a negative seed is a caller's business, not a crash.
-  const key = Math.abs(seed + persona.gravity.join(",").length * 31);
+  const identity = [
+    persona.structure,
+    persona.pace,
+    persona.lens,
+    ...persona.gravity,
+  ].join("|");
+  const key = (hashIdentity(identity) ^ (Math.abs(seed) >>> 0)) >>> 0;
   return options[key % options.length];
 }
 
@@ -154,23 +183,42 @@ export interface ElectedAnchor {
  */
 export const ANCHOR_ELECTOR_SOURCE = "arc_elector_v1";
 
-export function electAnchor(persona: Persona): ElectedAnchor {
+export function electAnchor(
+  persona: Persona,
+  /**
+   * Categories already tried and proven unseatable for this day. The
+   * engine re-elects rather than shipping an anchorless day: a centrepiece
+   * that cannot be seated is a reason to choose a different centrepiece,
+   * never a reason to quietly deliver the un-anchored day the founder
+   * rejected in exactly those words.
+   */
+  exclude: readonly PlaceCategory[] = [],
+): ElectedAnchor | null {
   const ranked = PLACE_CATEGORIES.filter(
-    (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
+    (c) =>
+      !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
+      !exclude.includes(c),
   ).sort(
     (a, b) =>
       categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
       a.localeCompare(b),
   );
   const category = ranked[0];
+  // Every non-food category has been tried and none could be seated. The
+  // caller must fail loudly; there is no honest anchor left to elect.
+  if (category === undefined) return null;
   const affinity = categoryAffinity(persona, category);
+  const first =
+    affinity > 0
+      ? `${persona.gravity[0]} is this traveller's first interest`
+      : `no interest maps to a category, so the day is centred on ${category} by name order`;
   return {
     category,
     dwellMinutes: GRAMMAR_PARAMS.dwellMinutes[category].typical,
     reason:
-      affinity > 0
-        ? `${persona.gravity[0]} is this traveller's first interest`
-        : `no interest maps to a category, so the day is centred on ${category} by name order`,
+      exclude.length === 0
+        ? first
+        : `${first}; re-elected after ${exclude.join(", ")} could not be seated`,
   };
 }
 

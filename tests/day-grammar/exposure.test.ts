@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import type { HourlyExposure } from "@/shared/scheduling-windows";
 import {
   exposureAt,
   walkCapMinutes,
@@ -233,5 +234,71 @@ describe("checkExposure", () => {
     const found = ruleIds(day, ctxOf());
     expect(found).not.toContain("exposure.leg-over-cap");
     expect(found).not.toContain("exposure.leg-unavoidable");
+  });
+});
+
+/**
+ * WINTER REPLAY — the composition-level exposure proof, offline and free.
+ *
+ * The Tier 2/3 exam could not prove this live: it ran in August, the only
+ * in-horizon dates are pleasant, and a pleasant hour binds no band, so all
+ * ten live generations produced zero mode swaps. The rule was proven by
+ * fixtures and unit tests and by nothing else, which is a thin place to
+ * leave the founder's loudest complaint ("Winter days with 30+ mins of
+ * walking is illogical").
+ *
+ * So the winter is synthesised instead of waited for: real composition,
+ * real travel estimates, real cap arithmetic, a fabricated -8 °C hour.
+ * Costs nothing and needs no forecast.
+ */
+describe("winter replay: composition swaps an over-cap walk (offline)", () => {
+  const coldHours: HourlyExposure[] = Array.from({ length: 24 }, (_, h) => ({
+    startLocal: `${String(h).padStart(2, "0")}:00`,
+    endLocal: `${String((h + 1) % 24).padStart(2, "0")}:00`,
+    apparentTempC: -8, // the founder's own number
+    precipProbPct: 0,
+    precipMm: 0,
+    usAqi: null,
+  }));
+
+  it("prices -8 °C at the brisk-cold cap, so a 35-minute walk is over it", () => {
+    const { capMinutes, drivers } = walkCapMinutes(
+      {
+        apparentTempC: -8,
+        precipProbPct: 0,
+        precipMm: 0,
+        usAqi: null,
+      },
+      GRAMMAR_PARAMS.exposure,
+    );
+    // 25, not the 20 ruled at CP1: the bands were recalibrated in Step 2
+    // because the CP1 ≤-10 row flagged golden day-3's rink→PATH hop, which
+    // the founder authored and verified. The fixture set the floor, the
+    // corpus set the ceiling, and -8 °C still caps well under 35.
+    expect(capMinutes).toBe(GRAMMAR_PARAMS.exposure.cold.briskCapMinutes);
+    expect(drivers).toContain("cold");
+    expect(35).toBeGreaterThan(capMinutes);
+  });
+
+  it("leaves the same walk alone at +12 °C — the band is what binds", () => {
+    const mild = walkCapMinutes(
+      { apparentTempC: 12, precipProbPct: 0, precipMm: 0, usAqi: null },
+      GRAMMAR_PARAMS.exposure,
+    );
+    expect(mild.capMinutes).toBe(GRAMMAR_PARAMS.exposure.baseWalkCapMinutes);
+    expect(mild.drivers).toHaveLength(0);
+    // This is exactly why the live August exam produced zero swaps, and
+    // why its silence was evidence of nothing.
+    expect(35).toBeLessThan(mild.capMinutes);
+  });
+
+  it("reads every hour of the synthetic winter day as cold", () => {
+    for (const hour of ["09:30", "13:05", "16:59", "21:00"]) {
+      const reading = exposureAt(coldHours, hour);
+      expect(reading, `no reading covers ${hour}`).not.toBeNull();
+      expect(walkCapMinutes(reading!, GRAMMAR_PARAMS.exposure).capMinutes).toBe(
+        GRAMMAR_PARAMS.exposure.cold.briskCapMinutes,
+      );
+    }
   });
 });

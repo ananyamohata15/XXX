@@ -235,7 +235,17 @@ function mealWindowsFor(
  * prevent. Wanderers get an arc too (three stops and their negative
  * space); rule 27's unstructured floor stays the binding constraint.
  */
-export function buildSkeleton(request: GenerationRequest): Skeleton {
+export function buildSkeleton(
+  request: GenerationRequest,
+  options: {
+    /**
+     * Anchor categories this day has already proven it cannot seat. The
+     * engine re-elects around them rather than shipping an anchorless day
+     * (XXX-35 CP2 ruling 1).
+     */
+    excludeAnchorCategories?: readonly PlaceCategory[];
+  } = {},
+): Skeleton {
   const persona = request.persona;
   const defaults = DEFAULT_DAY[persona.pace];
   const daySpan: Span = {
@@ -254,7 +264,9 @@ export function buildSkeleton(request: GenerationRequest): Skeleton {
   const template = pickTemplate(persona, seed);
 
   const hasUserAnchor = (request.anchors ?? []).length > 0;
-  const elected: ElectedAnchor | null = hasUserAnchor ? null : electAnchor(persona);
+  const elected: ElectedAnchor | null = hasUserAnchor
+    ? null
+    : electAnchor(persona, options.excludeAnchorCategories ?? []);
   const electedRecord: ElectedAnchorRecord | null =
     elected === null
       ? null

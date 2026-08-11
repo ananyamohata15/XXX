@@ -854,6 +854,93 @@ per-run usage — a reporting gap, not an unmetered spend). **Billed to date
 ≈ $2.7, well inside the sanction** — but every event from here is billed,
 so the 25–35 generation founder re-review now costs full freight.
 
+## Step 4 — CP2 fixes, and the re-run (HOLDING)
+
+### 4.1 The anchor drop: live-reproduced, then fixed
+
+Reproduced before touching anything (constraint 7): one live day-1-jays
+generation returned `unfilled: the day's anchor (unschedulable)` and
+`status: "ok"`. The engine **already knew** and shipped the day anyway;
+`compose.ts:472` documented that as intended ("a visible thin day").
+
+Fixed to the ruled semantics — re-elect, never silently drop:
+`electAnchor(persona, exclude)` and `buildSkeleton(request, {
+excludeAnchorCategories })`, and an engine loop that re-elects around a
+category it could not seat (bounded, `MAX_ANCHOR_REELECTIONS = 2`, and
+deliberately **not** spending a validation pass, since
+`MAX_VALIDATION_PASSES` is 3 and repair needs it). Exhaustion returns
+`status: "failed"` with `anchor_unseatable` in the trace.
+
+### 4.2 ROOT CAUSE — the two builds interact, and CP1 did not foresee it
+
+`moderate-b` gives day-1-jays an anchor window of **12:30–14:20** that
+**overlaps its own lunch window** (11:30–14:30). Under the old
+earliest-legal seating, lunch hugged 11:30 and left the anchor its room.
+The seat objective centres lunch at **12:30–13:30** — and the anchor's
+window is gone. Verified offline across three re-elections:
+
+```
+excl=[]                anchor=markets        12:30-14:20  dwell 75
+excl=[markets]         anchor=parks          12:30-14:04  dwell 60
+excl=[markets,parks]   anchor=nightlife_bars 12:30-14:34  dwell 90   (a bar at noon)
+```
+
+So **the seating fix caused the anchor drop.** Both builds are individually
+correct and their composition is not: `sliceSegment` lets an anchor's slice
+overlap the meal window it follows. The real repair is sequential slicing,
+and it is NOT made here — it is a third composition change and this session
+is holding.
+
+### 4.3 Template selection: the Session 9 signature, confirmed
+
+`pickTemplate` mixed the seed with `persona.gravity.join(",").length` — the
+**character count** of the interest list, not the interests. Same-length
+gravity strings drew the same template on a shared seed. Now keyed on an
+FNV-1a hash of `structure | pace | lens | gravity`, still varied by seed.
+
+### 4.4 Re-run — one variable changed, same date and seed 42
+
+| metric | before | after | gate |
+|---|---|---|---|
+| venue overlap mean / max | 0.033 / 0.50 | **0.030 / 0.25** | ≤0.35 / ≤0.50 **PASS** |
+| category-sequence mean | 0.711 | **0.480** | ≤0.55 **PASS** |
+| category-sequence max | 1.00 | **1.00** | ≤0.80 **FAIL** |
+| role-sequence mean | 0.850 | **0.644** | non-gating |
+| anchor seated | 3 of 6 | **5 of 5 generated** | — |
+| seat centring | 58.9 → 0.2 min | 51.6 → **3.9 min** | — |
+| exam | 6/6 clean | **5/6 clean, day-1-jays FAILED** | — |
+
+**The mean gate now passes; the max does not, and the evidence says the max
+is structurally miscalibrated.** max = 1.00 comes from day-5-wanderer's
+three-stop day — `museums_galleries > restaurants > nightlife_bars` — being
+a *subsequence* of day-4's five-stop day. LCS normalised by the SHORTER
+sequence makes a short day almost automatically a subsequence of a long
+one. That is a normalisation artifact, not monotony: the two days share no
+venue (overlap 0.030) and read nothing alike. **Held for adjudication
+rather than loosened**, exactly as ruled — recommendation is to normalise
+the max by the LONGER sequence, or exempt pairs whose stop counts differ by
+≥2, and to decide that deliberately.
+
+`day-1-jays` FAILED is the new fail-loudly path working as ruled: three
+categories tried, none seatable, so no day ships. Honest, and worse for the
+user than the silent version until §4.2 is fixed — that is the trade the
+ruling chose, and it is the right one.
+
+### 4.5 Winter replay — the free exposure proof
+
+Three offline tests synthesise a -8 °C day and assert the cap arithmetic
+end to end. It also caught a **sixth CP1 deviation nobody had recorded**:
+the ruled bands (10 min ≤-10 °C, 20 min ≤-2 °C) were recalibrated in Step 2
+to **20 / 25**, because the CP1 ≤-10 row flagged golden day-3's
+rink→PATH hop — 16 minutes at -10 °C, founder-authored and verified. The
+fixture set the floor and the corpus set the ceiling. Now in the record.
+
+### 4.6 Spend
+
+Re-run: 6 generations, 130 Details, **$2.82 list**. Past the free cap, so
+**$2.60 + $0.14 Anthropic ≈ $2.74 billed**, inside the sanctioned ~$2–3.
+Session total billed ≈ **$5.4** against the ~$9–13 gate.
+
 ### 2.8 Process lesson — why this section had to be reconstructed
 
 **The interrupted evening left the code ahead of the record.** Step 2 was

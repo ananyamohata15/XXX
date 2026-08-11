@@ -15,6 +15,7 @@ import {
   pickContrast,
   pickTemplate,
   templatesFor,
+  type ElectedAnchor,
 } from "@/server/generation/arc";
 import {
   buildSkeleton,
@@ -27,7 +28,7 @@ import type { Candidate, GenerationRequest, Selection } from "@/server/generatio
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { present } from "@/shared/fixtures/golden/support";
-import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { GOLDEN_PERSONAS, type Persona } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
 import { CATEGORY_FAMILY, TIERS, type PlaceCategory } from "@/shared/vocabulary";
 
@@ -83,16 +84,28 @@ describe("arc templates are a grammar of shapes", () => {
   });
 });
 
+/**
+ * Election returns null only when every non-food category has been
+ * excluded — which no test here does. Unwrapped loudly rather than with a
+ * non-null assertion, so a future change that makes it null fails as a
+ * named test failure instead of a TypeError three lines later.
+ */
+function elect(persona: Persona, exclude: PlaceCategory[] = []): ElectedAnchor {
+  const e = electAnchor(persona, exclude);
+  if (e === null) throw new Error("expected an anchor to be elected");
+  return e;
+}
+
 describe("anchor election", () => {
   it("elects the persona's first interest, never a meal", () => {
-    expect(electAnchor(GOLDEN_PERSONAS["day-3-winter"]).category).toBe(
+    expect(elect(GOLDEN_PERSONAS["day-3-winter"]).category).toBe(
       "museums_galleries", // art-first
     );
-    expect(electAnchor(GOLDEN_PERSONAS["day-6-excursion"]).category).toBe(
+    expect(elect(GOLDEN_PERSONAS["day-6-excursion"]).category).toBe(
       "parks", // nature-first
     );
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
-      const elected = electAnchor(GOLDEN_PERSONAS[key]);
+      const elected = elect(GOLDEN_PERSONAS[key]);
       expect(
         GRAMMAR_PARAMS.pacing.foodCategories.includes(elected.category),
       ).toBe(false);
@@ -162,7 +175,7 @@ describe("texture: contrast never repeats the anchor's family", () => {
   it("picks a different family from the anchor", () => {
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
       const persona = GOLDEN_PERSONAS[key];
-      const anchor = electAnchor(persona).category;
+      const anchor = elect(persona).category;
       const contrast = pickContrast(
         persona,
         anchor,
@@ -399,6 +412,223 @@ describe("seating moves meals off the window edge (the A/B, on fixtures)", () =>
       expect(timeToMinutes(slot.startTime)).toBeLessThanOrEqual(
         (intent.window.start + intent.window.end) / 2,
       );
+    }
+  });
+});
+
+/**
+ * The centrepiece must survive COMPOSITION, not just election.
+ *
+ * Session 11's exam found the arc's headline defect here and nowhere else:
+ * the matrix lost its elected anchor in 3 of 6 days, and every one of those
+ * days still returned status "ok" with a trace claiming an anchor it did
+ * not contain. `compose.ts` says "THE ANCHOR IS NEVER DROPPED" and the
+ * skeleton tests assert it — but they assert it on the SKELETON, and the
+ * drop happened downstream in `composeDay`, which nothing covered.
+ *
+ * So this asserts on composeDay's RESULT, across all six matrix personas.
+ */
+describe("the elected anchor survives composition", () => {
+  const everyCategory = (id: string, category: PlaceCategory): Candidate => ({
+    place: {
+      id,
+      name: id,
+      neighborhood: "Test",
+      coords: { lat: 43.6532 + Math.random() * 0, lng: -79.3832 },
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+      category: present(category, "concierge", TIERS.observed),
+      hours: present(
+        Object.fromEntries(
+          [
+            "sunday",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+          ].map((d) => [d, [{ open: "07:00", close: "23:00" }]]),
+        ) as never,
+        "google_places",
+        TIERS.verified,
+      ),
+      businessStatus: present("operational", "google_places", TIERS.verified),
+    },
+    category,
+    googlePlaceId: null,
+    rating: null,
+    userRatingCount: null,
+    detailsFetched: false,
+    score: 1,
+  });
+
+  // Two of every category, all open all day and all in one place, so the
+  // ONLY reason an anchor could go missing is the composer dropping it.
+  const pool: Candidate[] = [];
+  for (const category of Object.keys(GRAMMAR_PARAMS.dwellMinutes) as PlaceCategory[]) {
+    pool.push(everyCategory(`${category}-1`, category));
+    pool.push(everyCategory(`${category}-2`, category));
+  }
+  const byId = new Map(pool.map((c) => [c.place.id, c]));
+
+  it.each(Object.keys(GOLDEN_PERSONAS))(
+    "%s composes a day that contains its elected anchor",
+    (key) => {
+      const req = request({ persona: GOLDEN_PERSONAS[key] });
+      const skeleton = buildSkeleton(req);
+      expect(skeleton.electedAnchor).not.toBeNull();
+
+      const used = new Set<string>();
+      const selections: Selection[] = [];
+      for (const intent of skeleton.intents) {
+        const pick = pool.find(
+          (c) => intent.categories.includes(c.category) && !used.has(c.place.id),
+        );
+        if (pick) {
+          used.add(pick.place.id);
+          selections.push({ intentId: intent.id, placeId: pick.place.id });
+        }
+      }
+      const composed = composeDay({
+        request: req,
+        skeleton,
+        selections,
+        candidatesById: byId,
+        travel: new HaversineStubProvider(),
+        outdoorLatestEnd: timeToMinutes("20:30"),
+      });
+
+      const anchorIntent = skeleton.intents.find((i) => i.role === "anchor");
+      expect(anchorIntent, "the skeleton must carry an anchor intent").toBeDefined();
+      expect(
+        composed.unfilled,
+        "a seatable anchor must never be left unfilled",
+      ).not.toContain(anchorIntent!.id);
+
+      const anchorSlot = composed.day.slots.find((s) => s.role === "anchor");
+      expect(anchorSlot, "the composed day must contain an anchor slot").toBeDefined();
+      const category = composed.day.places[anchorSlot!.placeId]?.category;
+      expect(
+        category !== undefined && category.status === "present"
+          ? category.value
+          : null,
+        "the anchor slot must hold the elected category",
+      ).toBe(skeleton.electedAnchor!.category);
+    },
+  );
+
+  it("re-elects around a category it cannot seat, and never silently drops", () => {
+    const persona = GOLDEN_PERSONAS["day-1-jays"];
+    const first = elect(persona);
+    const second = elect(persona, [first.category]);
+    expect(second.category).not.toBe(first.category);
+    expect(second.reason).toContain("re-elected");
+    // Food is never a centrepiece, however many categories are excluded.
+    expect(GRAMMAR_PARAMS.pacing.foodCategories).not.toContain(second.category);
+  });
+
+  it("returns null — never a food anchor — once every category is excluded", () => {
+    const persona = GOLDEN_PERSONAS["day-1-jays"];
+    const nonFood = (Object.keys(GRAMMAR_PARAMS.dwellMinutes) as PlaceCategory[]).filter(
+      (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
+    );
+    expect(electAnchor(persona, nonFood)).toBeNull();
+  });
+});
+
+/**
+ * The contract the engine's re-election stands on.
+ *
+ * An all-open pool always seats its anchor, so the test above cannot fail
+ * the way the live matrix did. What actually broke was quieter: an anchor
+ * the composer COULD NOT seat vanished from the day while the trace still
+ * claimed one. The engine can only re-elect if `composeDay` reports that
+ * miss, so the report itself is the contract — and this is the test that
+ * would have caught the Session-11 defect.
+ */
+describe("an unseatable anchor is REPORTED, never silently absent", () => {
+  const venue = (
+    id: string,
+    category: PlaceCategory,
+    open: string,
+    close: string,
+  ): Candidate => ({
+    place: {
+      id,
+      name: id,
+      neighborhood: "Test",
+      coords: { lat: 43.6532, lng: -79.3832 },
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+      category: present(category, "concierge", TIERS.observed),
+      hours: present(
+        Object.fromEntries(
+          [
+            "sunday",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+          ].map((d) => [d, [{ open, close }]]),
+        ) as never,
+        "google_places",
+        TIERS.verified,
+      ),
+      businessStatus: present("operational", "google_places", TIERS.verified),
+    },
+    category,
+    googlePlaceId: null,
+    rating: null,
+    userRatingCount: null,
+    detailsFetched: false,
+    score: 1,
+  });
+
+  it("puts the anchor's intent id in composed.unfilled when it cannot sit", () => {
+    const req = request({ persona: GOLDEN_PERSONAS["day-3-winter"] });
+    const skeleton = buildSkeleton(req);
+    const anchorIntent = skeleton.intents.find((i) => i.role === "anchor")!;
+    const anchorCategory = skeleton.electedAnchor!.category;
+
+    // The anchor's own venue shuts at 07:30 — open on the day, impossible
+    // at the hour the arc wants it. Everything else runs all day.
+    const pool: Candidate[] = [venue("anchor-dead", anchorCategory, "07:00", "07:30")];
+    for (const category of Object.keys(GRAMMAR_PARAMS.dwellMinutes) as PlaceCategory[]) {
+      if (category !== anchorCategory) {
+        pool.push(venue(`${category}-1`, category, "07:00", "23:00"));
+        pool.push(venue(`${category}-2`, category, "07:00", "23:00"));
+      }
+    }
+    const used = new Set<string>();
+    const selections: Selection[] = [];
+    for (const intent of skeleton.intents) {
+      const pick = pool.find(
+        (c) => intent.categories.includes(c.category) && !used.has(c.place.id),
+      );
+      if (pick) {
+        used.add(pick.place.id);
+        selections.push({ intentId: intent.id, placeId: pick.place.id });
+      }
+    }
+    const composed = composeDay({
+      request: req,
+      skeleton,
+      selections,
+      candidatesById: new Map(pool.map((c) => [c.place.id, c])),
+      travel: new HaversineStubProvider(),
+      outdoorLatestEnd: timeToMinutes("20:30"),
+    });
+
+    // The day may legitimately not contain it — but it must SAY so, and it
+    // must not quietly hand back a day with no centre.
+    const hasAnchorSlot = composed.day.slots.some((s) => s.role === "anchor");
+    expect(
+      hasAnchorSlot || composed.unfilled.includes(anchorIntent.id),
+      "an anchor that is neither seated nor reported unfilled is the silent drop",
+    ).toBe(true);
+    if (!hasAnchorSlot) {
+      expect(composed.unfilled).toContain(anchorIntent.id);
     }
   });
 });

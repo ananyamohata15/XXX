@@ -23,7 +23,7 @@ import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { Violation } from "@/shared/day-grammar/types";
 import { timeToMinutes } from "@/shared/time";
-import { CITY_GEO } from "@/shared/vocabulary";
+import { CITY_GEO, type PlaceCategory } from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
 import { assembleTravelProvider, type TransitLeg } from "../travel/assemble";
 import { GOOGLE_TRANSIT_EST_COST_USD } from "../travel/google-transit";
@@ -54,6 +54,7 @@ import {
 import { applyFounderGroundtruth } from "./groundtruth";
 import { retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
+
 import { scoreAll } from "./score";
 import { MENU_SIZE } from "./select";
 import type {
@@ -66,6 +67,13 @@ import type {
   Selector,
   StageTimings,
 } from "./types";
+
+/**
+ * How many times a day may re-elect its centrepiece before the generation
+ * fails. Two covers every case the Session-11 matrix produced; the point
+ * of a bound is that an unseatable pool must not loop.
+ */
+const MAX_ANCHOR_REELECTIONS = 2;
 
 export const SHORTLIST_NOMINAL = 24;
 export const DETAILS_CAP = 30;
@@ -235,7 +243,14 @@ export async function generateDay(
 
   try {
     // -- skeleton + retrieval ---------------------------------------------
-    const skeleton = buildSkeleton(request);
+    let skeleton = buildSkeleton(request);
+    /**
+     * Anchor categories this day has proven it cannot seat. An unseatable
+     * centrepiece is a reason to elect a different one — never a reason to
+     * ship the un-anchored day the founder rejected in those exact words
+     * (XXX-35 CP2 ruling 1).
+     */
+    const failedAnchorCategories: PlaceCategory[] = [];
     const zones = zonesFor(
       request.persona.lens,
       (request.anchors ?? []).map((a) => a.coords),
@@ -475,6 +490,81 @@ export async function generateDay(
             ? ("empty-menu" as const)
             : ("unschedulable" as const),
         }));
+
+      // The centrepiece is not optional. Before Session 11's exam this
+      // path shipped silently: the matrix lost its anchor in 3 of 6 days
+      // and every one of them still returned status "ok", so the trace
+      // claimed an elected anchor the day did not contain. Re-elect
+      // around the category that could not be seated and compose again.
+      //
+      // Re-election deliberately does NOT spend a validation pass —
+      // MAX_VALIDATION_PASSES is 3 and repair needs it. It has its own
+      // budget, so the loop still terminates at
+      // MAX_VALIDATION_PASSES + MAX_ANCHOR_REELECTIONS iterations.
+      const anchorIntent = skeleton.intents.find((i) => i.role === "anchor");
+      const anchorUnfilled =
+        anchorIntent !== undefined &&
+        unfilledFinal.some((u) => u.intentId === anchorIntent.id);
+      if (
+        anchorUnfilled &&
+        skeleton.electedAnchor !== null &&
+        failedAnchorCategories.length < MAX_ANCHOR_REELECTIONS
+      ) {
+        const failedCategory = skeleton.electedAnchor.category;
+        failedAnchorCategories.push(failedCategory);
+        const reelected = buildSkeleton(request, {
+          excludeAnchorCategories: failedAnchorCategories,
+        });
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "arc",
+          endpoint: "anchor_reelected",
+          estCostUsd: 0,
+          metadata: {
+            failed_category: failedCategory,
+            next_category: reelected.electedAnchor?.category ?? null,
+            attempt: failedAnchorCategories.length,
+          },
+        });
+        if (reelected.electedAnchor !== null) {
+          skeleton = reelected;
+          repair = undefined;
+          feedback = undefined;
+          passes--; // re-election is not a validation attempt
+          continue;
+        }
+      }
+      // Out of categories or out of re-elections and the day still has no
+      // centre: that is a failure, and it says so rather than shipping.
+      if (anchorUnfilled && skeleton.electedAnchor !== null) {
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "arc",
+          endpoint: "anchor_unseatable_exhausted",
+          estCostUsd: 0,
+          metadata: {
+            tried: [...failedAnchorCategories, skeleton.electedAnchor.category],
+          },
+        });
+        const stats = finishStats(pool.length, shortlist.length, passes);
+        await deps.instrumentation.endTrace(traceId, {
+          totalCostUsd: estCostUsd,
+          fullDayMs: stats.timings.totalMs,
+          metadata: {
+            ...deps.traceMetadata,
+            ...traceSummary(stats, "failed", request, lastViolations.length),
+            anchor_unseatable: true,
+            anchor_tried: [
+              ...failedAnchorCategories,
+              skeleton.electedAnchor.category,
+            ],
+          },
+        });
+        return {
+          status: "failed",
+          violations: lastViolations,
+          narrated: describeViolations(lastViolations),
+          stats,
+        };
+      }
 
       const context = buildGrammarContext({
         environment,
