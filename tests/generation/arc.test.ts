@@ -51,13 +51,13 @@ describe("arc templates are a grammar of shapes", () => {
       const anchors = template.steps.filter((s) => s === "anchor").length;
       expect(anchors).toBe(TEMPLATE_INVARIANTS.anchorCount);
 
-      expect(template.steps[template.steps.length - 1]).toBe(
-        TEMPLATE_INVARIANTS.lastStep,
-      );
-
-      // "2hrs free → meal" is the ending the founder rejected. No template
-      // may be able to express it.
-      expect(template.steps[template.steps.length - 2]).not.toBe("open");
+      // A day ends on an experience OR on dinner — but never on dinner
+      // that arrived because the day ran out. "2hrs free → meal" is the
+      // ending the founder rejected, and no template may express it.
+      const last = template.steps[template.steps.length - 1];
+      const beforeLast = template.steps[template.steps.length - 2];
+      expect(TEMPLATE_INVARIANTS.lastSteps).toContain(last);
+      expect(beforeLast).not.toBe("open");
 
       const meals = template.steps.filter((s) => s === "meal").length;
       expect(meals).toBeGreaterThanOrEqual(

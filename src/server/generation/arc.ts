@@ -55,9 +55,10 @@ export interface ArcTemplate {
 
 /**
  * The templates. Literal data, read once — no engine, no DSL, no
- * inheritance. Two rules govern every row and both are asserted in tests:
- * exactly one `anchor`, and the last step is never a bare `meal` sitting
- * behind an `open` (the "2hrs free → meal" ending the founder rejected).
+ * inheritance. Every row is asserted against TEMPLATE_INVARIANTS in tests:
+ * exactly one `anchor`, an ending that is an experience or a dinner, and
+ * never a bare `meal` sitting behind an `open` (the "2hrs free → meal"
+ * ending the founder rejected).
  *
  * Meal steps are placed by the arc; how MANY exist is still the meal
  * pattern's call (comment 10290 — patterns, not fixed slots), so a
@@ -69,13 +70,20 @@ export const ARC_TEMPLATES: readonly ArcTemplate[] = [
   { id: "relaxed-a", structure: "scheduler", pace: "relaxed", steps: ["warmup", "meal", "anchor", "open", "meal", "close"] },
   { id: "relaxed-b", structure: "scheduler", pace: "relaxed", steps: ["meal", "anchor", "contrast", "meal", "close"] },
   { id: "relaxed-c", structure: "scheduler", pace: "relaxed", steps: ["warmup", "anchor", "meal", "contrast", "meal", "close"] },
+  // Ends on dinner rather than an after-dinner stop. See TEMPLATE_INVARIANTS:
+  // CP1 forbade a meal ending only when it sits behind an `open`, and the
+  // stronger "always close" was an unrecorded tightening that made every
+  // scheduler day end the same way.
+  { id: "relaxed-d", structure: "scheduler", pace: "relaxed", steps: ["meal", "anchor", "contrast", "meal"] },
   // --- scheduler · moderate ------------------------------------------------
   { id: "moderate-a", structure: "scheduler", pace: "moderate", steps: ["warmup", "meal", "anchor", "contrast", "meal", "close"] },
   { id: "moderate-b", structure: "scheduler", pace: "moderate", steps: ["meal", "anchor", "open", "contrast", "meal", "close"] },
   { id: "moderate-c", structure: "scheduler", pace: "moderate", steps: ["warmup", "anchor", "meal", "contrast", "open", "meal", "close"] },
+  { id: "moderate-d", structure: "scheduler", pace: "moderate", steps: ["warmup", "meal", "anchor", "contrast", "meal"] },
   // --- scheduler · packed --------------------------------------------------
   { id: "packed-a", structure: "scheduler", pace: "packed", steps: ["warmup", "meal", "anchor", "contrast", "contrast", "meal", "close"] },
   { id: "packed-b", structure: "scheduler", pace: "packed", steps: ["meal", "warmup", "anchor", "contrast", "open", "meal", "close"] },
+  { id: "packed-c", structure: "scheduler", pace: "packed", steps: ["warmup", "meal", "anchor", "contrast", "contrast", "meal"] },
   // --- wanderer ------------------------------------------------------------
   // THREE stops, per the CP1 ruling: "wanderers get an arc of three
   // intents, and rule 27's unstructured floor stays the binding
@@ -94,8 +102,9 @@ export const ARC_TEMPLATES: readonly ArcTemplate[] = [
  * Invariants every template holds, asserted in tests rather than trusted:
  *
  *  1. exactly one `anchor` — a day has one centre
- *  2. the last step is `close` — a day ends on purpose
- *  3. the step before `close` is never `open` — "2hrs free → meal" is the
+ *  2. the last step is `close` or `meal` — a day ends on an experience or
+ *     on dinner, both of which are endings people actually want
+ *  3. the step before the last is never `open` — "2hrs free → meal" is the
  *     ending the founder rejected, and no template may express it
  *  4. a SCHEDULER template carries at least two `meal` steps. Wanderers
  *     carry one on purpose (three intents, per the CP1 ruling); a
@@ -105,7 +114,22 @@ export const ARC_TEMPLATES: readonly ArcTemplate[] = [
  */
 export const TEMPLATE_INVARIANTS = {
   anchorCount: 1,
-  lastStep: "close" as ArcStep,
+  /**
+   * What a day may END on.
+   *
+   * This used to be `close`, full stop — and that was a tightening of the
+   * CP1 ruling nobody recorded. CP1 forbade one specific ending: a bare
+   * `meal` sitting behind an `open` ("2hrs free → dinner"), which is the
+   * shape the founder rejected. Requiring `close` everywhere instead made
+   * every scheduler day end identically, and the CP2 fix round measured
+   * the cost — role-sequence overlap 1.000 once closes seated on 6 of 6.
+   *
+   * Dinner IS how many good days end. What must never happen is dinner
+   * arriving because the day ran out, which is exactly the
+   * behind-an-`open` case, and `rhythm.ending-without-landing` advises on
+   * the same shape from the other side.
+   */
+  lastSteps: ["close", "meal"] as ArcStep[],
   minMealStepsScheduler: 2,
   minMealStepsWanderer: 1,
 };

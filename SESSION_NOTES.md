@@ -1013,6 +1013,77 @@ Final matrix: 6 generations, 130 Details, **$2.60 + $0.15 ≈ $2.75 billed**.
 generations are fully billed and do **not** fit the remaining headroom —
 that is its own sanction to grant.
 
+## Step 6 — The bounded fix round, and why the endgame cannot be called
+
+### 6.1 Reproduce first: the close was MARGINAL, not broken
+
+One live day-1-jays run (the same persona that had failed) came back with
+**five stops including its close** — Maple Leaf Tavern 20:35–21:20, no
+`unfilled` at all. Set against matrix3's four-stop day-1, the only
+difference was dinner seating at **18:45 rather than 19:05**. Twenty
+minutes of travel luck decided whether the day had an ending.
+
+The arithmetic says why. Classic dinner closes at 21:30; the objective
+centres a 90-minute dinner at ~18:45–20:15; an ending needs travel (~20
+min) plus its category minimum (45 min) — about 21:20 against a `moderate`
+day that ended at **21:30**, and a `relaxed` day that ended at **21:00**.
+
+**A third accidental load-bearer, the same shape as the other two.** The
+old day-ends were never wrong for a day that STOPPED after dinner, which is
+what every day did before the arc gave days an ending. `DEFAULT_DAY` now
+ends 21:45 / 22:00 / 22:30.
+
+Result: **closes 6/6** (was 2/6), anchors 6/6.
+
+### 6.2 The invariant that was homogenising the days — my own
+
+With closes seating on 6 of 6, role-sequence overlap hit **1.000**. The
+cause was `TEMPLATE_INVARIANTS.lastStep = "close"`, and that was **a
+tightening of the CP1 ruling nobody recorded**. CP1 forbade one ending: a
+bare `meal` behind an `open` ("2hrs free → dinner"). Requiring `close`
+everywhere instead made every scheduler day end identically.
+
+Relaxed to `lastSteps: ["close", "meal"]` — a day ends on an experience or
+on dinner, never on dinner that arrived because the day ran out — and three
+meal-ending templates added (`relaxed-d`, `moderate-d`, `packed-c`), which
+also widens each bucket so personas collide on a template less often.
+
+### 6.3 The endgame CANNOT be called on the offline harness — it is unfit
+
+`scripts/offline-recompose.ts` is trustworthy for *structure* — roles,
+anchors, closes, all read from composed slots — and it reports:
+
+| | before round | after round |
+|---|---|---|
+| anchors seated | 6/6 | **6/6** |
+| closes present | 2/6 | **6/6** |
+| role-sequence | 0.898 | 0.949 |
+| category-sequence (comparable) | 0.550 | 0.607 |
+
+**But its category sequences are impossible days.** It selects on the
+Candidate's category column and the DB pool's stored facts disagree with
+it, so the harness seats `nightlife_bars` as a *meal* — twice, on day-2 —
+and gives day-1 two bars in a row. The live engine never does this: Details
+sets the category fact that selection then agrees with. Reporting **0.607**
+as the decision number would be deciding a $10 founder review on days that
+cannot exist.
+
+So: the last **trustworthy** category-sequence mean is the live matrix3
+figure, **0.645**, measured *before* the tail fix. The tail fix plausibly
+moves it — days are longer and end differently now — and nobody knows
+which way.
+
+**Not called, and not guessed.** The ruled endgame branches on a number
+this session cannot currently produce for $0. Reporting and holding is the
+only honest option; inventing a pass from a harness that seats bars as
+lunch is not.
+
+### 6.4 Gates and spend
+
+tsc 0, build 0, **439 tests** (+3). Session billed ≈ **$8.7** of the $20
+ceiling: the fix round cost one live reproduce (~$0.5) and the offline
+runs cost nothing.
+
 ### 2.8 Process lesson — why this section had to be reconstructed
 
 **The interrupted evening left the code ahead of the record.** Step 2 was

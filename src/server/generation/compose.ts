@@ -109,10 +109,28 @@ const OPEN_PERIOD_NOTICEABLE_MINUTES = 45;
  */
 const ANCHOR_WINDOW_SLACK_MINUTES = 60;
 
+/**
+ * The default day, with a tail that can actually hold an ending
+ * (XXX-35 CP2 fix round).
+ *
+ * `close` was reaching the composer and failing to seat, and the
+ * arithmetic says why. Classic dinner closes at 21:30, the objective
+ * centres a 90-minute dinner at roughly 18:45–20:15, and an ending needs
+ * travel (~20 min) plus its category minimum (45 min for a bar) on top —
+ * about 21:20. A `moderate` day ended at 21:30 and a `relaxed` one at
+ * 21:00, so the close was either impossible or decided by twenty minutes
+ * of travel luck. Live day-1-jays seated its close with dinner at 18:45
+ * and lost it with dinner at 19:05, on the same code.
+ *
+ * The old ends were never wrong for a day that STOPPED after dinner —
+ * which is what every day did before the arc gave days an ending. A third
+ * accidental load-bearer, and the same shape as the other two: a bound
+ * that was only true because of behaviour that has since changed.
+ */
 const DEFAULT_DAY: Record<Persona["pace"], { start: string; end: string }> = {
-  relaxed: { start: "09:30", end: "21:00" },
-  moderate: { start: "09:00", end: "21:30" },
-  packed: { start: "08:30", end: "22:00" },
+  relaxed: { start: "09:30", end: "21:45" },
+  moderate: { start: "09:00", end: "22:00" },
+  packed: { start: "08:30", end: "22:30" },
 };
 
 /** Meal dwell judgments (minutes) — inside the category min/max bands. */
