@@ -788,6 +788,72 @@ The category-sequence gate is wired at `scripts/generation-report.ts:233`
 non-gating — so the exam, when it runs, either passes the ruled number or
 reports the miss.
 
+## Step 3 — Tier 2/3 exam RUN (CHECKPOINT 3 evidence)
+
+10 live generations: 6 matrix + 2 A/B + 2 in-horizon A/B re-runs.
+
+### 3.1 The gate MISSED, and it is reported as a miss
+
+| metric | result | ruled gate |
+|---|---|---|
+| venue overlap | mean **0.033** · max **0.50** | ≤0.35 / ≤0.50 → **PASS** |
+| category-sequence overlap | mean **0.711** · max **1.00** | ≤0.55 / ≤0.80 → **FAIL** |
+| role-sequence overlap | mean **0.850** | observed, non-gating |
+
+Session 9 measured 0.693 with the metric non-gating. It is now **0.711 —
+worse**. The CP1 commitment is honoured exactly as written: the number is
+reported, the threshold is not moved. Venues are near-disjoint, so the
+selector is doing its job; what repeats is the *ordered shape*, and
+role-sequence at 0.850 is the leading indicator the design named for
+exactly this failure. **The arc traded venue monotony for shape monotony.**
+
+### 3.2 The anchor does not survive composition in 3 of 6 days
+
+The defect the whole build exists to fix, still live:
+
+| day | elected | anchor role seated | anchor category present | template |
+|---|---|---|---|---|
+| day-1-jays | markets | **no** | **no** | moderate-b |
+| day-2-old-town | historic_sites | **no** | yes (roled `close`) | packed-a |
+| day-3-winter | museums_galleries | yes | yes | relaxed-b |
+| day-4-budget | markets | yes | yes | moderate-a |
+| day-5-wanderer | museums_galleries | yes | yes | wanderer-a |
+| day-6-excursion | parks | **no** | **no** | moderate-b |
+
+Both `moderate-b` days lose the centrepiece outright. `compose.ts:372`
+says "THE ANCHOR IS NEVER DROPPED" and `:544` exempts it from the backstop
+cut, and `arc.test.ts` asserts both — but those assertions are on the
+**skeleton**. The drop happens downstream in `composeDay`, which no test
+covers. A rule that holds in the unit test and fails in the live pipeline
+is the exact shape of the v1 postmortem's constraint 7.
+
+This is a CP3 blocker: "the day isnt anchored on anything" is the
+founder's own sentence, and it is still true of half the matrix.
+
+### 3.3 What the A/B proves — both founder days cured on all four
+
+Both re-run at their exact persona/date/seed and read against their own
+recorded verdicts. Details in the digest; every cure held, and the anchor
+survived on *these* two days.
+
+### 3.4 Exposure is unproven live, and says so
+
+0 swaps across all 10 runs. The in-horizon re-runs (2026-08-18) sit in
+pleasant August weather, so no band binds and the base 45-minute cap
+leaves day-3's 35-minute walk **legally unremarkable**. The founder's
+winter case cannot be exercised live in August against a 14-day horizon.
+Exposure is proven by the three trap fixtures and by `walkCapMinutes`
+unit tests, and by nothing else. Stated rather than implied.
+
+### 3.5 Spend actuals against the ~$9–13 sanction
+
+224 Details events, $4.86 combined list. Details MTD **1124 / 1000** free,
+so **124 events billed ≈ $2.48**; the free cap was crossed mid-matrix, as
+CP0 predicted. Anthropic $0.145 on the matrix (the A/B path does not print
+per-run usage — a reporting gap, not an unmetered spend). **Billed to date
+≈ $2.7, well inside the sanction** — but every event from here is billed,
+so the 25–35 generation founder re-review now costs full freight.
+
 ### 2.8 Process lesson — why this section had to be reconstructed
 
 **The interrupted evening left the code ahead of the record.** Step 2 was
