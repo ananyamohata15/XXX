@@ -676,9 +676,23 @@ async function main() {
       },
     ];
     const inHorizon = arg("--in-horizon");
+    // The banner used to hardcode "[llm]" while --session10-ab was absent from
+    // useLlm, so an A/B run without --llm claimed a selector it never used.
+    // The audited traces were produced by the tasting room, i.e. the LLM path;
+    // comparing a deterministic re-run against them measures a different
+    // pipeline and quietly answers a question nobody asked.
     console.log(
-      "generation-report SESSION-10 A/B: the founder's own two days, re-run [llm]",
+      `generation-report SESSION-10 A/B: the founder's own two days, re-run [${
+        useLlm ? "llm" : "deterministic"
+      }]`,
     );
+    if (!useLlm) {
+      console.log(
+        "  WARNING: running the DETERMINISTIC selector. The audited traces\n" +
+          "  (a825417a, d9935541) came from the tasting room's LLM path, so this\n" +
+          "  is NOT a like-for-like A/B against the founder's verdicts. Add --llm.",
+      );
+    }
     for (const day of audited) {
       const dates = [day.date, ...(inHorizon === null ? [] : [inHorizon])];
       for (const date of dates) {
