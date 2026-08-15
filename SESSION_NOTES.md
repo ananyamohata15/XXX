@@ -222,6 +222,155 @@ CATEGORY where the founder asked for a CALIBRE. Step 2 has its live evidence
 without paying for more.
 
 
+## Step 2 — Anchor calibre + container dwell (CHECKPOINT 2)
+
+### 2.1 The dwell double duty, and the larger thing under it
+
+Session 12 finding 1 named one mechanism: `dwellMinutes[c].min` doing two
+jobs — the GRAMMAR floor (is this a legal stop?) and the composer's DROP
+floor (is this worth placing?). Split, as ruled:
+`COMPOSE_PARAMS.anchor.minDwellMinutes` = **75**, above every category's
+grammar floor so it always binds. The grammar is untouched: a 20-minute park
+visit is still a legal stop, it is just not a centrepiece.
+
+**Then I measured it before believing it, and found the bigger cause.**
+`scripts/anchor-audit.ts`, 1,200 skeletons:
+
+| persona | anchor dwell (min/median/max) | below calibre |
+|---|---|---|
+| day-1-jays | 75 / 75 / 75 | 0/200 |
+| day-2-old-town | 90 / 90 / 90 | 0/200 |
+| day-3-winter | 120 / 120 / 120 | 0/200 |
+| day-4-budget | 75 / 75 / 75 | 0/200 |
+| day-5-wanderer | 120 / 120 / 120 | 0/200 |
+| **day-6-excursion** | **60 / 60 / 60** | **200/200** |
+
+Not once was a narrow window degrading a good election. `electAnchor` took
+`dwellMinutes[c].typical` — *the dwell of an ORDINARY stop of that category*
+— and `parks.typical` is 60. A nature-first persona could not get a
+centrepiece longer than an hour, ever, by construction.
+
+That is the founder's verdict at its root, and it is the same shape as every
+other defect this session: **a category's typical dwell is an average over
+the category**, so a pocket park and Toronto Islands share it, and the day's
+centre inherits the average of everything that is not a centrepiece.
+
+`anchorDwellFor` clamps the anchor to `[calibre, category max]`. The grammar
+still owns the ceiling; this only stops the centre being sized like a coffee
+stop. It moves **parks 60 → 75 and nothing else** — every other electable
+category already cleared calibre. Post-fix: **0 of 1,200** skeletons seat a
+centre below 75.
+
+Genuine window degradation now re-elects, BEFORE retrieval where it is free
+(CP2 ruling 1's path extended from *unseatable* to *seated but degenerate*).
+If no category does better, the FIRST election stands — re-electing a nature
+lover away from nature to another equally-cramped category gains the
+traveller nothing — and the day says so out loud: trace event, outcome field,
+and an amber line in the room, which is where the founder found this and
+where they never saw it.
+
+### 2.2 Anchor calibre — the venue question
+
+Sizing the centre correctly does nothing about WHICH venue fills it. A pocket
+park and the Islands are now both 75 minutes. `src/shared/anchor-calibre.ts`
+is the interim signal until XXX-31, built only from what the pool holds and
+explicitly tiered:
+
+| tier | signal | what it is worth |
+|---|---|---|
+| **1** | founder curation, per category | the only signal actually about CALIBRE |
+| **2** | rating count at request time | shortlisted candidates only (that is who gets Details). Measures **fame**, not calibre |
+| **3** | unknown | advisory, never a rejection — a venue nobody measured must not be demoted for it |
+
+`ANCHOR_MIN_RATING_COUNT` = 1,000, calibrated against venues this project's
+own days actually seated (Severn Creek Park and Desta Gebeya Market in the
+long tail; Berczy Park ≈4,000; St. Lawrence Market and the Islands in the
+tens of thousands). 1,000 sits in the empty band between the clusters.
+
+The anchor's MENU is **filtered**, not re-ranked — a selector handed a
+sub-calibre option will sometimes take it, and "sometimes seats a 20-minute
+anchor" is the defect. If nothing clears the bar the menu is left whole
+(anchorless is worse than small-centred) and `anchor_calibre_unmet` is
+recorded.
+
+**Two limitations, both pinned as tests rather than buried:**
+
+1. **Fame is not calibre.** Berczy Park clears the bar and would be seated
+   again. No rating-count bar can catch it without also excluding every quiet
+   destination a corners persona should be offered. That case belongs to
+   curation, which is why tier 1 exists.
+2. **Name matching was nearly a trust failure.** It was bidirectional
+   containment until the worksheet ran against the real pool, where it
+   matched `"Toronto Islands"→"Toronto"`, `"Toronto Zoo"→"Toronto"`,
+   `"High Park"→"Mackenzie's High Park"` (a bar) and
+   `"Kensington Market"→"Kensington Market Sourdough"` (a bakery). Each would
+   have entered a day as a TIER 1 founder-curated centrepiece — a guess
+   laundered as operator trust, on the highest-trust signal in the system.
+   Now **exact normalized equality**, and the worksheet prints the pool's own
+   spellings so the founder ticks real identities.
+
+### 2.3 The pool finding the worksheet turned up
+
+`scripts/curation-list.ts` checks curated names against the pool, and its own
+absence check was wrong twice before it was right — prefiltering on the first
+token (`"St"`) and capping at 200 rows reported curated markets as missing
+while the worksheet listed them three lines above. Both fixed; the cap can no
+longer decide the answer.
+
+With that corrected:
+
+- **Toronto Islands and High Park are IN the pool as exact identities, and
+  carry no Google link.** No link → no Details fetch → no rating count → they
+  can never clear a fame bar. **The two best park anchors in Toronto are
+  unreachable by the tier-2 signal**, and curation is their only route in.
+  That is the strongest argument the list has, and it was invisible until a
+  query asked.
+- Genuinely absent: Kensington Market (as a market identity), Toronto Zoo,
+  Canada's Wonderland, African Lion Safari, Hanlan's Point. The founder's
+  three own examples are all out-of-city — XXX-38's excursion work.
+
+### 2.4 Container-vs-tenant — the brief's approach does not survive measurement
+
+The founder specified the fix (*"the card should have been st Lawerence
+market, and in the description you should try olympic cheese"*) and the brief
+proposed Session 5's `link_collision` pairs plus name-containment as the
+detection. `scripts/containment-probe.ts` tested all three signals over
+**31,377** Toronto identities first:
+
+| signal | verdict |
+|---|---|
+| co-location | **fails on precision** — 62 places within 60 m of Kensington Flea Market, street neighbours not tenants; 154 of 200 markets have a neighbour inside the radius |
+| name containment | **fails on precision AND recall** — 26 pairs city-wide, 23 of them one generic name catching another ("Farmer's Market" matching markets 22 km apart). **Zero recall on the founder's own case**: "Olympic Cheese" does not contain "St Lawrence Market" |
+| `link_collision` | **three rows** in the entire city, two of them the same district. Not a corpus |
+
+So the city-wide detector is not supportable, and building it would have been
+the speculative fix CLAUDE.md forbids.
+
+What IS supportable: **containers are few, famous and knowable.** A curated
+registry with a per-container FOOTPRINT is precise where a heuristic is not —
+the same doctrine as the anchor list — and co-location then does the job it is
+genuinely good at: answering "is this inside a thing whose extent we already
+know". The probe confirms the geometry — Olympic Cheese sits **26 m** from St
+Lawrence Market.
+
+`src/shared/containment.ts` is that, and `tenancyOf` is **tier 3 always**: a
+neighbouring shop at the same address is indistinguishable from a stall
+inside, and geometry cannot promote itself to certainty. Its tests use the
+pool's real coordinates, including the *second* "Olympic Cheese" 20 km north
+that name matching alone would have seated inside a downtown market hall.
+
+**Not built, and named rather than half-done — the seating swap itself.**
+Card = container, description = tenant needs the container to be IN the
+retrieved pool for that intent, and today retrieval has no reason to fetch
+it. So the founder's fix is a RETRIEVAL change, not a composition one.
+Proposed for Session 14 with that obstacle stated.
+
+### 2.5 Gates
+
+`tsc --noEmit` clean · `eslint` clean · `npm run build` exit 0 ·
+**513 passed**, 3 skipped (+37 since Session 12's 461).
+
+
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
 Branch: `session-12-variety-audit`. Status: **CLOSED at CHECKPOINT 5.** CP0–CP4
