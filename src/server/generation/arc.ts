@@ -143,10 +143,17 @@ export const TEMPLATE_INVARIANTS = {
  * plan"). Recorded rather than silently folded in.
  */
 export function templatesFor(persona: Persona): ArcTemplate[] {
+  return templatesForDraw(persona);
+}
+
+/** The same rule, keyed on what a trace can carry. See `TemplateDraw`. */
+export function templatesForDraw(
+  draw: Pick<TemplateDraw, "structure" | "pace">,
+): ArcTemplate[] {
   const matching = ARC_TEMPLATES.filter(
     (t) =>
-      t.structure === persona.structure &&
-      (persona.structure === "wanderer" || t.pace === persona.pace),
+      t.structure === draw.structure &&
+      (draw.structure === "wanderer" || t.pace === draw.pace),
   );
   return matching.length > 0 ? matching : [ARC_TEMPLATES[3]];
 }
@@ -168,8 +175,40 @@ export function templatesFor(persona: Persona): ArcTemplate[] {
  * two shapes — the property the arc needs to avoid trip-level monotony.
  */
 export function pickTemplate(persona: Persona, seed: number): ArcTemplate {
-  const options = templatesFor(persona);
-  const key = (personaIdentity(persona) ^ (Math.abs(seed) >>> 0)) >>> 0;
+  return templateForDraw(
+    {
+      identity: personaIdentity(persona),
+      structure: persona.structure,
+      pace: persona.pace,
+    },
+    seed,
+  );
+}
+
+/**
+ * Everything a template draw actually depends on — and nothing else.
+ *
+ * Split out so a TRACE can carry it. Reproducibility is only a law if it can
+ * be checked, and until Session 13 a trace recorded the seed but not who the
+ * day was for, so `pickTemplate` could not be replayed against it. Only
+ * tasting-room traces were checkable, via a `persona_key` the room happened
+ * to stash for its own reasons — while 1,633 of the month's 1,842 Details
+ * events were spent by harness runs whose traces could not be checked at
+ * all. That is the surface Session 12's defect hid on for a whole session.
+ *
+ * These three fields are enough and are not the persona: an identity hash,
+ * a structure and a pace replay the draw without the trace storing anyone's
+ * taste profile.
+ */
+export interface TemplateDraw {
+  identity: number;
+  structure: Persona["structure"];
+  pace: Persona["pace"];
+}
+
+export function templateForDraw(draw: TemplateDraw, seed: number): ArcTemplate {
+  const options = templatesForDraw(draw);
+  const key = (draw.identity ^ (Math.abs(seed) >>> 0)) >>> 0;
   return options[key % options.length];
 }
 

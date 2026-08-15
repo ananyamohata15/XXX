@@ -846,6 +846,16 @@ function traceSummary(
     city: request.city,
     date: request.date,
     persona_structure: request.persona.structure,
+    /**
+     * What the arc draw depends on, so ANY trace can be replayed — not just
+     * the tasting room's, which alone recorded a persona key. Session 12's
+     * seed defect survived a whole session partly because the harness traces
+     * that spent most of the month's Details budget could not be checked
+     * against their own recorded seed. An identity hash and a pace are
+     * enough to re-pick the template; neither is the persona itself.
+     */
+    persona_identity: personaIdentity(request.persona),
+    persona_pace: request.persona.pace,
     pool_candidates: stats.poolCandidates,
     shortlisted: stats.shortlisted,
     details_calls: stats.detailsCalls, // the 87% canary, first-class
