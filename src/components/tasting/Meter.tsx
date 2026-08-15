@@ -1,6 +1,6 @@
 "use client";
 
-import type { TastingMeter } from "@/shared/tasting";
+import type { TastingMeter, TastingQuota } from "@/shared/tasting";
 
 /**
  * The meter (XXX-32: "the founder sees the meter").
@@ -61,14 +61,65 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * The two spend gauges, on their own.
+ *
+ * Split out because the room needs them BEFORE any generation exists.
+ * `readQuota` used to run only inside a generate request, so the figure on
+ * screen described the last generation this page completed rather than the
+ * month — which is the whole of Session 12's unexplained 66-event drift
+ * (a reading taken 2026-08-11T05:36Z, correct when made, still displayed
+ * four days and 66 events later).
+ */
+export function QuotaGauges({ quota }: { quota: TastingQuota }) {
+  return (
+    <div className="space-y-3">
+      <Gauge
+        label="Details events this month"
+        value={quota.detailsThisMonth}
+        max={quota.detailsFreeCap}
+        detail={`Google's free Enterprise cap. Past it, each event costs $0.020.`}
+      />
+      <Gauge
+        label="Generations today"
+        value={quota.generationsToday}
+        max={quota.dailyCap}
+        detail={`Runaway guard, not a budget. Resets ${new Date(quota.resetsAt).toLocaleString()}.`}
+      />
+    </div>
+  );
+}
+
+/** The gauges alone, for a room that has not generated anything yet. */
+export function StandingMeter({ quota }: { quota: TastingQuota }) {
+  return (
+    <section className="mt-8 space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <h2 className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">
+        Meter — month to date
+      </h2>
+      <QuotaGauges quota={quota} />
+      <p className="border-t border-zinc-100 pt-3 text-[11px] text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+        Read live, including spend from harness runs this page never saw.
+      </p>
+    </section>
+  );
+}
+
 export function Meter({
   meter,
   synthetic,
+  quota,
 }: {
   meter: TastingMeter;
   synthetic: boolean;
+  /**
+   * A fresher reading than the one this generation returned, when the room
+   * has one. The generation's own quota is a snapshot of the moment it
+   * finished; anything spent elsewhere since is only in this.
+   */
+  quota?: TastingQuota | null;
 }) {
-  const q = meter.quota;
+  const q = quota ?? meter.quota;
   const stages = Object.entries(meter.stageMs)
     .filter(([key, ms]) => key !== "totalMs" && ms > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -79,20 +130,7 @@ export function Meter({
         Meter
       </h2>
 
-      <div className="space-y-3">
-        <Gauge
-          label="Details events this month"
-          value={q.detailsThisMonth}
-          max={q.detailsFreeCap}
-          detail={`Google's free Enterprise cap. Past it, each event costs $0.020.`}
-        />
-        <Gauge
-          label="Generations today"
-          value={q.generationsToday}
-          max={q.dailyCap}
-          detail={`Runaway guard, not a budget. Resets ${new Date(q.resetsAt).toLocaleString()}.`}
-        />
-      </div>
+      <QuotaGauges quota={q} />
 
       <div className="space-y-1 border-t border-zinc-100 pt-3 dark:border-zinc-800">
         {synthetic ? (
