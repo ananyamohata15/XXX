@@ -1,6 +1,9 @@
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
-Branch: `session-12-variety-audit`. Status: **CHECKPOINT 0 — awaiting rulings.**
+Branch: `session-12-variety-audit`. Status: **CLOSED at CHECKPOINT 5.** CP0–CP4
+all concluded; the close-out’s verdict-mining pass found a seed-plumbing defect
+that makes six of the session’s nine dice sites inert on the live surface
+(§5.3). Proposed, not applied — it opens Session 13 owing a Tier 2 confirm.
 
 ## Step 0 — Intake (CHECKPOINT 0)
 
@@ -881,6 +884,311 @@ Nothing was generated on it, so no spend is stranded and the launch state in
 §4.1 still describes what a relaunch will produce — but the evening now needs
 a fresh `npm run dev` before step 2, and the daily-cap and month-gauge
 readings should be re-read at that point rather than carried over from §4.1.
+
+### 4.3 The evening as it was actually run — one day, six verdicts
+
+**CHECKPOINT 4: CONCLUDED.** The founder vetted **one** generation, not the
+planned back-to-back sweep, and the complaint-seed A/B (§4.2) was not run.
+One trace, `cab8104b`, `day-6-excursion` @ 2026-08-28, **$0.4047**. Six taste
+signals, no evidence rows. Mined in §5.1 below.
+
+## Step 5 — Close-out (CHECKPOINT 5)
+
+### 5.1 The verdict-mining pass
+
+Instrument: `scripts/corpus-report.ts` (new, §5.2). Read-only, $0.
+
+```
+npx tsx --env-file=.env.local scripts/corpus-report.ts --since 2026-08-15
+```
+
+**The day, as the record holds it.** Roles are read off the *recorded*
+template `moderate-b` = `[meal, anchor, open, contrast, meal, close]`, whose
+five seating steps match the five cards — so the mapping is sound rather than
+assumed:
+
+| slot | role | venue | category | adjacent rules |
+|---|---|---|---|---|
+| s-i1 | meal | Loga's Corner | restaurants | — |
+| s-i2 | **anchor** | Severn Creek Park | parks | price-uncertain, reset-gap-without-lodging |
+| s-i3 | contrast | Olympic Cheese | markets | price-uncertain, reset-gap, **off-peak-window** |
+| s-i4 | meal | Town Wings | restaurants | detour-avoidable |
+| s-i5 | **close** | Princes' Gates | historic_sites | price-uncertain, detour, **hours.unknown, status-unverified** |
+
+Elected anchor: `parks @ 60m`, tier 3, *"nature is this traveller's first
+interest"*. 9 findings, 3 open periods, 0 exposure swaps.
+
+**The findings table.** Every row's first column is verbatim.
+
+| # | founder's words | mechanism record | hypothesis of cause | proposed work item |
+|---|---|---|---|---|
+| **1** | *"An anchor that lasts only 20 mins? The anchor should be a highlight, not just anything random. Examples of a good anchor good be: canadas wonderland, or toronto zoo, or the lion safari near hamilton… And then you can fill it up with nice restaurants/bars/cafes/shopping areas/parks/waterfront/etc around it"* — on s-i2, **the anchor** | `electAnchor` → `parks @ 60m`; venue = Severn Creek Park, a pocket park at 8 Cluny Ave (Summerhill). τ=0.05 anchor die, drawn at **seed 0** (§5.3) | **Two independent causes.** (a) `electAnchor` elects a **category**, never a **calibre** — the venue is then whatever `scoreCandidate` ranks first within `parks`, so a 0.4 ha creek park and Toronto Islands are indistinguishable to the elector. (b) The 20 minutes: elected dwell is 60m, and `buildSkeleton` fits it with `Math.min(dwell, spanMinutes(window))`, dropping the step only below `dwellMinutes.parks.min` = **20**. A narrow anchor slice therefore degrades the day's centre to the category floor **silently** instead of failing. `parks.min` is doing double duty as grammar floor *and* drop floor — exactly the load-bearing-constant shape the Session-11 standard warns about | **NEW ticket — anchor calibre.** An anchor must clear a prominence/dwell bar or be re-elected; extend CP2 ruling 1's re-election path from *unseatable* to *seated but degenerate*. **Param calibration:** split `anchorMinDwell` out of `dwellMinutes[c].min` so the product floor and the grammar floor stop being one number |
+| **2** | *"Weird, its a shop in st lawerence, not worth 1hr 30 mins"* / *"Rather maybe the card should have been st Lawerence market, and in the description you should try olympic cheese + any other top reccos from st lawerence mkt"* — on s-i3, contrast | `pickContrast` (τ=0.30) drew `markets`; venue = Olympic Cheese, FSQ labels `Retail > Food and Beverage Retail > Cheese Store` **and** `Retail > Market` — it maps to `markets` on the second label. Card also carried `wisdom.off-peak-window` | **Container-vs-tenant granularity in the base layer.** A stall *inside* a market is a distinct FSQ place from the market itself, and nothing prefers the container over the tenant. `markets` is where this bites hardest because markets *are* containers. Dwell then follows the **category** (`markets.typical` = 75) rather than the venue, so one cheese counter inherits a market-hall dwell | **NEW ticket — container-vs-tenant.** Prefer the containing venue when a tenant's category dwell exceeds its plausible visit. The founder specifies the shape of the fix himself: **card = the container, description = the tenant** — which is also a narration-scope change, not only a retrieval one |
+| **3** | *"Not the greatest of days. Still feels like a random list of items with no real thing being achieved."* … *"this excursion to islands would be the anchor"* … *"This is what a concierge would plan. Not just saying a b c d e, done. Need some thought into it"* — day verdict | arc `moderate-b`; 3 open periods; `route.detour-avoidable` on 2 of 5 cards. Geography: Parkdale → Summerhill → St Lawrence → Lansdowne → Exhibition (west → north → east → west → southwest) | **Three compounding.** (i) The arc was diced at **seed 0** (§5.3), so this persona always draws `moderate-b` and the same category spine — Session 12's variety is not reaching the room at all. (ii) The arc composes a **shape**; nothing composes a **theme**. His counter-example is one narrative (provision → ferry → island → sunset → return) in which each stop exists *because of* the next; our steps are independent draws that satisfy roles. (iii) Geography is a **constraint** (a detour advisory), never a **generator** — his day is organised around a destination, ours around a clock | **(a) Fix the seed defect — blocking, §5.3.** **(b) NEW ticket — anchor-led geography:** once an anchor is elected, retrieve the rest of the day from *its* neighbourhood rather than the persona's lens zones. The founder describes precisely this: *"fill it up with … around it"*. **(c)** Narration scope: day notes that state the through-line |
+| **4** | *(no words)* — `liked` ×3 on s-i1, at 05:17:09 / :11 / :12 | `recordTasteSignal` inserts unconditionally; no dedupe in the room, no optimistic lock, no unique constraint on (trace, slot, signal, reporter) | Repeat taps, or a re-render re-firing the handler. Either way **one opinion is stored as three rows** | **XXX-34-adjacent + a room fix.** A partial unique index / upsert on `(trace_id, slot_id, signal, reporter_id)`. **Not** read-time dedupe — the corpus is the asset, and weighting must never read repetition as agreement. `corpus-report` warns on it today |
+| **5** | *(not founder-attested — a mechanism finding from the same day)* | s-i5, **the close**, is Princes' Gates with `facts: {}` — no hours, no price, no business status — carrying `hours.unknown` + `validity.status-unverified`. The day shipped anyway (advisories only) | 18 of a nominal 24 Details were fetched; the close's venue was outside the fetched set or its call failed, so it shipped honest-absence on **every** fact | **NEW ticket — verified endings.** An unverified *close* is a worse failure than an unverified mid-day stop: it is where the day lands. Propose `validity.status-unverified` becoming **blocking** for `role ∈ {anchor, close}` and advisory elsewhere. Flagged as my finding, not the founder's |
+
+### 5.2 What the two open calibrations get from tonight — including where the answer is "nothing"
+
+**Exposure bands: no implication, and that is the honest result.** The day is
+2026-08-28; `exposure_swaps` = 0; and the trace ran with **no weather row**
+for that date (`weather.unknown`, `windows = null`), so `hourlyExposure` was
+null and **no band could bind**. Tonight's verdicts say nothing about the
+cold rows (20/25, calibrated at CP3) and nothing about the heat, air and
+precipitation rows, which remain uncalibrated by any founder-authored day.
+Manufacturing an implication here would be the silent-fallback failure
+applied to calibration.
+
+*Second-order finding worth carrying:* a day generated 13 days ahead had no
+forecast row at all. Late-August Toronto is exactly where the 28 °C
+`warmApparentC` row would first be exercised — it cannot be, while the
+horizon leaves generated dates unforecast. Session 11 §1.5's weather-horizon
+disclosure is the adjacent work.
+
+**`idleBefore` (`wIdle` 0.5, `idleNormalizerMinutes` 120): hold both numbers,
+and the reason is not weak evidence — it is the wrong moment.**
+
+Tonight is the **first evening in the whole corpus with no dead-time
+complaint**. Every prior day verdict carries one: *"2+hr gap in between"*
+(23113b2f), *"2hr13 mins wasted in between"* (d9935541), *"Too much free
+time"* (a825417a), *"2hr 13 min gap"* (d743493e). Tonight placed 3 open
+periods and fired `structure.reset-gap-without-lodging` on two cards, and the
+founder complained about neither.
+
+That is *weak positive* evidence at n=1 — not enough to promote 0.5/120 off
+"provisional". But the stronger reading is that **the complaint has moved**:
+from dead time *between* stops to dwell allocation *within* them — 20 minutes
+at the anchor, 90 at a cheese counter. So the next calibration is the dwell
+floors (finding 1), not `wIdle`.
+
+**Explicit recommendation for the number: change neither, and do not re-tune
+`wIdle` until after the anchor-calibre fix lands.** A day whose anchor is a
+genuine destination has a structurally different idle profile — a long anchor
+dwell absorbs the mid-day that `wIdle` currently negotiates. Tuning it now
+would be tuning against a shape we have already decided to change.
+
+### 5.3 The defect the mining found: the arc is diced at seed 0 on every room generation
+
+Found by `corpus-report`'s mechanism check, reproduced before being believed,
+and it is the most important thing in this session.
+
+```
+engine.ts:164   const seed = request.seed ?? Math.floor(Math.random() * 2 ** 31);
+engine.ts:250   let skeleton = buildSkeleton(request);   // ← request, not seed
+compose.ts:293  const seed = request.seed ?? 0;          // ← so: 0
+```
+
+The engine mints a seed when the caller sends none, uses it for scoring and
+retrieval, and **records it in the trace**. `buildSkeleton` never sees it: it
+re-reads `request.seed`, which is still null, and falls to **0**.
+
+`TastingRoom.tsx:246` sends `seed: null` on every generation. So every
+tasting-room day ever generated has had its **entire arc diced at 0**.
+
+**Reproduced, not reasoned** (the three-line check, $0):
+
+| | |
+|---|---|
+| trace records | `arc_template_id: "moderate-b"`, `seed: 679721290` |
+| `pickTemplate(day-6-excursion, 679721290)` | **`moderate-d`** — disagrees with the record |
+| `pickTemplate(day-6-excursion, 0)` | **`moderate-b`** — reproduces it exactly |
+
+The offline instruments agreed independently: `offline-recompose --seed
+679721290` also produces `moderate-d` for this persona. Two derivations, one
+recorded shape, and only seed 0 explains it.
+
+**Blast radius — which of the session's refits are inert.** The dividing line
+is precisely whether a die lives inside `buildSkeleton`:
+
+| # | site | seed it draws on | status |
+|---|---|---|---|
+| 1 | `pickTemplate` (rekeyed) | `buildSkeleton` → **0** | **INERT** |
+| 3 | `electAnchor` | `buildSkeleton` → **0** | **INERT** |
+| 4 | `pickContrast` | `buildSkeleton` → **0** | **INERT** |
+| 5 | `warmupCategories` | `buildSkeleton` → **0** | **INERT** |
+| 6 | `closeCategories` | `buildSkeleton` → **0** | **INERT** |
+| 7 | `rankedActivityCategories` | `buildSkeleton` (`:615/635/647`) → **0** | **INERT** |
+| 20 | `scoreCandidate` jitter | engine's minted seed | live |
+| 23 | `zonesFor` | engine's minted seed | live |
+| 24 | `retrieveCandidates` window | engine's minted seed | live |
+
+**Six of the nine dice sites this session touched — every composition die,
+and the template itself — have never varied on the live surface.** The three
+that do vary are the ones that pick *venues* and *pool pages*. That is the
+founder's verdict restated in mechanism: **different places, identical
+shape** — *"a random list of items"*.
+
+It also explains why CP2 and CP3 read green while the room did not improve.
+Every offline harness and every `--matrix` run passes `--seed` **explicitly**,
+so all of them exercised the real dice. The room is the only caller that does
+not, and the room was never in the gate.
+
+**Second-order harm: the trace lies.** `traceSummary` records the minted seed
+alongside an arc that seed did not build, so every room trace is
+unreproducible and any later reader mining shape-variety from the corpus gets
+a wrong answer confidently. That is a provenance failure, not just a bug.
+
+**The fix, proposed and deliberately NOT applied:**
+
+```diff
+-    let skeleton = buildSkeleton(request);
++    let skeleton = buildSkeleton({ ...request, seed });
+```
+
+(and the same at the `:537` re-election call.)
+
+**Why not applied here.** It touches the live pipeline, so CLAUDE.md's Tier 2
+owes it 3–5 real generations — and applying it would move every seeded
+outcome, invalidating the CP3 matrix of record (§5.6) that this branch's
+evidence rests on. Landing an unverified one-line change to the core composer
+at close-out, after the founder's evening has ended and with no sanctioned
+budget left to confirm it, is exactly the "it works but I'm not sure why"
+this codebase refuses. **It opens Session 13, with a Tier 2 confirm as its
+first act.**
+
+**Standing line earned here:**
+
+> **A die nobody plumbed is a die nobody rolled — verify the seed reaches the
+> site, not just that the site accepts one.**
+
+### 5.4 Audit inventory of record
+
+**26 selection points**, closing the CP0 inventory:
+
+- **25 catalogued at CP0** (§0, unchanged and still accurate).
+- **row 26**, found at CP2 §2.4 and never merged into the table: `engine.ts:292`'s
+  place-collapse. Now `collapseByPlace` (CP2 ruling 3) — best-fitting category
+  wins, where it was last-wins over a score-descending list.
+
+The inventory is a catalogue of **choice sites**. §5.3's defect is not a 27th
+site — it is plumbing, and it is why six catalogued sites do not function.
+Recorded separately on purpose: adding it as a row would hide a defect inside
+a taxonomy.
+
+### 5.5 Refit table of record
+
+Ratified at CP1 §1.4, built at CP2 §2.1, and now annotated with what §5.3
+proved about each one's reach:
+
+| disposition | sites | count | reaches the room? |
+|---|---|---|---|
+| **REFIT** | 3 `electAnchor`, 4 `pickContrast`, 5 `warmupCategories`, 6 `closeCategories`, 7 `rankedActivityCategories` | 5 | **NO** — seed 0 |
+| **REFIT** | 23 `zonesFor`, 24 `retrieveCandidates` | 2 | yes |
+| **rekey** | 1 `pickTemplate`, 20 `scoreCandidate` | 2 | 1 no / 20 yes |
+| **keep** | 2, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 25 | 16 | n/a |
+| **found, not refit** | 26 `collapseByPlace` | 1 | yes (CP2 ruling 3) |
+
+Deviations from the CP1 proposal, all recorded when made: §1.4b's knife-edge
+was **restructured** (the `night >= 0.35` gate deleted, not tuned); §2.4's
+harness-fidelity diagnosis was **corrected** after CP1 stated it wrongly;
+§2.10's zone-dice defect was mine, introduced at CP1 and fixed offline.
+
+### 5.6 Matrix of record
+
+Live, `--matrix --llm --date 2026-08-15`, days 1–4 at seed 42 (§3.6) plus
+days 5–6 from the full run (§3.1):
+
+| gate | measured | threshold | verdict |
+|---|---|---|---|
+| anchors seated | **6/6** | 6/6 | **PASS** |
+| closes seated (restated) | **6/6** | — | **PASS** |
+| days validate clean | 4/4 subset | — | PASS |
+| venue overlap (mean / max) | 0.000 / 0.00 (subset, n=6) | ≤0.35 / ≤0.50 | PASS |
+| category-seq comparable | 0.675 (n=4, subset) | ≤0.55 | **not restated** — subset cannot gate |
+| role-seq | 0.967 (subset) | non-gating | recorded |
+
+**Carried caveat, now sharper than it was at CP3.** Every row above was
+produced with an **explicit `--seed`**. §5.3 proves the room takes a
+different path through the same code, so this matrix certifies the engine
+*when seeded* and says nothing about the surface the founder actually uses.
+It stands as the record of what was measured; it is no longer evidence that
+the room varies.
+
+### 5.7 Spend table
+
+| step | what | spend |
+|---|---|---|
+| CP0 | intake — git, Jira, source, one pure script | **$0.00** |
+| CP1 | design; `dice-audit` offline | **$0.00** |
+| CP2 | build + offline iteration (no paid calls) | **$0.00** |
+| CP3 | full matrix run | $2.43 |
+| CP3 | targeted re-run, days 1–4 | $1.79 |
+| CP4 | founder's evening — **1** generation (18 Details + 2 Anthropic) | **$0.4047** |
+| CP5 | close-out — `corpus-report`, trace reads, reproduction checks | **$0.00** |
+| | **Session total** | **$4.62** |
+| | against plan $13 / gate $15 | **$8.4 unspent** |
+
+Every close-out instrument is read-only and free: `corpus-report`,
+`trace-audit`, `offline-recompose`, and the `pickTemplate` reproduction all
+touch the DB and pure functions only.
+
+**A discrepancy in the month gauge, recorded rather than smoothed.** §4.1
+logged `detailsThisMonth` = **1,758** at CP4 launch. Counting
+`places.get(engine)` since 2026-08-01 — the gauge's own definition — gives
+**1,824** immediately before tonight's generation and **1,842** after it
+(tonight's 18 reconcile exactly). The 66-row gap between the recorded reading
+and the table is **unexplained**. It does not change any decision made this
+session (both figures are far above the 1,000 free cap, so every call billed
+at $0.020 either way), but the gauge is a spend fence, and a fence that is
+66 out is a forward item, not a footnote — see §5.8.
+
+### 5.8 Forward notes
+
+**Blocking, opens Session 13:**
+
+1. **The seed plumbing fix** (§5.3) — one line, plus the `:537` re-election
+   call, plus a test that asserts the trace's recorded seed reproduces the
+   recorded `arc_template_id`. Tier 2 (3–5 real generations) before it is
+   called done. Until it lands, **no variety claim about the live surface is
+   supportable**, and the CP3 matrix must not be cited as one.
+2. **Re-read the six-bar question afterwards.** Session 11's monotony
+   measurement and Session 12's entire refit were both conducted on the
+   seeded path. The first honest measurement of room variety has not been
+   taken yet.
+
+**New tickets proposed by the mining pass** (findings 1, 2, 3b, 4, 5):
+anchor calibre; container-vs-tenant; anchor-led geography; taste-signal
+idempotency; verified endings for `role ∈ {anchor, close}`.
+
+**Param calibrations proposed, none applied:** split `anchorMinDwell` from
+`dwellMinutes[c].min`; hold `wIdle` 0.5 / `idleNormalizerMinutes` 120
+unchanged pending the anchor fix (§5.2).
+
+**Instrument debt:**
+
+3. **Seated times are not recorded anywhere.** The tasting context stores
+   which place was on each card, never when. Tonight *both* card-level
+   verdicts were about duration ("20 mins", "1hr 30 mins") and neither can
+   be adjudicated from the record — `corpus-report` prints that absence on
+   every day rather than letting a reader assume otherwise. Adding
+   `start_time` / `end_time` / `role` to each card in `buildTastingContext`
+   is cheap and carries **no** decision-001 exposure: times are ours, not
+   Google's.
+4. **The month gauge is 66 out** (§5.7). It fences real spend; it should be
+   reconciled before it is trusted again.
+5. **The room cannot run the complaint-seed A/B** (§4.2) — it sends
+   `seed: null` by construction. That gap is now *also* the §5.3 defect's
+   delivery mechanism, so the seed field in the room is no longer only an
+   A/B convenience.
+
+**Merge decision still open (CP0, unresolved).** This branch carries Session
+11's 11 commits plus Session 12's; PR #13 remains open. Recommendation
+unchanged: **merge #13 first**, so Session 12 targets a clean `main`. The
+founder merges.
+
+**Offered, not assumed:** §3.8's standing line and §5.3's both read like the
+Session-11 standards that went into CLAUDE.md. Promoting them is the
+founder's call.
+
+### 5.9 Gates — run, not remembered
+
+`tsc --noEmit` **clean** · `npm run build` **exit 0**, full route table ·
+**461 passed**, 3 skipped, 23 files (+2 since CP2's 459).
+
+Pipeline-critical paths touched this step: **none**. `corpus-report.ts` is a
+new read-only script; `generation-report.ts`'s change is a banner and a
+pre-spend warning. The engine, composer, arc and dice are **untouched since
+CP3** — deliberately, per §5.3.
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
 
