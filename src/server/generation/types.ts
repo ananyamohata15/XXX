@@ -278,6 +278,12 @@ export type GenerationOutcome =
         floorMinutes: number;
       } | null;
       /** Which arc shape built this day (XXX-35) — auditable after the fact. */
+      /**
+       * Non-null = every option on the anchor's menu was measured and none
+       * was fit to be a centrepiece. The day still has a centre — an
+       * anchorless day is worse — but the shortfall is on the record.
+       */
+      anchorCalibreUnmet: { category: PlaceCategory; examined: number } | null;
       arcTemplateId: string;
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];

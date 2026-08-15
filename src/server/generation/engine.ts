@@ -22,6 +22,10 @@ import {
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { Violation } from "@/shared/day-grammar/types";
+import {
+  ANCHOR_MIN_RATING_COUNT,
+  partitionByCalibre,
+} from "@/shared/anchor-calibre";
 import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
 import { CITY_GEO, type PlaceCategory } from "@/shared/vocabulary";
@@ -300,6 +304,12 @@ export async function generateDay(
      * gains the traveller nothing and breaks the product's promise; the day
      * keeps its centre and says out loud that the centre is small.
      */
+    /**
+     * Set when the anchor's menu held nothing fit to be a centrepiece.
+     * Reported, never silently accepted (XXX-35, Session 13 Step 2).
+     */
+    let anchorCalibreUnmet: { category: PlaceCategory; examined: number } | null =
+      null;
     const firstSkeleton = skeleton;
     while (
       skeleton.anchorDegraded !== null &&
@@ -523,6 +533,42 @@ export async function generateDay(
     while (passes < MAX_VALIDATION_PASSES) {
       passes++;
       const menus = buildMenus(skeleton, scored, request.date, dusk, repair);
+
+      /**
+       * Did the anchor's menu contain anything fit to BE an anchor?
+       *
+       * `buildMenus` leaves the menu whole when nothing clears the bar —
+       * an anchorless day is worse than a small-centred one. That choice is
+       * only honest if the shortfall is then said out loud, which is here.
+       */
+      const anchorMenu = menus.find((m) => m.intent.role === "anchor");
+      if (anchorMenu !== undefined && anchorMenu.options.length > 0) {
+        const { worthy } = partitionByCalibre(anchorMenu.options, (c) => ({
+          name: c.place.name,
+          category: c.category,
+          userRatingCount: c.userRatingCount,
+        }));
+        anchorCalibreUnmet =
+          worthy.length === 0
+            ? {
+                category: anchorMenu.intent.categories[0],
+                examined: anchorMenu.options.length,
+              }
+            : null;
+        if (anchorCalibreUnmet !== null) {
+          await deps.instrumentation.logEvent(traceId, {
+            provider: "arc",
+            endpoint: "anchor_calibre_unmet",
+            estCostUsd: 0,
+            metadata: {
+              category: anchorCalibreUnmet.category,
+              examined: anchorCalibreUnmet.examined,
+              bar: ANCHOR_MIN_RATING_COUNT,
+            },
+          });
+        }
+      }
+
       const tSelect = now().getTime();
       const selections = await deps.selector.select(
         menus,
@@ -726,6 +772,7 @@ export async function generateDay(
             arc_template_id: skeleton.templateId,
             elected_anchor: skeleton.electedAnchor,
             anchor_degraded: skeleton.anchorDegraded,
+            anchor_calibre_unmet: anchorCalibreUnmet,
             open_periods: composed.openPeriods.length,
             exposure_swaps: legs.filter((l) => l.exposureSwap !== null).length,
           },
@@ -737,6 +784,7 @@ export async function generateDay(
           openPeriods: composed.openPeriods,
           electedAnchor: skeleton.electedAnchor,
           anchorDegraded: skeleton.anchorDegraded,
+          anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
           findings: advisories,
           narrated: describeViolations(findings),
@@ -861,6 +909,32 @@ export function buildMenus(
         intent.categories.indexOf(a.category) -
           intent.categories.indexOf(b.category) || b.score - a.score,
     );
+
+    /**
+     * The ANCHOR's menu is filtered by calibre (XXX-35, Session 13 Step 2).
+     *
+     * Everywhere else the score decides, and that is right — an ordinary
+     * stop's job is to fit the persona. The centre's job is different, and
+     * `scoreCandidate` cannot see the difference: it ranked a pocket park
+     * first inside `parks` for a nature-first persona and was working
+     * correctly when it did.
+     *
+     * Filter rather than re-rank, because a selector handed a sub-calibre
+     * option will sometimes take it, and "sometimes seats a 20-minute
+     * anchor" is the defect. If NOTHING clears the bar the menu is left
+     * whole — an anchorless day is worse than a small one — and the
+     * shortfall is reported instead of hidden.
+     */
+    if (intent.role === "anchor") {
+      const { worthy } = partitionByCalibre(preferenceRanked, (c) => ({
+        name: c.place.name,
+        category: c.category,
+        userRatingCount: c.userRatingCount,
+      }));
+      if (worthy.length > 0) {
+        return { intent, options: worthy.slice(0, MENU_SIZE) };
+      }
+    }
     return { intent, options: preferenceRanked.slice(0, MENU_SIZE) };
   });
 }
