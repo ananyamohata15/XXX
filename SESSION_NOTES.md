@@ -1,3 +1,227 @@
+# Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
+
+Branch: `session-13-seed-and-vocabulary`. Status: **CHECKPOINT 1 reached.**
+
+**Branch base — a decision, not a default.** This branch is cut from
+`session-12-variety-audit`, NOT from `main`. Session 12 is unmerged (PR #14,
+open); `main` does not contain `src/shared/dice.ts`, the refitted composer, or
+the `--matrix` harness. Every item in Steps 1–3 edits code that exists only on
+that branch, so a `main`-based branch would have fixed a defect in a file that
+does not have it. Consequence for the founder: **PR #14 merges first**, then
+this one. Session 12's own close-out made the same recommendation about #13,
+and #13 did merge first.
+
+Also carried: `docs/golden-set/golden-set-v2.md` arrived in the working tree
+uncommitted (golden Day 7, the XXX-38 red-line, founder-verified 2026-08-15).
+It is committed here rather than left loose — it is founder ground truth and
+the tree should not be the only copy. XXX-38 itself stays out of scope.
+
+## Step 1 — The seed fix + re-baseline (CHECKPOINT 1)
+
+### 1.1 The fix: one seed, and the composer is told it
+
+Session 12 §5.3 proved every tasting-room day ever generated was composed at
+seed **0**. The engine minted a seed, scored and retrieved with it, and
+recorded it in the trace; `buildSkeleton` re-read `request.seed` — `null` on
+every room generation — and fell to 0.
+
+The proposed fix was `buildSkeleton({ ...request, seed })`. **I did not apply
+that one.** It threads the right value while leaving the trap exactly where it
+was: `request.seed ?? 0` still sits in the composer, and the next caller who
+forgets the spread gets seed 0 again, silently, with a trace that lies about
+it. The defect was never the missing argument. It was that **one name meant
+two things** — the caller's REQUEST for a seed, and the seed the day was
+RESOLVED to — which is the same double-duty shape as `dwellMinutes.min` in
+Step 2 and the load-bearing constants in CLAUDE.md's standards.
+
+So they are two things now:
+
+- `resolveSeed(request, random)` — the only place a seed comes into
+  existence. Exported and pure, so the property is testable without the
+  engine's I/O.
+- `buildSkeleton(request, { seed })` — takes the RESOLVED seed as a
+  **required** parameter. No default, no fallback.
+
+The required parameter is the load-bearing part. The compiler found all 16
+call sites and made each one state which seed it meant. None of them was the
+one that was wrong — that is the point: the site that was wrong could not have
+been found by reading, because it read correctly.
+
+**Reproducibility law, restored and named:** *the seed a trace records IS the
+seed that built its day.*
+
+### 1.2 The regression test — `tests/generation/seed-plumbing.test.ts`
+
+15 tests, all Tier 1 fixtures, in four groups:
+
+1. **The room's day is diced at a real seed.** A room-shaped request (no
+   seed) mints a different seed per generation and never 0; an explicit seed
+   is honoured exactly, including a caller who legitimately asks for 0 — which
+   the old nullish check could not distinguish from "absent". Over 200
+   room-shaped runs the ARC varies, not just the venues.
+2. **Reproducibility law.** For every golden persona, 25 room-shaped
+   generations: the recorded seed re-picks the recorded `arc_template_id`
+   exactly. Composing twice from one seed is identical.
+3. **`request.seed` cannot reach composition.** Decoy values (0, 1, 999,
+   679721290) in `request.seed` produce a skeleton identical to a null
+   request at the same resolved seed — and the converse, that moving the
+   RESOLVED seed does move the day, so blindness was not bought by ignoring
+   seeds altogether.
+4. **The defect's signature, kept as a fixture.** Session 12's reproduction
+   pinned: `pickTemplate(day-6-excursion, 0)` = `moderate-b`, and the seed
+   that trace actually recorded, `679721290`, = `moderate-d`. Both pass, which
+   independently re-derives Session 12's finding rather than trusting it. Also
+   asserts all four `moderate` templates are reachable — the fix must restore
+   as much variety as the audit claimed was missing.
+
+### 1.3 The Tier-2 re-baseline — live 6-persona matrix
+
+`--matrix --llm --date 2026-08-15`, seed 42, six golden personas.
+
+| gate | measured | threshold | verdict |
+|---|---|---|---|
+| anchors seated | **6/6** | 6/6 | **PASS** |
+| closes seated (restated) | **5/5** templates with a close step | — | **PASS** (raw 5/6) |
+| days validate clean | **6/6** | — | **PASS** |
+| venue overlap mean / max | **0.000 / 0.00** | ≤0.35 / ≤0.50 | **PASS** |
+| category-seq (comparable, n=7) | **0.614** / max 0.80 | ≤0.55 pre-registered | reported non-gating — **would FAIL** |
+| category-seq (all pairs, n=15) | 0.673 | — | vs S9 0.693, S11 pre-fix 0.711 |
+| role-seq | 0.938 | non-gating | recorded |
+
+This is a **full six-persona matrix**, where Session 12's matrix of record was
+a subset patchwork that could not restate the pairwise gates. The structural
+gates are read over all six for the first time since the fix.
+
+**Six personas drew six DIFFERENT templates** — `moderate-a`, `packed-a`,
+`relaxed-a`, `moderate-b`, `wanderer-b`, `moderate-d`. Session 11's matrix
+measured role-sequence overlap 0.850 with two personas colliding on
+`moderate-b`; the collision is gone.
+
+**category-seq 0.614 is the number XXX-37 exists to move**, and it is
+pre-registered at ≤0.55. It is non-gating by the Session 12 ruling, and it is
+reported here as the honest starting line for Step 3's offline re-run.
+
+### 1.4 The room finally varies — the human-visible proof
+
+Three **unseeded** generations of `day-6-excursion`, the exact persona whose
+every room day was `moderate-b`:
+
+| run | minted seed | template drawn | day |
+|---|---|---|---|
+| 1 | 1784426466 | **moderate-d** | Augusta Coffee → Osmow's → Grange Park → St Lawrence Market → Terroni |
+| 2 | 121781448 | **moderate-b** | Tatsuro's → Harbour Square Park West → St. Lawrence Market (North) → Gio Rana's → The Painted Lady |
+| 3 | 1001393697 | **moderate-a** | Music Garden Cafe → Aliments → Trillium Park → John B. Aird Gallery → Chickenway → Amsterdam Brewhouse |
+
+Three seeds, three shapes, 5/5/6 stops. `seed-fidelity.ts` re-picked each
+template from its own recorded seed: **3 checked, 3 hold, 0 violations.** The
+same instrument reads the pre-fix room trace `cab8104b` and correctly reports
+it as a violation that seed 0 reproduces.
+
+**One gate FAILED and it is reported as failed.** `--variety`'s pairwise venue
+overlap AC is a BAND, [0.40, 0.85], and all three pairs measured **0.00 — OUT
+OF BAND, below the floor**. The band's lower bound exists because a persona
+whose days share nothing suggests the persona is not driving selection. Two
+honest readings and I cannot separate them from this evidence:
+
+- the floor is calibrated for a world where the arc was frozen, so venue
+  overlap was the only thing that could vary — and it is now measuring a
+  different quantity; or
+- the day genuinely has too little persona-consistency, and the fix traded
+  monotony for incoherence.
+
+I have no pre-fix `--variety` baseline for this persona/date to compare
+against, and manufacturing one costs another ~$1.20. **Recorded as open, not
+adjudicated.** It is a question the founder's eye at CP4 answers better than a
+number does.
+
+### 1.5 Instrument added: `scripts/seed-fidelity.ts`
+
+Checks the reproducibility law against real traces. Building it found the
+second reason the defect survived a session: **only tasting-room traces could
+be checked at all**, because only the room stashed a `persona_key`. Harness
+traces — which spent **1,633 of the month's 1,842** Details events — recorded
+a seed and a template but nothing identifying the draw.
+
+`traceSummary` now records `persona_identity` and `persona_pace`. With
+`persona_structure`, already present, that is exactly what a template draw
+depends on and nothing more — an identity hash and a pace replay the draw
+without a trace storing anyone's taste profile. `templateForDraw` is that
+dependency made explicit; `pickTemplate` and `templatesFor` delegate to it so
+the rule exists once.
+
+### 1.6 Gauge reconciliation — the counter never missed
+
+Session 12 §5.7 left 66 events unexplained: gauge **1,758** at CP4 launch
+against a hand count of **1,824**. `scripts/gauge-reconcile.ts` re-runs the
+gauge's exact query, then widens one predicate at a time so the gap lands on
+whichever one owns it.
+
+**It lands on none of them.** The query is correct, reads **1,842** today, and
+reconciles with the hand count to the row (1,824 + tonight's 18). What the
+data shows instead:
+
+- the month's **1,758th** counted event landed at **2026-08-11T05:36:17Z**.
+  The number was accurate — four days before it was read.
+- 66 events followed it before CP4 generated: **30 tasting-room, 36 CLI
+  harness**, across 7 traces.
+- `readQuota` is called **only inside a generate request**. Nothing fetches it
+  on mount, on an interval, or on page load. The figure on screen therefore
+  describes *the last generation this page completed*, not the month. Spend
+  from any other surface is invisible until the founder pays for one more day.
+
+So the drift is not a counting bug, it is a **staleness** bug: a spend fence
+that only moves when you push it. Session 12's own "lapsed CP4 server" note is
+the likely delivery mechanism — a page carrying a 08-11 render into an 08-15
+session — but I cannot prove the browser's history from the database, and that
+last step is stated as inference.
+
+**Separately surfaced:** 750 `places.get` events this month (Pro SKU,
+base-layer identity matching, `match.ts:303`) sit outside the gauge entirely.
+That is *correct* for its stated scope — the Enterprise SKU's 1,000 free
+events — but the label "Details events this month" reads broader than what it
+counts. Month to date: **1,842 Enterprise** (cap 1,000, so 842 billed) +
+**750 Pro** + 483 searchText.
+
+**Owed to the founder:** the GCP console figure, to check ours against. The
+brief says trust the console; our number is 1,842 Enterprise Details events
+since 2026-08-01. If the console disagrees materially, that is a different and
+larger finding than this one.
+
+### 1.7 Spend at CHECKPOINT 1
+
+Read from `traces.total_cost_usd`, not estimated.
+
+| what | generations | spend |
+|---|---|---|
+| live 6-persona matrix | 6 | **$2.4732** |
+| unseeded room proof (`--variety 3`) | 3 | **$1.1813** |
+| everything else — fix, tests, gauge reconcile, seed-fidelity, offline reads | 0 | **$0.00** |
+| **Session 13 to date** | **9** | **$3.6545** |
+| against the $15 gate | | **$11.35 remaining** |
+
+### 1.8 Gates — run, not remembered
+
+`tsc --noEmit` **clean** · `npm run build` **exit 0**, full route table ·
+**476 passed**, 3 skipped, 25 files (+15 since Session 12's 461).
+
+### 1.9 Evidence the matrix handed Step 2, unprompted
+
+The live matrix seated exactly the anchors finding 1 predicts:
+
+- `day-6-excursion` (nature-first) anchored on **Berczy Park** — a downtown
+  plaza best known for its dog fountain. The Severn Creek Park failure,
+  repeating on a different pocket park.
+- `day-2-old-town` anchored on **St. Michael's Cathedral**, which the
+  narrator itself described as *"a 30-minute historic anchor"*. The day's
+  centrepiece, narrated at 30 minutes, in the product's own voice.
+- `day-1-jays` anchored on **Desta Gebeya Market**, a small grocery, at 75
+  minutes on a `markets` category dwell.
+
+None of these is a bug in any rule. All three are `electAnchor` choosing a
+CATEGORY where the founder asked for a CALIBRE. Step 2 has its live evidence
+without paying for more.
+
+
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
 Branch: `session-12-variety-audit`. Status: **CLOSED at CHECKPOINT 5.** CP0–CP4
