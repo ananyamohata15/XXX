@@ -104,6 +104,8 @@ export interface EngineDeps {
   /** Shared with the LLM stages; the engine drains it into the trace. */
   llmUsage?: UsageRecorder;
   now?: () => Date;
+  /** Seam for `resolveSeed`; production leaves it and gets `Math.random`. */
+  random?: () => number;
   /**
    * Exam/test seam ONLY: overrides the fetched weather/daylight
    * environment so repair-loop behavior is demonstrable and testable on
@@ -156,12 +158,39 @@ export function localToUtcIso(
   return new Date(guess.getTime() - (shown - guess.getTime())).toISOString();
 }
 
+/**
+ * THE seed — minted here when the caller sends none, and the only place a
+ * day's seed comes into existence.
+ *
+ * `request.seed` is the CALLER'S REQUEST for a seed. The return value is the
+ * day's RESOLVED seed. Session 12 proved how expensive it is to let one name
+ * mean both: the engine minted a seed, used it for scoring and retrieval and
+ * recorded it in the trace, while `buildSkeleton` re-read `request.seed` —
+ * still null, because the tasting room sends `seed: null` on every
+ * generation — and diced the entire arc at **0**. Every room day ever
+ * generated was composed at seed 0, six selection points never varied, and
+ * each trace recorded a seed beside an arc that seed did not build.
+ *
+ * So the rule this function exists to make checkable:
+ *
+ *   **Reproducibility law — the seed recorded IS the seed that built the
+ *   day.** Nothing downstream of this line reads `request.seed` again.
+ *
+ * `random` is injected so the property is testable without the engine's I/O.
+ */
+export function resolveSeed(
+  request: GenerationRequest,
+  random: () => number = Math.random,
+): number {
+  return request.seed ?? Math.floor(random() * 2 ** 31);
+}
+
 export async function generateDay(
   deps: EngineDeps,
   request: GenerationRequest,
 ): Promise<GenerationOutcome> {
   const now = deps.now ?? (() => new Date());
-  const seed = request.seed ?? Math.floor(Math.random() * 2 ** 31);
+  const seed = resolveSeed(request, deps.random);
   const t0 = now().getTime();
   const timings: StageTimings = {
     retrieveMs: 0,
@@ -247,7 +276,7 @@ export async function generateDay(
 
   try {
     // -- skeleton + retrieval ---------------------------------------------
-    let skeleton = buildSkeleton(request);
+    let skeleton = buildSkeleton(request, { seed });
     /**
      * Anchor categories this day has proven it cannot seat. An unseatable
      * centrepiece is a reason to elect a different one — never a reason to
@@ -535,6 +564,7 @@ export async function generateDay(
         const failedCategory = skeleton.electedAnchor.category;
         failedAnchorCategories.push(failedCategory);
         const reelected = buildSkeleton(request, {
+          seed,
           excludeAnchorCategories: failedAnchorCategories,
         });
         await deps.instrumentation.logEvent(traceId, {

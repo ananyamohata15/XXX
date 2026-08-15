@@ -34,7 +34,14 @@ import { CATEGORY_FAMILY, TIERS, type PlaceCategory } from "@/shared/vocabulary"
 
 const DATE = "2026-09-19"; // a Saturday
 
-const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
+/**
+ * A request whose seed is KNOWN, not merely optional. `GenerationRequest.seed`
+ * is the caller's request for a seed and may be absent; every fixture here
+ * states one, so the tests can compose at exactly the seed they name.
+ */
+type SeededRequest = GenerationRequest & { seed: number };
+
+const request = (over: Partial<GenerationRequest> = {}): SeededRequest => ({
   city: "toronto",
   date: DATE,
   persona: GOLDEN_PERSONAS["day-2-old-town"],
@@ -43,6 +50,18 @@ const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
   seed: 42,
   ...over,
 });
+
+/**
+ * Compose at the request's own seed — what the engine does for a caller who
+ * supplied one. Since Session 13 the composer takes the day's RESOLVED seed
+ * explicitly, so the fixture has to say which seed it means; it must never
+ * be inferred from the request inside composition again (see
+ * `seed-plumbing.test.ts` for the defect this replaced).
+ */
+const skeletonFor = (
+  req: SeededRequest,
+  options: { excludeAnchorCategories?: readonly PlaceCategory[] } = {},
+) => buildSkeleton(req, { seed: req.seed, ...options });
 
 describe("arc templates are a grammar of shapes", () => {
   it.each(ARC_TEMPLATES.map((t) => [t.id, t] as const))(
@@ -123,7 +142,7 @@ describe("anchor election", () => {
   });
 
   it("labels itself Tier 3 and names its elector", () => {
-    const skeleton = buildSkeleton(request());
+    const skeleton = skeletonFor(request());
     expect(skeleton.electedAnchor).not.toBeNull();
     expect(skeleton.electedAnchor!.tier).toBe(TIERS.judgment);
     expect(skeleton.electedAnchor!.source).toBe("arc_elector_v1");
@@ -131,7 +150,7 @@ describe("anchor election", () => {
   });
 
   it("is PRE-EMPTED by a user anchor — the day already has a centre", () => {
-    const skeleton = buildSkeleton(
+    const skeleton = skeletonFor(
       request({
         anchors: [
           {
@@ -150,7 +169,7 @@ describe("anchor election", () => {
   it("every persona and seed still produces exactly one anchor intent", () => {
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
       for (const seed of [0, 1, 7, 42, 1234]) {
-        const skeleton = buildSkeleton(
+        const skeleton = skeletonFor(
           request({ persona: GOLDEN_PERSONAS[key], seed }),
         );
         const anchors = skeleton.intents.filter((i) => i.role === "anchor");
@@ -169,7 +188,7 @@ describe("anchor election", () => {
     // founder rejected, delivered silently.
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
       for (const seed of [0, 3, 11, 42, 99, 512]) {
-        const skeleton = buildSkeleton(
+        const skeleton = skeletonFor(
           request({ persona: GOLDEN_PERSONAS[key], seed }),
         );
         expect(
@@ -224,7 +243,7 @@ describe("texture: contrast never repeats the anchor's family", () => {
     // The rule that rejects A-B-A-B only fires below three families, so the
     // arc must actually reach three or the rule is doing nothing.
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
-      const skeleton = buildSkeleton(request({ persona: GOLDEN_PERSONAS[key] }));
+      const skeleton = skeletonFor(request({ persona: GOLDEN_PERSONAS[key] }));
       const families = new Set(
         skeleton.intents.map((i) => CATEGORY_FAMILY[i.categories[0]]),
       );
@@ -235,7 +254,7 @@ describe("texture: contrast never repeats the anchor's family", () => {
 
 describe("free time is placed, not residue", () => {
   it("reserves its minutes so the next stop is pushed later on purpose", () => {
-    const skeleton = buildSkeleton(
+    const skeleton = skeletonFor(
       request({ persona: GOLDEN_PERSONAS["day-3-winter"], seed: 5 }),
     );
     // Not every template carries an open step; the ones that do must place
@@ -375,7 +394,7 @@ describe("seating moves meals off the window edge (the A/B, on fixtures)", () =>
 
   function compose(legacy: boolean) {
     const req = request();
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const used = new Set<string>();
     const selections: Selection[] = [];
     for (const intent of skeleton.intents) {
@@ -501,7 +520,7 @@ describe("the elected anchor survives composition", () => {
     "%s composes a day that contains its elected anchor",
     (key) => {
       const req = request({ persona: GOLDEN_PERSONAS[key] });
-      const skeleton = buildSkeleton(req);
+      const skeleton = skeletonFor(req);
       expect(skeleton.electedAnchor).not.toBeNull();
 
       const used = new Set<string>();
@@ -615,7 +634,7 @@ describe("an unseatable anchor is REPORTED, never silently absent", () => {
 
   it("puts the anchor's intent id in composed.unfilled when it cannot sit", () => {
     const req = request({ persona: GOLDEN_PERSONAS["day-3-winter"] });
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const anchorIntent = skeleton.intents.find((i) => i.role === "anchor")!;
     const anchorCategory = skeleton.electedAnchor!.category;
 
@@ -678,7 +697,7 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
   it.each(Object.keys(GOLDEN_PERSONAS))(
     "%s lays out every step after the meal that precedes it",
     (key) => {
-      const skeleton = buildSkeleton(
+      const skeleton = skeletonFor(
         request({ persona: GOLDEN_PERSONAS[key] }),
       );
       const ordered = [...skeleton.intents].sort(
@@ -705,7 +724,7 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
 
   it("keeps the day's ending: no persona drops its close to slicing", () => {
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
-      const skeleton = buildSkeleton(
+      const skeleton = skeletonFor(
         request({ persona: GOLDEN_PERSONAS[key] }),
       );
       expect(

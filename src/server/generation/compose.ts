@@ -269,12 +269,29 @@ export function buildSkeleton(
   request: GenerationRequest,
   options: {
     /**
+     * The day's RESOLVED seed — the one the engine minted and records in
+     * the trace. Required, and deliberately not defaulted.
+     *
+     * This parameter exists because of the Session 12 defect: composition
+     * used to re-read `request.seed`, which is the CALLER'S REQUEST for a
+     * seed (null from the tasting room) and not the seed the day was built
+     * with. It fell to 0, so every room day diced its entire arc at 0 while
+     * the trace recorded the minted seed beside it — six selection points
+     * inert and a trace that could not reproduce its own day.
+     *
+     * Two different things had one name. They now have two: `request.seed`
+     * is an input preference the engine reads once, `options.seed` is the
+     * resolved value everything downstream is built from. A required
+     * parameter means the compiler asks every caller which one it means.
+     */
+    seed: number;
+    /**
      * Anchor categories this day has already proven it cannot seat. The
      * engine re-elects around them rather than shipping an anchorless day
      * (XXX-35 CP2 ruling 1).
      */
     excludeAnchorCategories?: readonly PlaceCategory[];
-  } = {},
+  },
 ): Skeleton {
   const persona = request.persona;
   const defaults = DEFAULT_DAY[persona.pace];
@@ -290,7 +307,7 @@ export function buildSkeleton(
   }
   const mealPattern = request.mealPattern ?? defaultMealPattern(persona);
   const pattern = GRAMMAR_PARAMS.mealPatterns[mealPattern];
-  const seed = request.seed ?? 0;
+  const seed = options.seed;
   const template = pickTemplate(persona, seed);
 
   /**

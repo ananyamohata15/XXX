@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       seed,
     };
 
-    const skeleton = buildSkeleton(request);
+    const skeleton = buildSkeleton(request, { seed });
     const identity = personaIdentity(persona);
     const zones = zonesFor(
       persona.lens,
