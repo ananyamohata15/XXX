@@ -850,8 +850,20 @@ The A/B lives in the terminal instead:
 
 ```
 npx tsx --env-file .env.local scripts/generation-report.ts \
-  --session10-ab --in-horizon <date>
+  --llm --session10-ab --in-horizon <date>
 ```
+
+**`--llm` is not optional here, and the instrument used to hide that**
+(`e6c5565`). `--session10-ab` was never a member of `useLlm` — only `--llm`,
+`--inject`, `--matrix` and `--variety` are — so the command as written above
+at CP4 would have run the **deterministic** selector while the banner
+hardcoded `[llm]`. The audited traces came from the tasting room's LLM path;
+a deterministic re-run compares two different pipelines against the founder's
+words and reports the answer as if it were the same question. The banner now
+reads the flag, and a missing `--llm` prints a warning **before the first
+generation is issued** — the CP3 standing line applied to its own instrument.
+Caught by reading the flag table before spending, not after. Gates green
+(`tsc` clean, build clean, 461 passed / 3 skipped).
 
 2 generations ≈ **$0.90** at tonight's measured ~$0.45/generation. Its
 verdicts print to stdout; they do **not** land in `taste_signals`, so the
@@ -860,8 +872,15 @@ places. Flagged rather than patched: wiring a seed field into the room is a
 UI change on the evening it would first be used, which is the worst possible
 moment to make one.
 
-**Not started.** The evening is the founder's to run; the room is up and the
-gauges are honest. ~$8.8 of the $13 plan remains.
+**Not started.** The evening is the founder's to run; the gauges are honest
+and ~$8.8 of the $13 plan remains.
+
+**The room is no longer up.** The dev server launched at §4.1 did not survive
+the gap between sessions (`curl localhost:3000/tasting` → connection refused).
+Nothing was generated on it, so no spend is stranded and the launch state in
+§4.1 still describes what a relaunch will produce — but the evening now needs
+a fresh `npm run dev` before step 2, and the daily-cap and month-gauge
+readings should be re-read at that point rather than carried over from §4.1.
 
 # Session 11 — Composition quality: arc, seating, food-cap, leg exposure (XXX-35)
 
