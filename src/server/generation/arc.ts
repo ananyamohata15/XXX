@@ -33,6 +33,7 @@ import { personaIdentity, weightedOrderBy } from "@/shared/dice";
 import { categoryAffinity, type Persona } from "@/shared/persona";
 import {
   CATEGORY_FAMILY,
+  NON_ANCHOR_CATEGORIES,
   PLACE_CATEGORIES,
   type CategoryFamily,
   type PlaceCategory,
@@ -289,7 +290,13 @@ export function electAnchor(
   const exclude = options.exclude ?? [];
   const eligible = PLACE_CATEGORIES.filter(
     (c) =>
-      !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) && !exclude.includes(c),
+      !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
+      // Vocabulary v2 (XXX-37): `grocery` is mapped and usable, and nobody
+      // plans a day around a supermarket. Kept separate from the food
+      // categories because a provisioning stop is not a meal — folding it in
+      // would trip `pacing.food-stops-exceeded` on a day that bought bread.
+      !NON_ANCHOR_CATEGORIES.includes(c) &&
+      !exclude.includes(c),
   );
   // τ is deliberately near zero: the anchor MOSTLY FOLLOWS GRAVITY. It is the
   // persona's first interest made concrete, and a die that could move it
@@ -369,7 +376,12 @@ export function warmupCategories(
   persona: Persona,
   dice: () => number,
 ): PlaceCategory[] {
-  const preferred: PlaceCategory[] = ["cafes", "markets", "parks"];
+  // `shopping` joins the warmup list (XXX-37): a morning wander through a
+  // shopping street is low-commitment, early and easy, which is exactly what
+  // this step is for. `scenic_viewpoints` deliberately does NOT — a lookout
+  // is a payoff, and putting the day's best view first spends it before the
+  // day has earned it.
+  const preferred: PlaceCategory[] = ["cafes", "markets", "parks", "shopping"];
   return weightedOrderBy(
     preferred,
     (c) => categoryAffinity(persona, c),
@@ -402,8 +414,18 @@ export function closeCategories(
   persona: Persona,
   dice: () => number,
 ): PlaceCategory[] {
+  /**
+   * `scenic_viewpoints` joins the CLOSE list (XXX-37), and it is the most
+   * natural fit anything has had here. An ending that lands is an
+   * experience, and a viewpoint at golden hour is the ending golden Day 7
+   * is built around — *"Hanlan's beach is west-facing, the best sunset spot
+   * on the islands"*. The dusk clamp and the daylight rules already govern
+   * outdoor slots, so a sunset close is bounded by real ephemeris rather
+   * than by hope.
+   */
   const experience: PlaceCategory[] = [
     "nightlife_bars",
+    "scenic_viewpoints",
     "historic_sites",
     "parks",
   ];

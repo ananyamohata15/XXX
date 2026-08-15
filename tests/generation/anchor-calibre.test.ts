@@ -24,7 +24,11 @@ import { resolveSeed } from "@/server/generation/engine";
 import type { GenerationRequest } from "@/server/generation/types";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
-import { PLACE_CATEGORIES, type PlaceCategory } from "@/shared/vocabulary";
+import {
+  NON_ANCHOR_CATEGORIES,
+  PLACE_CATEGORIES,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 const DATE = "2026-09-19"; // a Saturday
 const FLOOR = COMPOSE_PARAMS.anchor.minDwellMinutes;
@@ -43,7 +47,9 @@ const request = (
 
 /** The categories an anchor may actually be elected from. */
 const ELECTABLE = PLACE_CATEGORIES.filter(
-  (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
+  (c) =>
+    !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
+    !NON_ANCHOR_CATEGORIES.includes(c),
 );
 
 describe("the two floors are two numbers", () => {
@@ -94,9 +100,14 @@ describe("a centrepiece is sized as a centrepiece", () => {
         moved.push(category);
       }
     }
-    expect(moved).toEqual(["parks"]);
+    // parks (60) and scenic_viewpoints (40) are the two whose ORDINARY dwell
+    // sits below what a centrepiece needs. Both are raised to exactly the
+    // floor; everything else already cleared it and is untouched.
+    expect(moved).toEqual(["parks", "scenic_viewpoints"]);
     expect(GRAMMAR_PARAMS.dwellMinutes.parks.typical).toBe(60);
+    expect(GRAMMAR_PARAMS.dwellMinutes.scenic_viewpoints.typical).toBe(40);
     expect(anchorDwellFor("parks")).toBe(FLOOR);
+    expect(anchorDwellFor("scenic_viewpoints")).toBe(FLOOR);
   });
 
   it("elects an anchor whose dwell clears calibre, for every persona", () => {

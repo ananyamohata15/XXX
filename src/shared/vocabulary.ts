@@ -52,7 +52,23 @@ export const TIER_LABELS: Record<Tier, string> = {
 export const FACT_STATUSES = ["present", "absent"] as const;
 export type FactStatus = (typeof FACT_STATUSES)[number];
 
-/** The product's category vocabulary — deliberately small (seven). */
+/**
+ * The product's category vocabulary — v2, ten categories (XXX-37).
+ *
+ * Deliberately small is still the rule; it was also too small. Session 11
+ * found traveller identities the seven could not express, one of which is in
+ * the taste interview's own interest grid: a persona could declare "likes to
+ * shop" and the pool structurally could not serve it, because Session 5's
+ * mapping dropped the entire FSQ Retail branch. Yorkville, Eaton Centre,
+ * Yorkdale and Sherway were unelectable. So were CN Tower and every sunset
+ * lookout.
+ *
+ * ORDER IS LOAD-BEARING. `matchBreadcrumb` takes the first category whose
+ * breadcrumb rules match, and `mapped` is emitted in this declaration order.
+ * `markets` therefore precedes `grocery` on purpose: a farmers market is an
+ * experience, and it must win over the food-retail branch that also contains
+ * it.
+ */
 export const PLACE_CATEGORIES = [
   "restaurants",
   "cafes",
@@ -61,8 +77,27 @@ export const PLACE_CATEGORIES = [
   "markets",
   "nightlife_bars",
   "parks",
+  "shopping",
+  "scenic_viewpoints",
+  "grocery",
 ] as const;
 export type PlaceCategory = (typeof PLACE_CATEGORIES)[number];
+
+/**
+ * Categories that may never be a day's CENTREPIECE (XXX-37).
+ *
+ * Distinct from the food categories the pacing rules count. `grocery` is not
+ * a meal — counting it as one would make a wine-shop stop trip
+ * `pacing.food-stops-exceeded` — but nobody plans a day around a
+ * supermarket. It exists so XXX-38's provision role has a vocabulary to draw
+ * on: the picnic supplies exist BECAUSE of the picnic, which makes it a
+ * supporting stop by construction.
+ *
+ * `scenic_viewpoints` is deliberately NOT here. A roadside lookout is not a
+ * centrepiece and CN Tower is; that is a CALIBRE question about the venue,
+ * not a category question, and `anchor-calibre` is where it belongs.
+ */
+export const NON_ANCHOR_CATEGORIES: readonly PlaceCategory[] = ["grocery"];
 
 /** Who placed a slot: the concierge proposed it, or the user pinned it. */
 export const SLOT_ORIGINS = ["concierge", "user"] as const;
@@ -112,6 +147,36 @@ export const CATEGORY_FAMILY: Record<PlaceCategory, CategoryFamily> = {
   parks: "outdoor",
   markets: "market",
   nightlife_bars: "night",
+  /**
+   * `shopping` joins the MARKET family rather than getting its own (XXX-37).
+   *
+   * Families measure felt sameness, not taxonomy — that is the whole reason
+   * they exist rather than anti-alternation running on categories. A day
+   * that goes St. Lawrence Market → Eaton Centre has done the same thing
+   * twice: browsing among stalls and shops, choosing, carrying. It reads the
+   * way "meal, gallery, meal, gallery" reads.
+   *
+   * The counter-argument is real — a mall and a farmers market are not the
+   * same experience — but the conservative direction is obvious. Grouping
+   * them can only cost a day one repetition it might have gotten away with;
+   * splitting them lets A-B-A-B back in through a door we just closed.
+   */
+  shopping: "market",
+  /**
+   * `scenic_viewpoints` joins OUTDOOR. A lookout and a park are both time
+   * spent outside, weather-exposed and daylight-bound, and the exposure and
+   * dusk rules already treat them alike. A separate family would claim a
+   * traveller feels a park and a waterfront lookout as different textures,
+   * which is not defensible.
+   */
+  scenic_viewpoints: "outdoor",
+  /**
+   * `grocery` joins MARKET as the nearest honest home. It is really an
+   * errand rather than a texture, and the anti-alternation rules should
+   * treat a provisioning stop as market-ish rather than invent a family for
+   * something that is never a day's texture.
+   */
+  grocery: "market",
 };
 
 export const TRANSPORT_MODES = ["walk", "cycle", "drive", "transit"] as const;
