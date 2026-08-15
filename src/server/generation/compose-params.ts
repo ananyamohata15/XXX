@@ -14,7 +14,7 @@
  */
 
 export const COMPOSE_PARAMS = {
-  version: "v2",
+  version: "v3",
 
   /**
    * Dice temperatures, in AFFINITY POINTS (XXX-35, Session 12 CP1).
@@ -64,6 +64,46 @@ export const COMPOSE_PARAMS = {
      * sets WHICH bucket — an icons persona never draws a corners zone.
      */
     zone: 0.3,
+  },
+
+  /**
+   * The centrepiece's own floors (XXX-35, Session 13 Step 2, from Session
+   * 12's mining finding 1).
+   *
+   * `GRAMMAR_PARAMS.dwellMinutes[c].min` was doing two jobs at once: the
+   * GRAMMAR floor (below which a stop of category c is not a legal stop) and
+   * the COMPOSER'S drop floor (below which a step is not worth placing). For
+   * an ordinary stop they can be the same number without anyone noticing.
+   * For the anchor they must not be, and the founder found out why: a day
+   * whose centrepiece was a pocket park seated for **20 minutes** —
+   * `parks.min` exactly — with the trace still reporting a proudly elected
+   * 60-minute anchor. Nothing was broken. `Math.min(dwell, window)` degraded
+   * the day's centre to the category floor and seated it silently, because
+   * the only floor it had to clear was the one that says "a 20-minute park
+   * visit is a legal stop". It is. It is not a centrepiece.
+   *
+   * A grammar floor answers "is this a stop?". This answers "is this still
+   * the day's centre?". Two questions, two numbers.
+   */
+  anchor: {
+    /**
+     * Below this, an elected anchor is no longer the day's centre and the
+     * composer must say so instead of seating it.
+     *
+     * 75 rather than a per-category number, deliberately: the founder's own
+     * examples — Canada's Wonderland, Toronto Zoo, African Lion Safari,
+     * the Islands — say a centrepiece is a place you go TO for a good part
+     * of a day, and that is a property of the ROLE, not of the category.
+     * A per-category floor would re-import the exact conflation this splits.
+     *
+     * 75 sits above every category's grammar floor (max is
+     * `restaurants`/`nightlife_bars` at 45) so it always binds, and below
+     * every category's `typical` except `cafes` (45) and `parks` (60) —
+     * which is the honest statement that a cafe is not a centrepiece and a
+     * park has to earn it. Tier 3 judgment, calibrated against the six days
+     * of the Session 13 CP1 matrix and due for the founder's eye at CP4.
+     */
+    minDwellMinutes: 75,
   },
 
   seating: {

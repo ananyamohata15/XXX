@@ -114,6 +114,9 @@ async function runSyntheticDay(
     advisories: built.advisories,
     dayNotes: built.dayNotes,
     unfilled: [],
+    // The synthetic day is a fixed fabrication with a full-length centre;
+    // it has no election to degrade.
+    anchorDegraded: null,
     sources: [...sources].sort(),
     meter: {
       traceId,
@@ -338,6 +341,7 @@ export async function runTastingGeneration(
       label: u.label,
       cause: u.cause,
     })),
+    anchorDegraded: outcome.anchorDegraded,
     sources: [...sources].sort(),
     meter,
   };

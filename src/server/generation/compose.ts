@@ -193,6 +193,25 @@ export interface Skeleton {
    * engine's `unfilled` cannot report a step that never became an intent.
    */
   droppedSteps: { step: ArcStep; reason: string }[];
+  /**
+   * Set when the anchor could only be seated BELOW anchor calibre
+   * (`COMPOSE_PARAMS.anchor.minDwellMinutes`) — the day has a centre, but a
+   * diminished one.
+   *
+   * It is not a drop: dropping the anchor would ship the un-anchored day the
+   * founder rejected in those exact words. It is not silence either, which is
+   * what shipped before — a 20-minute pocket park seated as a centrepiece
+   * while the trace reported a 60-minute elected anchor. The engine re-elects
+   * around it (CP2 ruling 1's path, extended from *unseatable* to *seated but
+   * degenerate*), and if no category can do better the day says so out loud.
+   */
+  anchorDegraded: {
+    category: PlaceCategory;
+    /** What the window actually allowed. */
+    fittedMinutes: number;
+    /** What a centrepiece needed. */
+    floorMinutes: number;
+  } | null;
 }
 
 const spanMinutes = (s: Span): number => Math.max(0, s.end - s.start);
@@ -420,6 +439,7 @@ export function buildSkeleton(
   // Meal steps own their pattern window; every other step is sliced into
   // the segment between the meal windows that bracket it.
   const dropped: { step: ArcStep; reason: string }[] = [];
+  let anchorDegraded: Skeleton["anchorDegraded"] = null;
 
   const segments: Step[][] = [[]];
   const mealAt: Step[] = [];
@@ -699,6 +719,19 @@ export function buildSkeleton(
       });
       continue;
     }
+    // The grammar floor above says whether this is a STOP. This says whether
+    // it is still the day's CENTRE — the two were one number until Session 13,
+    // and that is how a 20-minute park became an anchor in silence.
+    if (
+      item.step === "anchor" &&
+      fitted < COMPOSE_PARAMS.anchor.minDwellMinutes
+    ) {
+      anchorDegraded = {
+        category: primary,
+        fittedMinutes: fitted,
+        floorMinutes: COMPOSE_PARAMS.anchor.minDwellMinutes,
+      };
+    }
 
     const id = `i${nextId++}`;
     intents.push({
@@ -751,6 +784,7 @@ export function buildSkeleton(
     templateId: template.id,
     electedAnchor: electedRecord,
     droppedSteps: dropped,
+    anchorDegraded,
   };
 }
 

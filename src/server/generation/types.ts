@@ -266,6 +266,17 @@ export type GenerationOutcome =
       openPeriods: OpenPeriod[];
       /** null = a user anchor pre-empted election. */
       electedAnchor: ElectedAnchorRecord | null;
+      /**
+       * Non-null = the day's centre had to be seated below anchor calibre
+       * and no re-election could do better (XXX-35, Session 13 Step 2). The
+       * founder's finding was a 20-minute pocket park seated as a
+       * centrepiece in silence; this is the end of the silence.
+       */
+      anchorDegraded: {
+        category: PlaceCategory;
+        fittedMinutes: number;
+        floorMinutes: number;
+      } | null;
       /** Which arc shape built this day (XXX-35) — auditable after the fact. */
       arcTemplateId: string;
       /** Advisories only — a day with violations never reaches here. */

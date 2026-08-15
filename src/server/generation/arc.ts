@@ -214,10 +214,45 @@ export function templateForDraw(draw: TemplateDraw, seed: number): ArcTemplate {
 
 export interface ElectedAnchor {
   category: PlaceCategory;
-  /** Minutes. The centrepiece earns its category's full typical dwell. */
+  /** Minutes — an ANCHOR dwell, not an ordinary stop's. See `anchorDwellFor`. */
   dwellMinutes: number;
   /** Why this category — the trace and the narration both read it. */
   reason: string;
+}
+
+/**
+ * How long a CENTREPIECE of this category gets (XXX-35, Session 13 Step 2).
+ *
+ * The anchor used to take `dwellMinutes[c].typical` — the same number an
+ * ordinary stop of that category gets. The audit that measured it found the
+ * consequence in one line: `day-6-excursion`, a nature-first persona, drew a
+ * **60-minute** centre in 200 of 200 skeletons, because `parks.typical` is
+ * 60. Not once was that a narrow window degrading a good election. It was
+ * the ceiling, every time.
+ *
+ * That is the founder's finding at its root. A category's typical dwell is
+ * an average over the category, so a pocket park and Toronto Islands share
+ * it, and the day's centre inherits the average of everything that is not a
+ * centrepiece. "The anchor should be a highlight, not just anything random."
+ *
+ * So the anchor gets at least anchor calibre, and never more than the
+ * category's own grammar maximum — the grammar still owns the ceiling, this
+ * only stops the centre from being sized like a coffee stop:
+ *
+ *     clamp(minDwellMinutes, typical, max)
+ *
+ * parks 60 → 75 · markets 75 → 75 · historic_sites 90 → 90 ·
+ * museums_galleries 120 → 120 · nightlife_bars 90 → 90.
+ *
+ * It moves exactly the categories that were being under-served and leaves
+ * the rest untouched, which is the shape a fix should have.
+ */
+export function anchorDwellFor(category: PlaceCategory): number {
+  const range = GRAMMAR_PARAMS.dwellMinutes[category];
+  return Math.min(
+    range.max,
+    Math.max(range.typical, COMPOSE_PARAMS.anchor.minDwellMinutes),
+  );
 }
 
 /**
@@ -278,7 +313,7 @@ export function electAnchor(
       : `no interest maps to a category, so the day is centred on ${category}`;
   return {
     category,
-    dwellMinutes: GRAMMAR_PARAMS.dwellMinutes[category].typical,
+    dwellMinutes: anchorDwellFor(category),
     reason:
       exclude.length === 0
         ? first

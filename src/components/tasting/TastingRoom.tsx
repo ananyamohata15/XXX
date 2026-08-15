@@ -492,6 +492,23 @@ export function TastingRoom() {
             </div>
           )}
 
+          {/* The founder's own finding — "An anchor that lasts only 20
+              mins?" — was invisible on the page that produced it. A
+              centrepiece seated below calibre now says so here rather than
+              only in a trace nobody reads during a tasting. */}
+          {outcome.anchorDegraded !== null && (
+            <div className="mx-auto mt-6 w-full max-w-md px-4">
+              <p className="rounded-xl border border-amber-300 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-400">
+                <strong>Small centre.</strong> The day&apos;s anchor
+                ({outcome.anchorDegraded.category}) could only be seated for{" "}
+                {outcome.anchorDegraded.fittedMinutes} minutes — a centrepiece
+                wants {outcome.anchorDegraded.floorMinutes}. Every other
+                category was tried and none did better, so the day kept this
+                one rather than swapping it for an equally cramped substitute.
+              </p>
+            </div>
+          )}
+
           <div className="mx-auto mt-6 w-full max-w-md space-y-2 px-4">
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
               {outcome.headline}

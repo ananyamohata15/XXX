@@ -284,6 +284,65 @@ export async function generateDay(
      * (XXX-35 CP2 ruling 1).
      */
     const failedAnchorCategories: PlaceCategory[] = [];
+
+    /**
+     * Re-elect around an anchor that can only be seated BELOW calibre —
+     * CP2 ruling 1's path extended from *unseatable* to *seated but
+     * degenerate* (XXX-35, Session 13 Step 2).
+     *
+     * Here rather than in the validation loop on purpose: the degradation is
+     * a property of the day's SHAPE, known before a single candidate is
+     * retrieved, so re-electing costs nothing. Waiting until after Details
+     * would spend real money to discover something the skeleton already knew.
+     *
+     * If nothing better exists, the FIRST election stands. Re-electing away
+     * from the persona's first interest to another equally-cramped category
+     * gains the traveller nothing and breaks the product's promise; the day
+     * keeps its centre and says out loud that the centre is small.
+     */
+    const firstSkeleton = skeleton;
+    while (
+      skeleton.anchorDegraded !== null &&
+      failedAnchorCategories.length < MAX_ANCHOR_REELECTIONS
+    ) {
+      const degraded = skeleton.anchorDegraded;
+      failedAnchorCategories.push(degraded.category);
+      const reelected = buildSkeleton(request, {
+        seed,
+        excludeAnchorCategories: failedAnchorCategories,
+      });
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "arc",
+        endpoint: "anchor_reelected",
+        estCostUsd: 0,
+        metadata: {
+          cause: "below_calibre",
+          failed_category: degraded.category,
+          fitted_minutes: degraded.fittedMinutes,
+          floor_minutes: degraded.floorMinutes,
+          next_category: reelected.electedAnchor?.category ?? null,
+          attempt: failedAnchorCategories.length,
+        },
+      });
+      if (reelected.electedAnchor === null) break;
+      skeleton = reelected;
+    }
+    if (skeleton.anchorDegraded !== null) {
+      // Every category tried is still cramped. Keep the persona's own first
+      // interest rather than an arbitrary equally-small substitute.
+      skeleton = firstSkeleton;
+      failedAnchorCategories.length = 0;
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "arc",
+        endpoint: "anchor_degraded_seated",
+        estCostUsd: 0,
+        metadata: {
+          category: skeleton.anchorDegraded?.category ?? null,
+          fitted_minutes: skeleton.anchorDegraded?.fittedMinutes ?? null,
+          floor_minutes: skeleton.anchorDegraded?.floorMinutes ?? null,
+        },
+      });
+    }
     // Retrieval's two dice (XXX-35, Session 12): which zones inside the
     // lens's bucket this day emphasises, and which of the eight stable
     // orderings each category's 400-row page is taken in. Both are pure
@@ -666,6 +725,7 @@ export async function generateDay(
             // which shape produced a day the founder rejected.
             arc_template_id: skeleton.templateId,
             elected_anchor: skeleton.electedAnchor,
+            anchor_degraded: skeleton.anchorDegraded,
             open_periods: composed.openPeriods.length,
             exposure_swaps: legs.filter((l) => l.exposureSwap !== null).length,
           },
@@ -676,6 +736,7 @@ export async function generateDay(
           travel: legs,
           openPeriods: composed.openPeriods,
           electedAnchor: skeleton.electedAnchor,
+          anchorDegraded: skeleton.anchorDegraded,
           arcTemplateId: skeleton.templateId,
           findings: advisories,
           narrated: describeViolations(findings),
