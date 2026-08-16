@@ -371,6 +371,125 @@ Proposed for Session 14 with that obstacle stated.
 **513 passed**, 3 skipped (+37 since Session 12's 461).
 
 
+## Step 3 — Vocabulary v2 (CHECKPOINT 3, the XXX-37 build)
+
+### 3.1 The mapping table, transcribed from the taxonomy rather than recalled
+
+`scripts/taxonomy-explore.ts` (new, free) lists the pinned release's own
+labels. Writing breadcrumb rules from memory of what Foursquare "probably"
+calls things produces either a silent no-op rule or a branch nobody intended,
+which surfaces as noise in a founder's day three sessions later. So the rules
+below are transcribed from the release, and the pin report is the proof.
+
+**`shopping` — 11 labels**
+
+```
+Retail > Shopping Mall          Retail > Boutique
+Retail > Shopping Plaza         Retail > Vintage and Thrift Store
+Retail > Outlet Mall            Retail > Bookstore
+Retail > Department Store       Retail > Bookstore > Used Bookstore
+Retail > Antique Store          Retail > Record Store
+Retail > Arts and Crafts Store
+```
+
+**`scenic_viewpoints` — 6 labels**
+
+```
+Landmarks and Outdoors > Scenic Lookout      … > Waterfront
+Landmarks and Outdoors > Roof Deck           … > Boardwalk
+Landmarks and Outdoors > Tower               … > Lighthouse
+```
+
+**`grocery` — 23 labels**: the whole `Retail > Food and Beverage Retail`
+branch — grocery stores, supermarkets, organic grocery, butcher, meat and
+seafood, cheese, dairy, chocolate, candy, gourmet, health food, herbs and
+spices, imported food, kosher, sausage, fruit and vegetable, coffee roaster,
+beer, wine and liquor stores.
+
+**`markets` — 5 labels, and a dead rule found**
+
+```
+Retail > Flea Market                          Retail > Market
+Retail > Floating Market
+Retail > Food and Beverage Retail > Farmers Market   ← was unreachable
+Retail > Food and Beverage Retail > Fish Market      ← was unreachable
+```
+
+`"Retail > Farmers Market"` has matched **nothing since Session 5**. The
+release files farmers markets under the food-retail branch, and the pin's
+zero-match guard fires per CATEGORY rather than per rule — so two live
+sibling rules hid a dead one for three sessions. This is the same standard
+CLAUDE.md records twice already: *a constant is suspect if its correctness
+depends on a behaviour nobody wrote down.* A RULE is suspect on the same
+terms, and the guard that was supposed to catch it was one level too coarse.
+
+`markets` is declared BEFORE `grocery` so farmers and fish markets stay
+experiences rather than food shopping — declaration order in
+`PLACE_CATEGORIES` is load-bearing and now says so in a comment.
+
+### 3.2 The noise-exclusion argument
+
+Session 5 dropped the entire Retail branch and counted 722 unmapped rows in
+Kensington alone. Most of that drop was right: a pharmacy, a phone store and
+a tyre shop are things a resident needs, not things a traveller plans a day
+around. The test applied to every rule is the founder's own bar for the
+category — **would someone spend an hour here BROWSING, as the point of the
+stop?**
+
+Excluded, deliberately:
+
+- **The whole `Fashion Retail` branch** (13 labels). This is the biggest
+  exclusion and the most likely to be overturned. It is chain clothing
+  stores — including it would put a Foot Locker in a shopper's day with the
+  same authority as Yorkville. `Boutique` covers the end that has character.
+  A founder who wants Bloor Street proper should say so and this changes.
+- Errand and service retail: Pharmacy, Drugstore, Hardware, Convenience,
+  Office Supply, Pet Supplies, Medical Supply, Mobility, Eyecare, Financial
+  or Legal Service, Print, Packaging, Construction Supplies.
+- The whole `Automotive Retail` branch (11 labels), plus Auto Workshop.
+- Age- and vice-gated retail: Adult Store, Cannabis Store, Marijuana
+  Dispensary, Smoke Shop, Vape Store, Tobacco, Betting Shop, Pawn Shop,
+  Fireworks.
+- Volume retail with no browse value: Big Box, Warehouse or Wholesale,
+  Discount Store, Outlet **Store** (as distinct from Outlet **Mall**),
+  Vending Machine.
+
+**`Observation Deck` does not exist.** The ticket names it; there is no such
+label anywhere in the pinned release. Recorded rather than worked around —
+`Roof Deck` and `Tower` are the substitute, and the ticket's CN Tower example
+depends on which of those FSQ actually filed it under, which the spot-check
+below answers rather than assumes.
+
+### 3.3 Ripples, each delivered
+
+| ripple | decision | argument |
+|---|---|---|
+| **texture family** — shopping | `market` | A day that does St. Lawrence Market then Eaton Centre has browsed twice. Grouping can only cost a day one repetition it might have got away with; splitting lets A-B-A-B back in through a door Session 11 just closed |
+| **texture family** — scenic | `outdoor` | A lookout and a park are both weather-exposed, daylight-bound outdoor time, and the exposure and dusk rules already treat them alike |
+| **texture family** — grocery | `market` | Nearest honest home. It is an errand, never a day's texture |
+| **dwell** shopping | 30 / 75 / 180 | The browse IS the stop. Eaton Centre in half an hour is a transit connection |
+| **dwell** scenic | 15 / 40 / **90** | The MAX is load-bearing, not the typical: 90 lets `anchorDwellFor` clamp a scenic centre up to the 75-minute calibre floor. Had it been the 60 a lookout suggests, every scenic-first day would degrade its own centre — precisely the trap `parks.typical` = 60 set for nature days |
+| **dwell** grocery | 10 / 25 / 45 | Long enough for a picnic and a bottle of wine, short enough never to read as an activity |
+| **gravity** | new tags `shopping`, `views` | `shopping` was ALREADY in the taste interview's interest grid with nothing to point at. Also `markets`→shopping 0.5, `nature`→scenic 0.5, `local_life`→shopping 0.4 |
+| **arc — warmup** | + `shopping` | A morning wander down a shopping street is low-commitment, early and easy. `scenic` deliberately NOT: a lookout is a payoff, and putting the best view first spends it before the day earns it |
+| **arc — close** | + `scenic_viewpoints` | The most natural fit anything has had here. A viewpoint at golden hour is what golden Day 7 is built around — *"Hanlan's beach is west-facing, the best sunset spot on the islands"*. Dusk clamps and daylight rules already bound it with real ephemeris |
+| **anchor eligibility** | `grocery` NON-ELECTABLE | Nobody plans a day around a supermarket. Kept OUT of `pacing.foodCategories` on purpose — a provisioning stop is not a meal, and folding it in would trip `food-stops-exceeded` on a day that bought bread |
+| **new personas** | `day-7-shopper`, `day-8-scenic` | Neither could exist before. Both surface in the room automatically (the persona list is derived), which is what CP4 needs |
+
+**GRAMMAR_PARAMS → v3**, **COMPOSE_PARAMS → v3**.
+
+**Golden set impact: the six existing days stay clean.** `golden-set.test.ts`
+49 passed, unchanged. The wider vocabulary adds categories the fixtures do
+not use, so no golden day's validation moved — which is the result to want,
+and it was asserted rather than assumed.
+
+Two dice tests asserted the old election lists LITERALLY (`["historic_sites",
+"nightlife_bars", "parks", "restaurants"]` and `length === 3`). Both now
+derive from the vocabulary, so widening it updates the claim instead of
+breaking the test. A test that has to be edited every time the vocabulary
+grows was testing the vocabulary's width, not the behaviour it named.
+
+
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
 Branch: `session-12-variety-audit`. Status: **CLOSED at CHECKPOINT 5.** CP0–CP4
