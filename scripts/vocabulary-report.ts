@@ -120,20 +120,34 @@ async function main(): Promise<void> {
       line("  either the re-ingest has not run or the rules match nothing.");
       continue;
     }
-    // Linked first: these are the ones most likely to reach a real day.
-    const ordered = [...mine].sort((a, b) =>
-      a.google_place_id === b.google_place_id
-        ? a.name.localeCompare(b.name)
-        : a.google_place_id === null
-          ? 1
-          : -1,
-    );
-    for (const r of ordered.slice(0, sampleCount)) {
+    /**
+     * A SPREAD sample, not an alphabetical one.
+     *
+     * The first version sorted linked-first then by name, and the first
+     * read of it looked like a catastrophe: `shopping` appeared to be full
+     * of "1 Stop Electric", "100 The East Mall", "14 woodlot cres". Every
+     * one of those is simply a name that sorts early — numerals before
+     * letters — and the label histogram showed the rules were matching
+     * exactly what they were written to match. A sampler that always shows
+     * the same corner of the alphabet is not a spot-check, it is a
+     * generator of false alarms about its own data.
+     *
+     * Evenly spaced through the set, so the sample is representative of the
+     * whole rather than of its first page.
+     */
+    const stride = Math.max(1, Math.floor(mine.length / sampleCount));
+    const spread = mine.filter((_, i) => i % stride === 0).slice(0, sampleCount);
+    for (const r of spread) {
       const others = mappedOf(r).filter((c) => c !== category);
       line(
         `  ${r.google_place_id !== null ? "🔗" : "  "} ${r.name}` +
           (others.length > 0 ? `   [also ${others.join("/")}]` : ""),
       );
+    }
+    const linked = mine.filter((r) => r.google_place_id !== null);
+    if (linked.length > 0) {
+      line(`  — Google-linked in this category (${linked.length}):`);
+      for (const r of linked.slice(0, sampleCount)) line(`    🔗 ${r.name}`);
     }
     line(`  … ${mine.length} total`);
   }

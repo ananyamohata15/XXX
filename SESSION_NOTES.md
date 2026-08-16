@@ -490,6 +490,118 @@ breaking the test. A test that has to be edited every time the vocabulary
 grows was testing the vocabulary's width, not the behaviour it named.
 
 
+### 3.4 Re-ingest: what the pool actually holds now
+
+`ingest-base-layer.ts --full`, free (open data), 302,255 raw Toronto rows.
+
+```
+kept 39,849   (was 31,377 — vocabulary v2 adds 8,472 identities)
+new 1,503 · updated 38,346
+still dropped: category_unmapped 232,562 · date_closed 24,344 · flags 5,500
+```
+
+| category | places | Google-linked | family | dwell | anchor? |
+|---|---|---|---|---|---|
+| restaurants | 19,286 | 161 | table | 45/90/150 | yes |
+| cafes | 5,805 | 95 | table | 20/45/90 | yes |
+| museums_galleries | 1,356 | 50 | culture | 45/120/210 | yes |
+| historic_sites | 247 | 22 | culture | 30/90/120 | yes |
+| **markets** | **474** | 17 | market | 30/75/150 | yes |
+| nightlife_bars | 3,529 | 96 | night | 45/90/180 | yes |
+| parks | 2,383 | 59 | outdoor | 20/60/150 | yes |
+| **shopping** | **3,423** | **1** | market | 30/75/180 | yes |
+| **scenic_viewpoints** | **222** | **0** | outdoor | 15/40/90 | yes |
+| **grocery** | **5,493** | 9 | market | 10/25/45 | **NO** |
+
+`markets` 200 → **474**: the dead `Farmers Market` rule, now live.
+
+**The `Retail` branch still contributes 43,641 unmapped rows.** That is the
+noise-exclusion argument working, not a gap — it is the pharmacies, phone
+shops and tyre places the category deliberately does not want.
+
+### 3.5 The founder spot-check, and the false alarm it raised first
+
+**The sampler was wrong before the mapping was.** The first spot-check
+sorted linked-first then by NAME, so `shopping` presented as "1 Stop
+Electric", "100 The East Mall", "14 woodlot cres" and `scenic_viewpoints` as
+"180's garden", "24 WW Rooftop". It read as a catastrophe. It was numerals
+sorting before letters: a sampler that always shows the same corner of the
+alphabet is not a spot-check, it is a generator of false alarms about its own
+data. Re-sampled with an even stride through the set — and the source-label
+histogram checked, which is what settled it.
+
+**With a representative sample, per category:**
+
+- **`grocery` — fit for purpose.** Bonanza Supermarket, Olympic Meat Market,
+  The Beer Store, Sebastiano Quality Meats, Scheffler's Deli, Perola
+  Supermarket, Richard's Fine Chocolates. Some wholesale noise ("J S Meat
+  Wholesale Inc", "30.50 Imports Inc"). XXX-38 can provision a picnic from
+  this.
+- **`shopping` — real retail, diluted.** Beachview Plaza, Downtown Fabrics,
+  Titika, Canadian Thrift Stores, Gallery Indigena — alongside "Mall
+  Management Office" (an office), "Echologics" (an engineering firm) and
+  "Canadian Tire, Richmond Hill" (errand retail, and not in Toronto). The
+  label histogram shows the rules matched exactly what they were written to
+  match — Boutique 632, Arts and Crafts 548, Vintage/Thrift 535, Bookstore
+  491, Shopping Mall 356, Department Store 345. The dilution is FSQ's own
+  small-business long tail, not a rule error.
+- **`scenic_viewpoints` — a good core with one contaminated label.**
+  `Scenic Lookout` (137) and `Lighthouse` (16) are clean. **`Roof Deck` (66)
+  is not**: it carries roofing contractors ("Etobicoke Deck Builder Guys",
+  "905 Roofers Markham", "Fencing Plus") and private balconies ("Nay's
+  Balcony", "Joe Dirts Rooftop Haven"). It also carries the one thing the
+  ticket explicitly asked for — "27th Floor Observation Deck", "Lookout
+  Floor" — since FSQ has no `Observation Deck` label at all.
+
+**Recommendation, not applied:** drop `Roof Deck`, accept losing the handful
+of real observation decks with it, and re-add them through founder curation
+where they belong. NOT applied here because it costs a full re-ingest (§5.2)
+and because trading away the ticket's own named use case is a founder call,
+not mine.
+
+### 3.6 Distinctiveness re-run, OFFLINE ($0) — the XXX-37 acceptance criterion
+
+`offline-recompose.ts`, 8 personas (the six plus the two new), same date and
+seed, DB pool only.
+
+```
+anchors seated              8/8   PASS
+closes (restated)           7/7   PASS   (raw 7/8)
+venue overlap               mean 0.029  max 0.40
+role-sequence               mean 0.931  (non-gating)
+category-sequence           mean 0.617  max 0.80   GATE ≤0.55 → FAIL
+```
+
+**The new vocabulary reaches real days.** `day-7-shopper` elects `shopping`
+(anchor: Amavi Atelier); `day-8-scenic` elects `scenic_viewpoints` (anchor:
+**Sky Pod** — CN Tower's, which is the ticket's own example arriving by
+itself). `day-2-old-town` picks up a `scenic_viewpoints` stop mid-day without
+being a scenic persona.
+
+**And the pre-registered gate did NOT move: 0.614 (CP1, live, n=7) → 0.617
+(offline, n=16).** Within noise of unchanged. Reported as the failure it is.
+
+**Why, measured rather than guessed.** The harness reports the structural
+floor: **0.396 of the 0.617 is the meal pattern alone.** Every scheduler day
+carries restaurants at lunch and dinner, and 6 of the 8 category sequences
+still END on `nightlife_bars` despite `scenic_viewpoints` now sitting ahead
+of it in the close list. So roughly two-thirds of the measured overlap comes
+from meals and closes — the parts of the day the ACTIVITY vocabulary cannot
+touch.
+
+**The honest conclusion: XXX-37's AC was aimed at the wrong lever.** Widening
+the activity vocabulary was supposed to pull category-sequence overlap down,
+and it cannot, because the overlap is dominated by structure the widening
+does not reach. The levers that WOULD move it are the meal pattern's
+contribution (every day the same two restaurant slots) and the close's
+collapse to bars. Both are named here rather than quietly re-baselined.
+
+**No live confirm was run, and should not be.** The founder ruled offline-only
+at CP2. The offline result FAILS, so ~$3 of live matrix would buy a
+confirmation of a failure rather than a decision — and the offline harness
+already exercises the composition path this gate measures.
+
+
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
 Branch: `session-12-variety-audit`. Status: **CLOSED at CHECKPOINT 5.** CP0–CP4
