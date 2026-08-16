@@ -1,3 +1,197 @@
+# Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
+
+Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
+**CHECKPOINT 0 complete — awaiting ratification before Step 1 design.**
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### 0.1 Base state — confirmed, with one correction to the brief
+
+`main` carries Session 13. The brief says "S13 (PR #14)"; the record says
+otherwise and the correction matters only because a reader chasing the PR
+would land on the wrong session:
+
+| PR | session | branch | merged |
+|---|---|---|---|
+| **#15** | **Session 13** — seed fix + anchor calibre + vocabulary v2 | `session-13-seed-and-vocabulary` | 2026-08-16 13:05 UTC |
+| #14 | Session 12 — variety audit | `session-12-variety-audit` | 2026-08-16 13:05 UTC |
+
+Both are in `main`; S13's own close-out required #14 to merge first and it
+did. `main` head is `5c0cc3b` ("land the founder's curation"), so this branch
+carries the curated anchor list, `src/shared/dice.ts`, vocabulary v2 and the
+required-`seed` composer.
+
+**Baseline gates, run not remembered** (this branch, no edits yet):
+`tsc --noEmit` **clean** · `vitest` **527 passed, 3 skipped, 27 files**.
+S13's close-out recorded 523; the +4 is the curation commit's own pins.
+
+### 0.2 Golden day 7 — present, and its facts are legal
+
+`docs/golden-set/golden-set-v2.md` lines 104–134 carry **Golden Day 7 — The
+Islands Day (v1.0, founder-verified 2026-08-15)**. It was committed during
+S13 (it had arrived loose in the working tree).
+
+**Ferry-facts posture for this session, as briefed and accepted:** the day's
+schedule facts are founder-verified — fetched from toronto.ca 2026-08-15 and
+red-penned — so they enter through the **founder ground-truth channel at
+tier 1**. That channel is always legal (comment 10289: "unconditional tier 1
+— operator trust"), and it is the only fact channel this session opens.
+**XXX-39's automated civic-KB stays out of scope** pending its licensing
+addendum in the PO chat.
+
+One mechanical consequence, flagged now because it is design work and not
+plumbing: `src/shared/founder-groundtruth.ts` is **per-PLACE** — its three
+fact keys (`business_status`, `hours_corrections`, `price_range`) all hang
+off a pool identity. A ferry timetable is a **city-scoped, mode-scoped**
+fact about a route, and there is nowhere to put it today. Step 1 proposes
+where.
+
+### 0.3 The theme layer's insertion point — argued
+
+**`DayTheme` selects above `buildSkeleton`, and `buildSkeleton` takes it as
+an input.** The argument is mechanical rather than aesthetic:
+
+`buildSkeleton(request, {seed})` already owns all three things a theme must
+be able to change, and owns them in one pass:
+
+1. **template family** — `pickTemplate(persona, seed)` draws from
+   `templatesFor(persona)`, keyed on (structure × pace) only;
+2. **palette** — the category choices at `warmup` / `contrast` / `close`
+   (`compose.ts:646-770`), each a diced order over a vocabulary subset;
+3. **anchor mode** — `electAnchor` returns exactly one category and
+   `NOMINAL.anchor` is one dwell.
+
+Nothing downstream of `buildSkeleton` can widen any of them: `buildMenus`
+filters within `intent.categories`, the selector picks within the menu, and
+`composeDay` seats what it is given. Nothing upstream exists — `generateDay`
+calls `buildSkeleton` as its first act (`engine.ts:287`). So the theme is an
+input to the skeleton or it is nothing.
+
+Two things this rules OUT, recorded so they are not re-litigated:
+
+- **Not a post-filter on composed days.** "Generate, then check it looks like
+  a history tour" cannot produce a thread day at all — the thread's spine is
+  2–3 same-family sites, and `pickContrast` structurally forbids a second
+  stop in the anchor's family (`compose.ts:341-372`). The layer that must
+  change is the one that wrote that rule.
+- **Not a new `SlotRole`.** A theme is a property of the DAY, not of a stop.
+  Roles stay five.
+
+### 0.4 What the islands day costs us: the pool is fine, the GEOGRAPHY is not
+
+The brief calls golden day 7 "the experience exam". Before designing to it I
+measured whether the engine can reach the islands at all. **It cannot, and
+the reason is not the pool.** All figures below are $0 pool reads.
+
+**Every identity golden day 7 names is present:**
+
+| the day needs | pool identity | category | linked? |
+|---|---|---|---|
+| brunch | `Mildred's Temple Kitchen` (43.6400, −79.4200) | restaurants | no |
+| provisioning | `No Frills Toronto Liberty Village` (43.6392, −79.4200) | grocery | no |
+| provisioning | `LCBO` (43.6400, −79.4198) · `Longo's` (43.6400, −79.4229) | grocery | no |
+| the anchor | `Toronto Islands` (43.6221, −79.3785) | parks | no |
+| the beach | `Hanlan's Point Beach` (43.6168, −79.3919) | parks | no |
+| the sunset | `Toronto Islands Pier`, `Toronto Skyline Viewpoint`, `Sunfish Cut Point` | scenic_viewpoints | no |
+
+94 identities sit in the island band; 30 of them are unreachable and the
+rest are reachable only by an **icons** persona. `zonesFor` (`retrieve.ts:68`)
+picks zones from nine hand-set MAINLAND anchors, and golden day 7's persona
+is **corners** — whose bucket is Kensington / Queen West / Annex /
+Leslieville. That bucket reaches Liberty Village (0.53 km from the Queen West
+anchor) and **does not reach the islands at all**. Even on `icons`,
+`Hanlan's Point Beach` misses the `waterfront` circle by **90 metres**
+(2.59 km against a 2.50 km reach).
+
+So the finding, stated as a design constraint rather than a bug:
+
+> **A theme has a geography, and the persona's lens is not it.** An
+> experience day is defined by the place it goes to; the lens describes how
+> a traveller likes to see a CITY. Today only a user anchor can override the
+> lens's geography (`zonesFor`'s first branch), and that path is right — it
+> is the same argument. The theme needs the same door.
+
+Deliberately NOT proposed: widening `ZONE_SLACK_KM` by 100 m to admit
+Hanlan's. That would buy one beach by loosening every zone in every city, and
+the 90 m is a coincidence of where a hand-set anchor was dropped, not a
+statement about Toronto.
+
+### 0.5 Three defects found during intake, all pre-existing
+
+**(a) `curation-resolve.ts` cannot see any possessive identity — and S13's
+recorded pool gap is a false negative it produced.** The script strips
+apostrophes from the QUERY to build its prefilter token
+(`curation-resolve.ts:64`) and then runs `ilike("name", "%Hanlans%")` against
+RAW pool names containing `Hanlan's`. The haystack is never normalized, so
+the prefilter returns zero rows and the correctly-normalized exact-match
+below it never gets anything to compare. Verified both ways: querying
+`%Hanlan%` returns `Hanlan's Point Beach`; querying `%Hanlans%` returns
+nothing.
+
+S13 §5.4c recorded *"Pool gaps worth a ticket: … `Hanlan's Point` absent as
+an identity"*. **It is present.** So is `Mildred's Temple Kitchen`, which
+this session's first pool check also reported absent for the same reason.
+This is CLAUDE.md's own standing line arriving from a new direction — *an
+instrument that always looks at the same part of its data will eventually
+accuse the data* — and the specific form is worth writing down: **normalize
+both sides of a comparison, or the instrument will report the pool is
+missing what only its own query is missing.**
+
+**(b) `retrieve.ts:254` — `outdoor: category === "parks"`. The fifth
+load-bearing constant, and it is squarely in this session's path.**
+`scenic_viewpoints` joined the OUTDOOR family in S13 (`vocabulary.ts:172`,
+with the argument that "the exposure and dusk rules already treat them
+alike"). They do not. Three readers key on the FAMILY and one keys on the
+TAG:
+
+| reader | keys on | sees a viewpoint as outdoor? |
+|---|---|---|
+| `buildMenus` dusk clamp (`engine.ts:907`) | `CATEGORY_FAMILY` | yes (S13 fixed this one) |
+| `composeDay` dusk clamp (`compose.ts:1162`) | `place.tags.outdoor` | **no** |
+| `checkEnvironment` daylight rules (`environment.ts:40`) | `place.tags.outdoor` | **no** |
+| `checkExposure` | leg modes, not tags | n/a |
+
+So a retrieved viewpoint is invisible to `daylight.outdoor-after-dark` and to
+every weather rule. The S13 fix was written as *"the two changes are one
+change"* about the menu clamp and the evening list; the tag is a third half
+of the same change that nobody counted. It matters here because **golden day
+7's closing beat is a sunset from a west-facing beach** — the one day in the
+set whose whole point is an outdoor slot timed against the ephemeris.
+
+**(c) The persona keys and the golden-set day numbers are now two different
+numbering spaces that collide.** `GOLDEN_PERSONAS` carries `day-7-shopper`
+and `day-8-scenic` (added S13 for vocabulary v2). The golden SET carries
+`Golden Day 7 — The Islands Day`, and the brief owes a founder-drafted
+**golden day 8**. "Day 7" already means two unrelated things in one
+codebase, and the founder vet in Step 4 asks for both a *shopper venue day*
+and *the islands day* in one sitting. Step 1 proposes a rename rather than a
+convention nobody will hold.
+
+### 0.6 Spend and the free-tier calendar
+
+**$0.00 spent this session.** Everything in Step 0 is a pool read, a
+typecheck or a test run — no Google endpoint, no Anthropic call.
+
+Against the **≤$15 billed** gate: $15.00 remaining.
+
+**Free-tier calendar position:** today is **2026-08-16**. The Google free
+tier resets **2026-09-01**, sixteen days out. The session as planned
+(one live confirm set ~$3–4 at CP3, founder vet ~$5 at CP4) **does not
+straddle the reset** — every dollar in this session's budget is drawn
+against the CURRENT period. If the session runs past 2026-08-31 the spend
+lines will say which side of the reset each row fell on.
+
+### 0.7 What I want ratified before Step 1
+
+1. **The theme's geography door** (§0.4) — that an experience theme may set
+   the day's zones the way a user anchor already does, rather than the lens
+   setting them.
+2. **Whether (b) is in scope** (§0.5) — the `outdoor` tag fix is three lines
+   and it is load-bearing for the day-7 sunset exam. My reading: in scope,
+   because the exam cannot be honest without it.
+3. **The day-numbering collision** (§0.5c) — a rename now is cheap; after
+   golden day 8 lands it is not.
+
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
 Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
