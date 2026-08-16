@@ -121,9 +121,30 @@ export function categoryAffinity(
 }
 
 /**
- * The six golden persona lines as test instances (golden-set v2.2
- * headers, verbatim translation). These are the distinctiveness matrix's
- * six rows and the engine's exam personas.
+ * The engine's exam personas — the distinctiveness matrix's rows.
+ *
+ * **Two naming conventions, on purpose (XXX-40, Session 14 CP0 ruling 3).**
+ *
+ * `day-1-…` … `day-6-…` are translations of golden-set v2.2's own persona
+ * lines, so they carry the golden day's number honestly: `day-3-winter` IS
+ * the persona of Golden Day 3.
+ *
+ * `persona-…` entries have no golden day behind them. They were added in
+ * Session 13 for vocabulary v2 and were originally called `day-7-shopper`
+ * and `day-8-scenic` — which collided the moment the golden set gained its
+ * own **Golden Day 7 (The Islands Day)** and was promised a Golden Day 8.
+ * "Day 7" then meant two unrelated things in one codebase, and Session 14's
+ * founder vet asks for the shopper day and the islands day in one sitting.
+ *
+ * Golden days are founder-verified documents of record with stable
+ * identities; persona keys are code labels. So the labels moved.
+ *
+ * Every consumer derives its key list from this object (`PERSONA_KEYS` in
+ * the tasting room, the generate route's Zod enum, every script), so the
+ * rename needed no call-site edits. One consequence, stated rather than
+ * discovered: a trace persisted under an OLD key no longer resolves — and
+ * `seed-fidelity.ts` / `generation-report.ts` already fail loudly on an
+ * unknown persona rather than guessing, which is the behaviour we want.
  */
 export const GOLDEN_PERSONAS: Record<string, Persona> = {
   "day-1-jays": {
@@ -175,12 +196,15 @@ export const GOLDEN_PERSONAS: Record<string, Persona> = {
    * widened distinctiveness matrix. Neither could exist before: `shopping`
    * and `views` had no interest tag and no category to elect.
    *
-   * `day-7-shopper` is `icons` on purpose — the ticket's own examples are
+   * Neither has a golden day behind it, which is why neither is named for
+   * one — see the module note above.
+   *
+   * `persona-shopper` is `icons` on purpose — the ticket's own examples are
    * Yorkville, Eaton Centre, Yorkdale and Sherway, which is the icons end of
    * the lens. A corners shopper is a different day (Queen West, Kensington)
-   * and would be a seventh line, not a variant of this one.
+   * and would be another line, not a variant of this one.
    */
-  "day-7-shopper": {
+  "persona-shopper": {
     pace: "moderate",
     gravity: ["shopping", "food", "local_life"],
     foodCourage: "comfort",
@@ -188,12 +212,12 @@ export const GOLDEN_PERSONAS: Record<string, Persona> = {
     lens: "icons",
   },
   /**
-   * `day-8-scenic` leans on `views` first with nature behind it, which is
+   * `persona-scenic` leans on `views` first with nature behind it, which is
    * the founder's "likes scenic views" as a whole traveller rather than a
    * single stop. Relaxed, because a day built around looking at things is
    * not a packed day.
    */
-  "day-8-scenic": {
+  "persona-scenic": {
     pace: "relaxed",
     gravity: ["views", "nature", "food"],
     foodCourage: "classic",
