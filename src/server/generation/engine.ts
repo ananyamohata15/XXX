@@ -66,7 +66,7 @@ import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
 import { collapseByPlace, scoreAll } from "./score";
-import { MENU_SIZE } from "./select";
+import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
 import type {
   Candidate,
   CardReason,
@@ -75,6 +75,7 @@ import type {
   GenerationStats,
   Menu,
   Selector,
+  SlotIntent,
   StageTimings,
 } from "./types";
 
@@ -857,29 +858,106 @@ export async function generateDay(
 }
 
 /**
+ * How deep this intent's menu goes. Meals are structural and stay at four;
+ * the discretionary steps are where choice lives (XXX-40, CP1 ruling 1).
+ */
+export function menuSizeFor(intent: SlotIntent): number {
+  return intent.kind === "meal" ? MENU_SIZE : MENU_SIZE_DISCRETIONARY;
+}
+
+/**
+ * THE DIE'S LAST MILE (XXX-40, Session 14 CP1 ruling 1).
+ *
+ * `intent.categories` is a DICED ORDER, not a ranking — Session 12 built the
+ * whole dice layer so that a step's second and third choices are real. This
+ * function is where that order either survives into the menu or dies.
+ *
+ * It used to die. `buildMenus` sorted by `categories.indexOf(category)` and
+ * then took `slice(0, MENU_SIZE)`, so whenever the head category had four or
+ * more survivors — nearly always — **the menu was single-category and the
+ * rest of the diced order was unreachable.** Measured at CP0 on
+ * `persona-shopper`'s close: 65 viewpoints, 338 bars, 106 historic sites and
+ * 391 restaurants survived every filter, and the menu offered four viewpoints
+ * and nothing else. A die rolled upstream of a cap is still a funnel —
+ * Session 12's own lesson, one layer lower.
+ *
+ * Round-robin over the diced order: the best unused survivor of the first
+ * category, then of the second, and so on, cycling until the menu is full or
+ * every category is spent.
+ *
+ *   - the HEAD still leads the menu, so `DeterministicSelector`'s `options[0]`
+ *     still honours the die's first choice;
+ *   - positions 2..n are genuinely different categories, which is what the
+ *     alternates fallback in `composeDay` and the LLM selector need;
+ *   - a category with nothing left is skipped rather than reserving a slot,
+ *     so a thin category cannot shrink the menu.
+ */
+export function allocateMenu(
+  kept: Candidate[],
+  categories: readonly PlaceCategory[],
+  size: number,
+): Candidate[] {
+  const byCategory = new Map<PlaceCategory, Candidate[]>();
+  for (const candidate of kept) {
+    const list = byCategory.get(candidate.category);
+    if (list === undefined) byCategory.set(candidate.category, [candidate]);
+    else list.push(candidate);
+  }
+  // Within a category the score decides — that part was never the problem.
+  for (const list of byCategory.values()) list.sort((a, b) => b.score - a.score);
+
+  const cursor = new Map<PlaceCategory, number>();
+  const out: Candidate[] = [];
+  let progressed = true;
+  while (out.length < size && progressed) {
+    progressed = false;
+    for (const category of categories) {
+      if (out.length >= size) break;
+      const list = byCategory.get(category);
+      if (list === undefined) continue;
+      const at = cursor.get(category) ?? 0;
+      if (at >= list.length) continue;
+      cursor.set(category, at + 1);
+      out.push(list[at]);
+      progressed = true;
+    }
+  }
+  return out;
+}
+
+/**
  * Deterministic shortlist: menu-depth-plus-spare per intent, capped,
  * deduped. The spare exists because link verification fails honestly for
  * long-tail names — fetching a little past menu depth keeps menus from
  * emptying when it does.
+ *
+ * **It MIRRORS `allocateMenu`** (XXX-40, Session 14) — the harness-fidelity
+ * doctrine applied to spend. This used to walk the score-ordered pool and
+ * take the top `SHORTLIST_DEPTH` across the intent's categories, which was a
+ * different rule from the menu's head-category slice: Details were bought for
+ * high-scoring candidates the menu then declined to offer. Whatever decides
+ * what the menu SHOWS must decide what the engine PAYS to learn about.
+ *
+ * `SHORTLIST_NOMINAL` still caps the whole thing, so the spend bound is
+ * unchanged by the wider discretionary menus.
  */
-const SHORTLIST_DEPTH = MENU_SIZE + 2;
+const SHORTLIST_SPARE = 2;
 export function pickShortlist(
   scored: Candidate[],
   skeleton: Skeleton,
 ): Candidate[] {
   const picked = new Map<string, Candidate>();
   for (const intent of skeleton.intents) {
-    let taken = 0;
-    for (const candidate of scored) {
-      if (taken >= SHORTLIST_DEPTH) break;
-      if (!intent.categories.includes(candidate.category)) continue;
-      if (picked.has(candidate.place.id)) {
-        taken++; // already shortlisted for an earlier intent still counts
-        continue;
-      }
+    if (picked.size >= SHORTLIST_NOMINAL) break;
+    const eligible = scored.filter((c) => intent.categories.includes(c.category));
+    const allocated = allocateMenu(
+      eligible,
+      intent.categories,
+      menuSizeFor(intent) + SHORTLIST_SPARE,
+    );
+    for (const candidate of allocated) {
       if (picked.size >= SHORTLIST_NOMINAL) break;
       picked.set(candidate.place.id, candidate);
-      taken++;
     }
   }
   return [...picked.values()];
@@ -945,14 +1023,7 @@ export function buildMenus(
       windowFor,
       (c) => GRAMMAR_PARAMS.dwellMinutes[c.category].min,
     );
-    // An intent's category list is a preference order (breakfast wants
-    // cafes before restaurants) — the menu honors it before score, so a
-    // verified bar can no longer outrank every cafe for the morning slot.
-    const preferenceRanked = [...kept].sort(
-      (a, b) =>
-        intent.categories.indexOf(a.category) -
-          intent.categories.indexOf(b.category) || b.score - a.score,
-    );
+    const size = menuSizeFor(intent);
 
     /**
      * The ANCHOR's menu is filtered by calibre (XXX-35, Session 13 Step 2).
@@ -970,16 +1041,22 @@ export function buildMenus(
      * shortfall is reported instead of hidden.
      */
     if (intent.role === "anchor") {
-      const { worthy } = partitionByCalibre(preferenceRanked, (c) => ({
+      const { worthy } = partitionByCalibre(kept, (c) => ({
         name: c.place.name,
         category: c.category,
         userRatingCount: c.userRatingCount,
       }));
       if (worthy.length > 0) {
-        return { intent, options: worthy.slice(0, MENU_SIZE) };
+        return {
+          intent,
+          options: allocateMenu(worthy, intent.categories, size),
+        };
       }
     }
-    return { intent, options: preferenceRanked.slice(0, MENU_SIZE) };
+    return {
+      intent,
+      options: allocateMenu(kept, intent.categories, size),
+    };
   });
 }
 

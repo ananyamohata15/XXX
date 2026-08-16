@@ -24,6 +24,8 @@ import {
   seatCost,
   type ComposeInput,
 } from "@/server/generation/compose";
+import { allocateMenu, menuSizeFor } from "@/server/generation/engine";
+import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "@/server/generation/select";
 import { COMPOSE_PARAMS } from "@/server/generation/compose-params";
 import type { Candidate, GenerationRequest, Selection } from "@/server/generation/types";
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
@@ -787,5 +789,67 @@ describe("evening viability is owned once and ruled on per category", () => {
     expect(picks).not.toContain("museums_galleries");
     expect(picks).not.toContain("markets");
     expect(picks).not.toContain("cafes");
+  });
+});
+
+/**
+ * Menu allocation — the die's last mile (XXX-40, Session 14 CP1 ruling 1).
+ *
+ * `intent.categories` is a DICED ORDER. `buildMenus` used to sort by category
+ * index and then `slice(0, MENU_SIZE)`, so whenever the head category had
+ * enough survivors the menu was single-category and the rest of the diced
+ * order was unreachable — 338 legal bars behind four viewpoints, measured.
+ */
+describe("menu allocation preserves the diced order across categories", () => {
+  const cand = (id: string, category: PlaceCategory, score: number): Candidate => ({
+    place: {
+      id,
+      name: id,
+      neighborhood: "Test",
+      coords: { lat: 43.65, lng: -79.38 },
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+    },
+    category,
+    googlePlaceId: null,
+    rating: null,
+    userRatingCount: null,
+    detailsFetched: false,
+    score,
+  });
+
+  it("round-robins the categories instead of slicing the head", () => {
+    const kept = [
+      ...Array.from({ length: 10 }, (_, i) => cand(`view${i}`, "scenic_viewpoints", 0.9 - i * 0.01)),
+      ...Array.from({ length: 10 }, (_, i) => cand(`bar${i}`, "nightlife_bars", 0.5 - i * 0.01)),
+    ];
+    const options = allocateMenu(kept, ["scenic_viewpoints", "nightlife_bars"], 4);
+    expect(options.map((o) => o.category)).toEqual([
+      "scenic_viewpoints",
+      "nightlife_bars",
+      "scenic_viewpoints",
+      "nightlife_bars",
+    ]);
+    // The HEAD still leads, so DeterministicSelector's options[0] keeps
+    // honouring the die's first choice.
+    expect(options[0].place.id).toBe("view0");
+    // Within a category, score still decides.
+    expect(options[2].place.id).toBe("view1");
+  });
+
+  it("skips an empty category rather than reserving its slot", () => {
+    const kept = Array.from({ length: 3 }, (_, i) => cand(`bar${i}`, "nightlife_bars", 0.5 - i * 0.01));
+    const options = allocateMenu(kept, ["scenic_viewpoints", "nightlife_bars"], 4);
+    // A thin or absent category must not shrink the menu — that would be the
+    // old defect wearing different clothes.
+    expect(options).toHaveLength(3);
+    expect(options.every((o) => o.category === "nightlife_bars")).toBe(true);
+  });
+
+  it("gives discretionary intents more depth than meals", () => {
+    const meal = { id: "m", kind: "meal" as const, label: "lunch", window: { start: 0, end: 1 }, categories: [], dwellMinutes: 60 };
+    const close = { id: "c", kind: "activity" as const, label: "close", window: { start: 0, end: 1 }, categories: [], dwellMinutes: 60, role: "close" as const };
+    expect(menuSizeFor(meal)).toBe(MENU_SIZE);
+    expect(menuSizeFor(close)).toBe(MENU_SIZE_DISCRETIONARY);
+    expect(MENU_SIZE_DISCRETIONARY).toBeGreaterThan(MENU_SIZE);
   });
 });

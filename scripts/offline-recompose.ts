@@ -143,6 +143,26 @@ async function main(): Promise<void> {
       seed,
     );
 
+    /**
+     * ALTERNATES — the fidelity gap that made this harness blind to menu
+     * allocation (XXX-40, Session 14 Step 2).
+     *
+     * `generateDay` passes `alternates` on every `composeDay` call
+     * (`engine.ts`, the ComposeInput literal). This harness did not, so the
+     * scheduler's whole fallback path — try the selected venue, then the rest
+     * of its menu in order — was never exercised offline.
+     *
+     * That matters more than it sounds. `DeterministicSelector` takes
+     * `options[0]`, so the SELECTED venue is unaffected by how positions 2..n
+     * are allocated; allocation only shows up when the head fails to seat and
+     * the alternates are consulted. Measuring menu allocation on a harness
+     * with no alternates therefore reads null BY CONSTRUCTION — which is
+     * exactly what the first run after the change reported.
+     *
+     * Session 12 ruled the doctrine this repairs: the harness calls the
+     * engine's path and MIRRORS ITS SEQUENCE. An instrument that omits an
+     * input the engine always supplies is measuring a different engine.
+     */
     const composed = composeDay({
       request,
       skeleton,
@@ -150,6 +170,9 @@ async function main(): Promise<void> {
       candidatesById: byId,
       travel: new HaversineStubProvider(),
       outdoorLatestEnd: timeToMinutes("20:30"),
+      alternates: new Map(
+        menus.map((m) => [m.intent.id, m.options.map((o) => o.place.id)]),
+      ),
     });
 
     roleSeq.set(
