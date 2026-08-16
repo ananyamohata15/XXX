@@ -175,17 +175,24 @@ export const COMPOSE_PARAMS = {
      */
     dwellMinutes: 60,
     /**
-     * The EVENT-PREP trigger, defined as three facts rather than a vibe
-     * (XXX-42, CP1 §1.6). All three must hold:
+     * The EVENT-PREP trigger is three FACTS rather than a vibe (XXX-42).
+     * All three must hold:
      *
      *   1. the next stop is a `restaurants` venue,
-     *   2. seated at or after this hour, and
-     *   3. priced in the top band the trip's budget admits.
+     *   2. it is the day's LAST meal — structurally the evening one, and
+     *   3. it is priced in the top band the trip's budget admits.
      *
-     * Named narrowly on purpose. "Fancy dinner" is a judgment, and a
-     * judgment with no stated test becomes whatever the code happens to do.
+     * **Condition 2 was a clock literal (`>= "19:00"`) and is now
+     * structural** — Session 12's delete-the-comparison law, applied when
+     * the fixture that was meant to prove this arm failed its own premise.
+     * Every pattern's dinner window is 17:30–21:30 and the seat objective
+     * centres a 90-minute dinner at **18:45**, so a 19:00 threshold missed
+     * the composer's own most common dinner. The literal was not mistuned;
+     * it was asking the clock a question that belongs to the day's shape.
+     *
+     * "The last meal of the day" needs no tuning and cannot drift when the
+     * seating objective is refitted.
      */
-    eventPrepFromHour: "19:00",
     /**
      * The earliest a hotel reset makes sense.
      *

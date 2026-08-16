@@ -200,6 +200,104 @@ describe("the rest stop fires on load, and says why", () => {
     }
   });
 
+  /**
+   * THE EVENT-PREP ARM (XXX-42, Session 14 Step 3).
+   *
+   * Proven on a HAND-BUILT day, and the reason is a finding rather than a
+   * convenience. Two things make this arm nearly unreachable in production,
+   * both measured:
+   *
+   *   1. the pool holds **one** stored `price_range` fact across 39,849
+   *      identities — prices are fetched per-request for the ~24 shortlisted
+   *      candidates and never persisted (decision 001) — and Google bands the
+   *      neighbourhoods these personas draw from at $10–20;
+   *   2. the seat objective leaves about **40 minutes** before the day's last
+   *      meal, and a rest stop wants 60. Measured on `day-1-jays`: gaps of
+   *      75, 35, 75, 40, 5.
+   *
+   * So the MECHANISM is proven here and the LIVE arm is carried to the
+   * founder's vet as formally unverified. Forcing this green by lowering the
+   * rest dwell until a 40-minute gap qualified would have been tuning a
+   * threshold to pass a test, which is the opposite of evidence.
+   */
+  it("fires on a top-band last meal, with the reason recorded", () => {
+    const req = request({
+      lodging: DOWNTOWN,
+      budgetBand: { min: 0, max: 200, currency: "CAD" },
+    });
+    const afternoon = candidate("gallery", "museums_galleries", 43.65, -79.38);
+    const dinner = candidate("fancy", "restaurants", 43.65, -79.38);
+    dinner.place.priceRange = {
+      status: "present",
+      value: { min: 120, max: 180, currency: "CAD" },
+      source: "google_places",
+      tier: 2,
+      fetchedAt: "2026-08-16",
+    };
+
+    // A hand-built day with a real pre-dinner gap: 16:00–17:00 gallery, then
+    // dinner at 19:00. Two hours is what a traveller changing for a $150
+    // dinner actually has.
+    const skeleton = {
+      intents: [
+        {
+          id: "i1",
+          kind: "activity" as const,
+          label: "afternoon",
+          window: { start: timeToMinutes("16:00"), end: timeToMinutes("17:00") },
+          categories: ["museums_galleries"] as PlaceCategory[],
+          dwellMinutes: 60,
+          role: "contrast" as const,
+        },
+        {
+          id: "i2",
+          kind: "meal" as const,
+          label: "dinner",
+          window: { start: timeToMinutes("19:00"), end: timeToMinutes("21:00") },
+          categories: ["restaurants"] as PlaceCategory[],
+          dwellMinutes: 90,
+          role: "meal" as const,
+        },
+      ],
+      opens: [],
+      daySpan: { start: timeToMinutes("09:00"), end: timeToMinutes("22:00") },
+      mealPattern: "classic" as const,
+      templateId: "test",
+      electedAnchor: null,
+      droppedSteps: [],
+      anchorDegraded: null,
+    };
+    const composed = composeDay({
+      request: req,
+      skeleton,
+      selections: [
+        { intentId: "i1", placeId: "gallery" },
+        { intentId: "i2", placeId: "fancy" },
+      ],
+      candidatesById: new Map([
+        ["gallery", afternoon],
+        ["fancy", dinner],
+      ]),
+      travel: new HaversineStubProvider(),
+      outdoorLatestEnd: timeToMinutes("20:30"),
+    });
+
+    // Premise asserted before behaviour — all three facts the trigger names,
+    // and the proof that the OTHER arm cannot be what fired.
+    const meals = composed.day.slots.filter((sl) => sl.kind === "meal");
+    expect(meals).toHaveLength(1);
+    expect(composed.day.places[meals[0].placeId].priceRange?.status).toBe(
+      "present",
+    );
+    const load = composed.legs.reduce((m, l) => m + l.minutes, 0);
+    expect(load).toBeLessThan(COMPOSE_PARAMS.rest.physicalLoadMinutes);
+
+    expect(composed.restReason?.trigger).toBe("event-prep");
+    const rest = composed.day.slots.find((sl) => sl.role === "rest");
+    expect(rest).toBeDefined();
+    expect(rest!.placeId).toBe("lodging");
+  });
+
   it("deals NOTHING on the same heavy day when lodging is unknown", () => {
     // The Session 11 advisory keeps speaking instead — this upgrades it, it
     // does not replace it.

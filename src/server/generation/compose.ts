@@ -1780,6 +1780,11 @@ export function composeDay(input: ComposeInput): ComposedDay {
       if (gapEnd - gapStart < restParams.dwellMinutes) continue;
 
       const next = ordered2[i + 1];
+      // The day's LAST meal — structurally the evening one. See
+      // COMPOSE_PARAMS.rest for why this is not a clock comparison.
+      const lastMealId = ordered2
+        .filter((sl) => sl.kind === "meal")
+        .at(-1)?.id;
       const nextPlace = places[next.placeId];
       const nextCategory =
         nextPlace?.category?.status === "present"
@@ -1792,7 +1797,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
       const budgetCeiling = request.budgetBand?.max ?? null;
       const eventPrep =
         nextCategory === "restaurants" &&
-        next.startTime >= restParams.eventPrepFromHour &&
+        next.id === lastMealId &&
         budgetCeiling !== null &&
         nextPrice !== null &&
         (nextPrice.min + nextPrice.max) / 2 >=
