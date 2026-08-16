@@ -861,6 +861,13 @@ export async function generateDay(
  * How deep this intent's menu goes. Meals are structural and stay at four;
  * the discretionary steps are where choice lives (XXX-40, CP1 ruling 1).
  */
+/**
+ * How many venues of a LICENSED category lead its menu. Two: enough for the
+ * founder's two-shopping-stop shape when the first is already the anchor,
+ * few enough that a licence stays a bookend rather than a takeover.
+ */
+export const LICENSED_MENU_DEPTH = 2;
+
 export function menuSizeFor(intent: SlotIntent): number {
   return intent.kind === "meal" ? MENU_SIZE : MENU_SIZE_DISCRETIONARY;
 }
@@ -896,6 +903,26 @@ export function allocateMenu(
   kept: Candidate[],
   categories: readonly PlaceCategory[],
   size: number,
+  /**
+   * A category that takes the first `LICENSED_MENU_DEPTH` slots before the
+   * round-robin begins (XXX-40, Session 14 — the licensed-close ruling).
+   *
+   * Only the family licence sets this. Promoting the licensed CATEGORY to the
+   * head of the list was measurably not enough: the head venue turned out to
+   * be the one already seated as the day's anchor, and the second venue of
+   * the same category sat six deep behind three other categories, so the
+   * shopper's day still closed on a bar.
+   *
+   * Two slots rather than more, because a licence is a bookend and not a
+   * takeover — the rest of the menu still round-robins, so the fallback if
+   * both licensed venues fail is a genuinely different texture.
+   *
+   * Deduplication against already-seated venues needs no extra machinery:
+   * `DeterministicSelector` skips venues it has already used and `composeDay`
+   * skips venues already placed, so a second licensed venue on the menu is
+   * exactly what those two need in order to reach one.
+   */
+  priorityCategory?: PlaceCategory,
 ): Candidate[] {
   const byCategory = new Map<PlaceCategory, Candidate[]>();
   for (const candidate of kept) {
@@ -908,6 +935,14 @@ export function allocateMenu(
 
   const cursor = new Map<PlaceCategory, number>();
   const out: Candidate[] = [];
+
+  if (priorityCategory !== undefined) {
+    const list = byCategory.get(priorityCategory) ?? [];
+    const take = Math.min(LICENSED_MENU_DEPTH, list.length, size);
+    for (let i = 0; i < take; i += 1) out.push(list[i]);
+    cursor.set(priorityCategory, take);
+  }
+
   let progressed = true;
   while (out.length < size && progressed) {
     progressed = false;
@@ -1055,7 +1090,12 @@ export function buildMenus(
     }
     return {
       intent,
-      options: allocateMenu(kept, intent.categories, size),
+      options: allocateMenu(
+        kept,
+        intent.categories,
+        size,
+        intent.licensedCategory,
+      ),
     };
   });
 }

@@ -708,6 +708,8 @@ export function buildSkeleton(
     let categories: PlaceCategory[];
     let label: string;
     let kind: SlotIntent["kind"] = "activity";
+    /** Set by the close branch only; read when the intent is pushed. */
+    let licensedFamily: CategoryFamily | null = null;
 
     if (item.step === "meal") {
       label = item.label ?? "meal";
@@ -763,6 +765,14 @@ export function buildSkeleton(
       label = "contrast";
     } else {
       const at = String(item.window.start);
+      /**
+       * Captured HERE, before `usedFamilies` gains this step's own primary a
+       * few lines below. Reading it afterwards would ask the licence question
+       * against a set that already contains the answer — the close's own
+       * family would make `size >= 3` true for a two-texture day, which is
+       * exactly the precondition the licence must not be able to fake.
+       */
+      licensedFamily = licensedFamilyFor(usedFamilies);
       categories = demoteRatherThanDrop(
         forEvening(closeCategories(persona, rollFor("close", at)), item.window),
         // The family licence: a dominant traveller's own texture counts as
@@ -771,7 +781,7 @@ export function buildSkeleton(
         // demoted exactly as before.
         (c) =>
           !usedFamilies.has(CATEGORY_FAMILY[c]) ||
-          CATEGORY_FAMILY[c] === licensedFamilyFor(usedFamilies),
+          CATEGORY_FAMILY[c] === licensedFamily,
       );
       label = "the day's close";
     }
@@ -815,6 +825,17 @@ export function buildSkeleton(
     }
 
     const id = `i${nextId++}`;
+    /**
+     * The licensed category rides on the CLOSE intent so `buildMenus` can
+     * give it menu depth. Promoting it to the head of `categories` was
+     * measurably not enough — see `SlotIntent.licensedCategory`.
+     */
+    const licensed =
+      licensedFamily !== null &&
+      licence.category !== null &&
+      categories.includes(licence.category)
+        ? licence.category
+        : undefined;
     intents.push({
       id,
       kind,
@@ -823,6 +844,7 @@ export function buildSkeleton(
       categories,
       dwellMinutes: fitted,
       role: item.step,
+      ...(licensed === undefined ? {} : { licensedCategory: licensed }),
     });
     lastIntentId = id;
   }

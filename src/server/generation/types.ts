@@ -87,6 +87,21 @@ export interface SlotIntent {
   dwellMinutes: number;
   /** What this stop is FOR in the day's arc (XXX-35). */
   role?: SlotRole;
+  /**
+   * The category the FAMILY LICENCE promoted for this step (XXX-40, Session
+   * 14). Set on the close only, and only for a traveller whose stated
+   * interests concentrate in one texture.
+   *
+   * It exists because promoting the CATEGORY was not enough to produce the
+   * founder's own example. Measured: with `shopping` licensed to the head of
+   * `persona-shopper`'s close list, the menu's best shopping venue was
+   * **Amavi Atelier — already seated as the day's anchor** — and the second
+   * shopping venue sat at menu position 6 behind three other categories,
+   * because allocation round-robins. The day closed on a bar. Yorkville by
+   * day and the Eaton Centre class in the evening needs TWO venues of the
+   * licensed category on the menu, not one.
+   */
+  licensedCategory?: PlaceCategory;
 }
 
 /**
