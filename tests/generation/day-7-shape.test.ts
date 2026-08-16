@@ -27,7 +27,8 @@ import {
   seasonCovers,
 } from "@/shared/city-facts";
 import { FERRY_HANLANS_SUMMER_2026 } from "@/server/city-facts/ferry-seed";
-import { experienceSpec, type DayTheme } from "@/shared/theme";
+import { THEME_ZONES, experienceSpec, type DayTheme } from "@/shared/theme";
+import { haversineKm } from "@/shared/day-grammar/travel";
 import { CATEGORY_FAMILY } from "@/shared/vocabulary";
 
 /**
@@ -177,5 +178,52 @@ describe("golden Day 7 — the sunset beat survives the ephemeris", () => {
     expect(spec.anchor.microActivities.length).toBeGreaterThanOrEqual(3);
     // No micro-activity became a stop of its own.
     expect(built.intents.filter((i) => i.role === "anchor")).toHaveLength(1);
+  });
+});
+
+/**
+ * Regressions from the FIRST LIVE ISLANDS GENERATION (Session 14 Step 3).
+ *
+ * It failed honestly with `dwell.understay` — the composite block seated for
+ * 150 minutes against its own 240 floor — and the cause was a third reader
+ * of the category table that the owner-swap had not reached:
+ * `clampDwell(480, parks{20,150})` is 150.
+ *
+ * Both defects below cost a real generation to find. They are pinned so the
+ * next one is free.
+ */
+describe("what the first live islands day cost us", () => {
+  it("clamps the composite block to ITS OWN range, not the category's", () => {
+    const spec = experienceSpec("toronto-islands");
+    // The exact arithmetic that produced the failure. `parks.max` is 150 and
+    // the block wants 480; if the category range is consulted here the day's
+    // centre is a 150-minute park again.
+    expect(GRAMMAR_PARAMS.dwellMinutes.parks.max).toBeLessThan(
+      spec.anchor.dwell.min,
+    );
+
+    const anchor = skeleton().intents.find((i) => i.role === "anchor")!;
+    expect(anchor.composite).toBeDefined();
+    // `trySeat` clamps `intent.dwellMinutes` into `intent.composite` when it
+    // is present. If it clamped into the category range instead, this would
+    // be 150.
+    const clamped = Math.min(
+      Math.max(anchor.dwellMinutes, anchor.composite!.min),
+      anchor.composite!.max,
+    );
+    expect(clamped).toBeGreaterThanOrEqual(spec.anchor.dwell.min);
+  });
+
+  it("gives a theme zone no discovery slack — the harbour is not a rounding error", () => {
+    // The live run retrieved St. James Park, 3.3 km away on the MAINLAND,
+    // because 2.5 km of radius plus 1.0 km of discovery slack reaches across
+    // the water. A discovery anchor approximates a neighbourhood; a theme
+    // zone is drawn against measured coordinates for one purpose.
+    const zone = THEME_ZONES.find((z) => z.slug === "toronto_islands")!;
+    const stJamesPark = { lat: 43.6503, lng: -79.3757 };
+    const km = haversineKm(stJamesPark, { lat: zone.lat, lng: zone.lng });
+    expect(km).toBeGreaterThan(zone.radiusM / 1000);
+    // ...and it WOULD have been admitted with the discovery slack applied.
+    expect(km).toBeLessThan(zone.radiusM / 1000 + 1.0);
   });
 });

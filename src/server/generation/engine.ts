@@ -383,6 +383,8 @@ export async function generateDay(
       };
     }
     const theme = themeOutcome.selection.theme;
+    /** A thread or an experience owns the day's centre; election is skipped. */
+    const themeOwnsAnchor = theme.mode !== "venue";
 
     // -- skeleton + retrieval ---------------------------------------------
     let skeleton = buildSkeleton(request, { seed, theme });
@@ -788,6 +790,62 @@ export async function generateDay(
       }
       // Out of categories or out of re-elections and the day still has no
       // centre: that is a failure, and it says so rather than shipping.
+      /**
+       * THE CENTRE IS NOT OPTIONAL — including when a THEME owns it
+       * (XXX-40, Session 14 Step 3, found live).
+       *
+       * Both guards here tested `skeleton.electedAnchor !== null`, which is
+       * the record of an ELECTION. A themed day has none: the thread or the
+       * experience pre-empts election, so `electedAnchor` is null by design.
+       * The result was that the first live islands day lost its composite
+       * block to `unschedulable` and shipped anyway, reporting *"This day
+       * holds up — 8 notes."*
+       *
+       * That is Session 11's exact defect returning through a door this
+       * session opened: *"the matrix lost its anchor in 3 of 6 days and every
+       * one of them still returned status ok"*. The founder's words for it
+       * are on the record twice — **"the day isnt anchored on anything"**.
+       *
+       * So the question is asked about the DAY, not about the election: did
+       * the anchor intent get seated? Re-election still needs an elected
+       * anchor to re-elect (a theme's centre is not ours to swap), so a
+       * themed day with no seatable centre fails HONESTLY and immediately.
+       */
+      if (anchorUnfilled && skeleton.electedAnchor === null && themeOwnsAnchor) {
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "arc",
+          endpoint: "theme_anchor_unseatable",
+          estCostUsd: 0,
+          metadata: {
+            theme: themeId(theme),
+            anchor_categories: anchorIntent?.categories ?? [],
+          },
+        });
+        const stats = finishStats(pool.length, shortlist.length, passes);
+        await deps.instrumentation.endTrace(traceId, {
+          totalCostUsd: estCostUsd,
+          fullDayMs: stats.timings.totalMs,
+          metadata: {
+            ...deps.traceMetadata,
+            ...traceSummary(stats, "failed", request, lastViolations.length),
+            theme: themeId(theme),
+            theme_anchor_unseatable: true,
+          },
+        });
+        const violation: Violation = {
+          ruleId: "dwell.understay",
+          severity: "violation",
+          slotIds: [],
+          message: `This day's centre — ${anchorIntent?.label ?? "the theme's anchor"} — could not be seated, so the day has nothing at its middle.`,
+          data: { theme: themeId(theme) },
+        };
+        return {
+          status: "failed",
+          violations: [violation],
+          narrated: describeViolations([violation]),
+          stats,
+        };
+      }
       if (anchorUnfilled && skeleton.electedAnchor !== null) {
         await deps.instrumentation.logEvent(traceId, {
           provider: "arc",

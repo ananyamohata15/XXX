@@ -1447,14 +1447,30 @@ export function composeDay(input: ComposeInput): ComposedDay {
       if (place.tags.outdoor && input.outdoorLatestEnd !== null) {
         window = { ...window, end: Math.min(window.end, input.outdoorLatestEnd) };
       }
+      /**
+       * A COMPOSITE BLOCK is clamped to ITS OWN range, not the category's
+       * (XXX-38, Session 14 Step 3 — the owner-swap's THIRD reader).
+       *
+       * This line was found by the first live islands generation, which
+       * failed honestly with `dwell.understay`: the block seated for 150
+       * minutes against a 240-minute floor. `clampDwell(480, parks{20,150})`
+       * is 150 — `parks.max` governing the day's centre from a third place
+       * nobody had looked, after the skeleton and the validator had both
+       * been taught otherwise.
+       *
+       * Exactly the shape this session keeps meeting: one question with
+       * several readers, and a fix that reaches some of them.
+       */
+      const dwellRange =
+        intent.composite ??
+        (place.category?.status === "present"
+          ? params.dwellMinutes[place.category.value]
+          : null);
       const wanted =
-        place.category?.status === "present"
-          ? clampDwell(intent.dwellMinutes, params.dwellMinutes[place.category.value])
+        dwellRange !== null
+          ? clampDwell(intent.dwellMinutes, dwellRange)
           : intent.dwellMinutes;
-      const minDwell =
-        place.category?.status === "present"
-          ? params.dwellMinutes[place.category.value].min
-          : 30;
+      const minDwell = dwellRange !== null ? dwellRange.min : 30;
       const earliest = snap5(Math.max(arrival, window.start));
       const latestEnd = Math.min(window.end, skeleton.daySpan.end);
       // Hours unknown covers BOTH never-fetched and fetched-but-absent

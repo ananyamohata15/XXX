@@ -27,8 +27,30 @@ import { COMPOSE_PARAMS } from "./compose-params";
 import type { Candidate } from "./types";
 
 const PER_CATEGORY_CAP = 400;
-/** How far past a zone anchor's own radius a candidate may sit. */
+/**
+ * How far past a DISCOVERY anchor's own radius a candidate may sit.
+ *
+ * It exists because Session 4's nine anchors are approximations of
+ * neighbourhoods — a point and a radius standing in for a shape — so a venue
+ * just outside the circle is usually still in the neighbourhood.
+ *
+ * A THEME ZONE is not an approximation. It is drawn for one purpose against
+ * measured coordinates, and the slack actively harms it: the first live
+ * islands generation retrieved **St. James Park**, 3.3 km away on the
+ * mainland, because 2.5 km of radius plus 1.0 km of slack reaches across the
+ * harbour. The day then seated a mainland park as its island centre.
+ *
+ * So the slack is a property of the ZONE, not a constant of retrieval.
+ */
 const ZONE_SLACK_KM = 1.0;
+
+/**
+ * A zone as retrieval sees it: a discovery anchor, optionally with its own
+ * reach. `slackKm: 0` means "this circle is the answer, not an estimate".
+ */
+export type RetrievalZone = Anchor & { slackKm?: number };
+
+const slackOf = (zone: RetrievalZone): number => zone.slackKm ?? ZONE_SLACK_KM;
 
 /**
  * The smallest zone set a day is still composed from. Below this the bbox
@@ -89,7 +111,7 @@ export function zonesFor(
    * The lens remains the themeless default.
    */
   themeZoneSlugs: readonly string[] = [],
-): Anchor[] {
+): RetrievalZone[] {
   if (themeZoneSlugs.length > 0 && anchorCoords.length === 0) {
     const zones = THEME_ZONES.filter((z) => themeZoneSlugs.includes(z.slug));
     // An unknown slug is a typo in a spec, not a reason to silently hand back
@@ -101,7 +123,9 @@ export function zonesFor(
           .join(", ")}`,
       );
     }
-    return [...zones];
+    // A theme zone carries NO discovery slack: it is a hand-drawn circle for
+    // one purpose, and the extra kilometre reaches across the harbour.
+    return zones.map((z) => ({ ...z, slackKm: 0 }));
   }
   if (anchorCoords.length > 0) {
     // A committed day is a geographic fact: draw from every zone within
@@ -173,7 +197,7 @@ export const POOL_WINDOWS: readonly { column: string; ascending: boolean }[] = [
   { column: "lng", ascending: false },
 ];
 
-function bboxOf(zones: Anchor[]): {
+function bboxOf(zones: RetrievalZone[]): {
   latMin: number;
   latMax: number;
   lngMin: number;
@@ -185,7 +209,7 @@ function bboxOf(zones: Anchor[]): {
   let lngMin = 180;
   let lngMax = -180;
   for (const z of zones) {
-    const reachKm = z.radiusM / 1000 + ZONE_SLACK_KM;
+    const reachKm = z.radiusM / 1000 + slackOf(z);
     const dLat = reachKm / kmPerDegLat;
     const dLng = reachKm / (111.32 * Math.cos((z.lat * Math.PI) / 180));
     latMin = Math.min(latMin, z.lat - dLat);
@@ -208,8 +232,8 @@ interface PoolRow {
   fetched_at: string;
 }
 
-function nearestZone(zones: Anchor[], coords: LatLng): Anchor | null {
-  let best: Anchor | null = null;
+function nearestZone(zones: RetrievalZone[], coords: LatLng): RetrievalZone | null {
+  let best: RetrievalZone | null = null;
   let bestKm = Infinity;
   for (const z of zones) {
     const km = haversineKm(coords, { lat: z.lat, lng: z.lng });
@@ -218,7 +242,7 @@ function nearestZone(zones: Anchor[], coords: LatLng): Anchor | null {
       bestKm = km;
     }
   }
-  return best !== null && bestKm <= best.radiusM / 1000 + ZONE_SLACK_KM
+  return best !== null && bestKm <= best.radiusM / 1000 + slackOf(best)
     ? best
     : null;
 }
@@ -227,7 +251,7 @@ export async function retrieveCandidates(
   client: SupabaseClient,
   city: string,
   categories: PlaceCategory[],
-  zones: Anchor[],
+  zones: RetrievalZone[],
   /**
    * Picks which of `POOL_WINDOWS` this request pages by. Omit for the
    * canonical `fsq_place_id` ascending window — what the fixtures and any
