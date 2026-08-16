@@ -808,6 +808,93 @@ just the symptom.
 confirmation of an already-failing offline result is recorded as the budget
 policy working, not as a gap in evidence.
 
+### 5.4c Founder curation round (Session 13 close-out) — and the ruling inside it
+
+The worksheet came back ticked. **The doctrine attached to it outranks the
+ticks**, and is recorded first.
+
+**THE RULING: a single venue is not a day's centrepiece, for three of the
+categories.** Verbatim:
+
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE MUSEUM (unless for example
+> it's Paris and the Louvre or something of that size; this happens only if
+> someone is a die hard museum fan; but a person who likes museums normal
+> amounts may want to go to 1-2 museums in a TRIP)"*
+>
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE [historic site] BUT A HISTORY
+> TOUR OF TORONTO WOULD BE AN ANCHOR"*
+>
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE [market] THOUGH"*
+
+Three consequences, none of them small:
+
+1. **Anchor-worthiness is not purely a property of a VENUE.** Session 13
+   built it as one — `anchorCalibre` judges a place. The founder is saying
+   that for `museums_galleries`, `historic_sites` and `markets` the question
+   is malformed at the venue level: the centrepiece is a THEME ("a history
+   tour of Toronto"), a COMPOSITE of stops, or a venue of exceptional scale.
+   This is Session 12 finding 3(ii) restated by the founder in his own terms
+   — *the arc composes a shape; nothing composes a theme* — and it is
+   XXX-38's composite anchor arriving from a second direction.
+2. **A trip-level constraint appears for the first time.** *"1-2 museums in a
+   TRIP"* is a budget across DAYS, and the engine generates one day with no
+   knowledge of its neighbours. Nothing in the schema carries it. Recorded as
+   new scope, not quietly dropped: comment 10294's point 4 ("day 2 shouldn't
+   rhyme with day 1") is the same axis and equally unbuilt.
+3. **Persona intensity gates the exception.** *"only if someone is a die hard
+   museum fan"* — a single museum CAN carry a day, for the right traveller.
+   Today `categoryAffinity` has the signal (gravity position 1 at weight 1.0)
+   and nothing consumes it as a licence.
+
+**What the list means as a result.** Membership in `FOUNDER_ANCHOR_WORTHY`
+now reads *"fit to carry an anchor WHEN one of this category is warranted"*,
+not *"sufficient alone"*. Written into the module doc so a later reader
+inherits the distinction.
+
+**The ticks, resolved to pool identities** (`scripts/curation-resolve.ts`,
+new — $0):
+
+| category | curated | note |
+|---|---|---|
+| museums_galleries | Art Gallery of Ontario · Royal Ontario Museum · *Casa Loma* | ROM is **two duplicate identities, both UNLINKED** — no Details, no rating count, so curation is its only route in |
+| historic_sites | Casa Loma | founder ruled it "is both"; the pool maps it to historic_sites ONLY, so the museums entry is inert today and kept as a recorded mapping question |
+| markets | St Lawrence Market · St. Lawrence Market (North Building) · STACKT market · Toronto Flower Market · *Kensington Market* | Kensington absent from pool |
+| nightlife_bars | Big Trouble · Handlebar · The Porch · El Catrin Destileria · Sneaky Dee's | founder named more as a DIRECTION ("rebel, cabana, hotel x, mezcal spots, speakeasies") — not transcribed, because a direction is not an identity |
+| parks | + Coronation Park · Trillium Park · Trinity Bellwoods Park · Toronto Music Garden | resolved from the founder's own list |
+
+**Two things the resolution caught that a transcription would not:**
+
+- **Casa Loma was ticked under museums and is mapped to historic_sites.**
+  `anchorCalibre` looks a candidate up under the CANDIDATE'S category, so an
+  entry filed under a key the pool disagrees with never fires — and fails
+  **silently**, which is indistinguishable from a list nobody is consulting.
+  Now pinned by a test that admits every curated entry under its own filed
+  category.
+- **"Trinity Bellwoods" and "riverdale park" do not exist under those
+  spellings.** The pool carries `Trinity Bellwoods Park` (linked) and
+  `Riverdale Park West` (no East). Bellwoods is curated; **Riverdale is
+  deliberately NOT** — which identity the founder meant is a guess, and a
+  guess does not belong at tier 1.
+
+**THE GAP THIS ROUND EXPOSED: the list admits, it cannot deny.** The founder
+ticked **none** of the twelve parks offered — including **Berczy Park**,
+which this module's own test pins as the rating-count bar's known false
+admit. Berczy clears the fame bar at ~4,000 ratings and **would still be
+seated as a nature-first day's centrepiece**. Tier 1 currently has no
+downward vote.
+
+Not-ticked is weaker evidence than denied, so no deny-list was invented from
+silence. Pinned as a test instead, so the day a deny-list lands the
+expectation changes on purpose. **Open question for the founder: does
+"not ticked" mean "not anchor-worthy"?** If yes, `FOUNDER_ANCHOR_DENIED` is a
+small change with a large effect — it is the only mechanism that can
+currently overrule fame.
+
+**Pool gaps worth a ticket**: `Kensington Market`, `Riverdale Park East`,
+`Hanlan's Point` absent as identities; `Buzz PR` (a PR agency) is mapped to
+`markets`, which is the small-business dilution §3.5 measured, showing up in
+a founder's own eyeline.
+
 ### 5.5 Standing lines this session earned
 
 > **A die nobody plumbed is a die nobody rolled** (Session 12's, now proven
@@ -859,12 +946,20 @@ surface by `seed-fidelity.ts` rather than promoted again.
 5. **XXX-31's real quality signal** — `anchor-calibre` is explicitly interim,
    and its known limitation (fame ≠ calibre; Berczy Park clears the bar) is
    pinned as a test that should CHANGE when XXX-31 lands.
-6. **Founder curation of the anchor list** — the worksheet is built and was
-   requested at CP2 for museums/galleries, historic sites and parks; the
-   founder's ticked names had not arrived by close-out, so
-   `FOUNDER_ANCHOR_WORTHY` still holds only verbatim-founder entries. Nothing
-   was invented on their behalf.
-7. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
+6. **The composite/theme anchor** (§5.4c ruling) — a single museum, historic
+   site or market is not a day's centrepiece; a THEME is. Arrives from two
+   directions now: the founder's curation ruling and XXX-38's golden Day 7.
+   Carries two sub-items the schema cannot express today: a TRIP-level budget
+   ("1-2 museums in a trip", same axis as comment 10294 point 4) and persona
+   intensity as a licence for the single-venue exception.
+7. **A deny side for the curated list** (§5.4c) — tier 1 can admit and cannot
+   refuse, so Berczy Park still clears the fame bar and would still be seated
+   after the founder declined to tick it. Blocked on one founder answer: does
+   "not ticked" mean "not anchor-worthy"?
+8. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
+9. **Pool gaps from the curation round** — `Kensington Market`,
+   `Riverdale Park East`, `Hanlan's Point` absent as identities; `Buzz PR`
+   mapped to `markets`.
 
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
