@@ -1120,6 +1120,18 @@ export interface ComposedDay {
    * it one would mean a migration to represent something that isn't.
    */
   openPeriods: OpenPeriod[];
+  /**
+   * Why the day returns to lodging mid-afternoon, or null (XXX-42).
+   *
+   * A rest stop without its reason is the unexplained gap the founder
+   * complained about, wearing a label. The trigger travels with the day so
+   * the narration can say "you will have walked two and a half hours by
+   * then" rather than inventing a motive.
+   */
+  restReason:
+    | { trigger: "physical-load"; loadMinutes: number; thresholdMinutes: number }
+    | { trigger: "event-prep"; beforeSlotId: string }
+    | null;
 }
 
 /**
@@ -1301,8 +1313,37 @@ export function composeDay(input: ComposeInput): ComposedDay {
     priceLeg(from, to)?.mode ??
     modeFor(from && to ? haversineKm(from, to) : 0, request.transport);
 
+  /**
+   * LODGING IS A PLACE (XXX-42, Session 14 CP1 §1.6).
+   *
+   * One mechanism serving four requirements that would otherwise need four:
+   *
+   *   - the first leg `lodging → stop 1` becomes a REAL recorded leg. It was
+   *     priced and thrown away, because `recordLeg` needs a `prevPlaceId` and
+   *     lodging had none — so the day's first movement, often its longest,
+   *     was invisible on the timeline;
+   *   - the return leg is priced against `dayEnd`;
+   *   - a REST STOP has somewhere to be: `slots.place_id` is NOT NULL, and a
+   *     rest at the hotel is a slot at a place;
+   *   - honest absence stays honest — no lodging, no pseudo-place, and every
+   *     behaviour below is exactly what it was.
+   */
+  const lodging = request.lodging ?? null;
+  const LODGING_PLACE_ID = "lodging";
+  if (lodging !== null) {
+    places[LODGING_PLACE_ID] = {
+      id: LODGING_PLACE_ID,
+      name: "your hotel",
+      neighborhood: "",
+      coords: lodging,
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+    };
+  }
+
   const legs: ComposedLeg[] = [];
-  let prevPlaceId: string | null = null;
+  let prevPlaceId: string | null = lodging === null ? null : LODGING_PLACE_ID;
+  /** Why a rest stop was dealt, or null. Never silent — it has a reason. */
+  let restReason: ComposedDay["restReason"] = null;
   const recordLeg = (toCoords: LatLng | null, toPlaceId: string): void => {
     const leg = prevPlaceId === null ? null : priceLeg(prevCoords, toCoords);
     if (leg !== null && prevPlaceId !== null) {
@@ -1592,6 +1633,122 @@ export function composeDay(input: ComposeInput): ComposedDay {
   }
   openPeriods.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
+  /**
+   * THE REST STOP (XXX-42, Session 14 CP1 §1.6).
+   *
+   * Dealt as a POST-PASS rather than as a skeleton step, and that is forced
+   * by what the trigger reads: physical load is accumulated TRAVEL time, which
+   * does not exist until the day has been seated. A skeleton-time rest stop
+   * would have to guess at the thing it is reacting to.
+   *
+   * Two triggers, either sufficient:
+   *
+   *   (a) PHYSICAL LOAD — walking plus commute minutes since the day began
+   *       crosses `physicalLoadMinutes`. Travel time, not elapsed time: two
+   *       hours in a gallery is not load.
+   *   (b) EVENT PREP — the next stop is the fancy-dinner class, defined as
+   *       three facts rather than a vibe (restaurants · at or after 19:00 ·
+   *       priced in the top band the budget admits).
+   *
+   * It needs a real gap to sit in, so it never displaces a stop — a rest that
+   * pushes dinner later is not a rest. And it needs LODGING: without it there
+   * is nowhere to rest and `structure.reset-gap-without-lodging` keeps saying
+   * so, which is the Session 11 advisory this upgrades rather than replaces.
+   */
+  if (lodging !== null) {
+    const restParams = COMPOSE_PARAMS.rest;
+    const ordered2 = [...slots].sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime),
+    );
+    /**
+     * Load is measured over the WHOLE DAY, not accumulated to the gap.
+     *
+     * The first build accumulated leg by leg and asked "has this traveller
+     * walked enough YET". Measured across all eight exam personas with real
+     * pool venues, that fired **zero** times — and the reason is structural
+     * rather than a threshold being wrong. Load accumulates through the day
+     * while the big gaps sit EARLY: `day-2-old-town` totals 175 travel
+     * minutes with a 100-minute gap, but the gap is before the anchor when
+     * only one leg has been walked, and by the time the threshold is crossed
+     * the remaining gaps are 35 minutes.
+     *
+     * A concierge planning a day is not reacting to fatigue as it arrives; it
+     * is looking at a day that totals three and a half hours of moving and
+     * putting a reset before the evening. So the day's total decides WHETHER,
+     * and the afternoon decides WHERE — which is also the shape of the
+     * founder's own example, golden Day 2's 17:00–19:00 hotel reset.
+     */
+    const dayLoad = legs.reduce((total, leg) => total + leg.minutes, 0);
+    const loaded = dayLoad >= restParams.physicalLoadMinutes;
+    let restPlaced = false;
+    // Latest suitable gap first: a reset belongs next to the evening it is
+    // preparing for, not at the first hole of the afternoon.
+    for (let i = ordered2.length - 2; i >= 0 && !restPlaced; i -= 1) {
+      const gapStart = timeToMinutes(ordered2[i].endTime);
+      const gapEnd = timeToMinutes(ordered2[i + 1].startTime);
+      if (gapEnd - gapStart < restParams.dwellMinutes) continue;
+
+      const next = ordered2[i + 1];
+      const nextPlace = places[next.placeId];
+      const nextCategory =
+        nextPlace?.category?.status === "present"
+          ? nextPlace.category.value
+          : null;
+      const nextPrice =
+        nextPlace?.priceRange?.status === "present"
+          ? nextPlace.priceRange.value
+          : null;
+      const budgetCeiling = request.budgetBand?.max ?? null;
+      const eventPrep =
+        nextCategory === "restaurants" &&
+        next.startTime >= restParams.eventPrepFromHour &&
+        budgetCeiling !== null &&
+        nextPrice !== null &&
+        (nextPrice.min + nextPrice.max) / 2 >=
+          budgetCeiling * restParams.eventPrepBudgetShare;
+
+      // Physical load also needs the gap to be in the afternoon; event-prep
+      // does not, because it is anchored to the dinner it precedes.
+      const loadFits =
+        loaded && ordered2[i].endTime >= restParams.fromHour;
+      if (!loadFits && !eventPrep) continue;
+
+      const start = gapStart;
+      const end = Math.min(gapEnd, start + restParams.dwellMinutes);
+      slots.push({
+        id: "s-rest",
+        origin: "concierge",
+        kind: "activity",
+        startTime: minutesToTime(start),
+        endTime: minutesToTime(end),
+        placeId: LODGING_PLACE_ID,
+        arriveBy: arriveByFor(
+          places[ordered2[i].placeId]?.coords ?? null,
+          lodging,
+        ),
+        role: "rest",
+      });
+      restReason = loadFits
+        ? {
+            trigger: "physical-load",
+            loadMinutes: dayLoad,
+            thresholdMinutes: restParams.physicalLoadMinutes,
+          }
+        : { trigger: "event-prep", beforeSlotId: next.id };
+      restPlaced = true;
+      // The gap is now a stop, so it must stop being narrated as free time.
+      for (let p = openPeriods.length - 1; p >= 0; p -= 1) {
+        const period = openPeriods[p];
+        if (
+          timeToMinutes(period.startTime) < end &&
+          start < timeToMinutes(period.endTime)
+        ) {
+          openPeriods.splice(p, 1);
+        }
+      }
+    }
+  }
+
   const day: GrammarDay = {
     id: `gen-${request.date}`,
     city: request.city,
@@ -1609,6 +1766,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
     unfilled,
     legs,
     openPeriods,
+    restReason,
   };
 }
 

@@ -157,6 +157,40 @@ export const COMPOSE_PARAMS = {
      * mins of walking is illogical").
      */
     physicalLoadMinutes: 150,
+    /**
+     * How long a hotel reset is worth. 60 minutes: enough to shower and
+     * change for the evening, short enough that it does not become the
+     * afternoon.
+     */
+    dwellMinutes: 60,
+    /**
+     * The EVENT-PREP trigger, defined as three facts rather than a vibe
+     * (XXX-42, CP1 §1.6). All three must hold:
+     *
+     *   1. the next stop is a `restaurants` venue,
+     *   2. seated at or after this hour, and
+     *   3. priced in the top band the trip's budget admits.
+     *
+     * Named narrowly on purpose. "Fancy dinner" is a judgment, and a
+     * judgment with no stated test becomes whatever the code happens to do.
+     */
+    eventPrepFromHour: "19:00",
+    /**
+     * The earliest a hotel reset makes sense.
+     *
+     * A rest stop is preparation for the EVENING — golden Day 2's own reset
+     * is 17:00–19:00 — so it is sought in the afternoon, not wherever the
+     * first big gap happens to be. 14:00 is early enough to catch a day whose
+     * afternoon opens up and late enough that a mid-morning hole is still
+     * treated as free time rather than as a reason to go back to the hotel.
+     */
+    fromHour: "14:00",
+    /**
+     * Fraction of the trip's budget ceiling a dinner must reach to count as
+     * the fancy class. 0.35 of a $140 day is ~$49 for two, which is the
+     * point where a traveller changes clothes.
+     */
+    eventPrepBudgetShare: 0.35,
   },
 
   seating: {
