@@ -958,6 +958,130 @@ nothing in this plan straddles it.
    accept.
 
 
+## Step 2 — Build + offline exams (CHECKPOINT 2)
+
+Landed across 14 atomic commits. Gates at close of Step 2: `tsc --noEmit`
+clean · `eslint` clean · `npm run build` exit 0 · **612 passed**, 3 skipped.
+
+**Menu allocation** (`allocateMenu`) round-robins the diced category order;
+the head still leads so `options[0]` honours the die. Discretionary intents
+take 6, meals 4, and **spend is untouched** — `SHORTLIST_NOMINAL` (24) and
+`DETAILS_CAP` (30) do not move. `pickShortlist` mirrors allocation, closing a
+gap where Details were bought by score while the menu preferred the head
+category. First measurement read NULL because `offline-recompose` never
+passed `alternates`; with the fidelity fix, closes went **6/7 → 7/7**.
+
+**The max = 1.00 suspicion was recorded as WRONG.** Allocation moved the mean
+(0.615 → 0.542 raw) and left the max untouched.
+
+**Theme layer**: `src/shared/theme.ts` (union, curated specs, per-row
+invariants), `THEME_ZONES` separate from `ANCHORS`, `zonesFor`'s theme door,
+`selectTheme` (filter → weight → roll), and the room picker where
+*concierge's choice* is the absence of a request.
+
+**Family licence**: `gravityDominance`, count-based after the ruled margin
+form measured as a knife-edge (five of eight personas at exactly 0.400).
+Licensed closes get a reserved PAIR of menu slots.
+
+**XXX-42**: lodging as a place, rest stop as a post-pass, whether/where split.
+
+**XXX-38**: composite anchor, provisioning role, city-facts table, ferry seed.
+
+## Step 3 — Live confirm (CHECKPOINT 3)
+
+**Spend: $7.6535 over 15 paid generations**, read from `traces.total_cost_usd`
+and never estimated. Against the $15 gate: **$7.35 remaining**. The overshoot
+past the ~$3–4 estimate was surfaced before it was spent, not after.
+
+### 3.1 What the live set found — three defects, all in Step 2's machinery
+
+Every one cost a real generation, and every one is now pinned.
+
+**Run 1 — `dwell.understay`, honest failure.** The composite block seated for
+150 minutes against its own 240 floor. `clampDwell(480, parks{20,150})` is
+150: **a THIRD reader of the category table** the owner-swap had not reached,
+after the skeleton and the validator were both taught otherwise. The same run
+retrieved **St. James Park**, 3.3 km away across the harbour, because the
+islands zone's 2.5 km radius plus 1.0 km of *discovery* slack reaches the
+mainland. A discovery anchor approximates a neighbourhood; a theme zone is
+drawn against measured coordinates, so it now carries no slack.
+
+**Run 2 — the day shipped without its centre.** `unfilled: A day on the
+Toronto Islands (unschedulable)`, and the outcome read *"This day holds up —
+8 notes."* Both anchorless guards tested `skeleton.electedAnchor !== null`,
+which is the record of an ELECTION, and a themed day has none by design.
+Session 11's defect returning through a door this session opened. **A guard
+asks about the DAY, never about the record of how the day was decided** —
+pinned in the trap set so there is no third visit.
+
+**The template family** (granted as legislation, §3.2) — filtering city-day
+templates gave the block a 240-minute window between lunch and dinner, which
+is a four-hour island day with no room to reach the ferry.
+
+### 3.2 The live set, as run
+
+| day | verdict |
+|---|---|
+| **islands experience** | **PASS** — brunch 09:35 · provisioning (LCBO) 10:50 · **composite block 11:25–19:25, 480 min** · dinner 20:05 after the block. Golden Day 7's shape; grammar-clean, 11 advisories, 0 violations |
+| **thread** | **PASS** — market warm-up, culture spine (St. Michael's Cathedral + Mackenzie House), meals interleaved, sunset-viewpoint close, clean |
+| **venue** | **PASS** — Yorkville gallery anchor, Distillery dinner, bar close: S13's output class, which was the AC |
+| **event-prep dinner** | **DID NOT FIRE — formally unverified**, carried to CP4 |
+| **8-persona matrix** | **PASS** — see §3.4 |
+
+### 3.3 Event-prep: why more money would not have bought it
+
+Two measurements, both $0, settle it:
+
+- the pool holds **ONE** stored `price_range` fact across **39,849**
+  identities. Prices are fetched per-request for the ~24 shortlisted
+  candidates and never persisted (decision 001), and Google bands these
+  neighbourhoods at **$10–20**;
+- the seat objective leaves about **40 minutes** before the day's last meal,
+  and a rest stop wants 60. `day-1-jays` measured gaps of 75, 35, 75, 40, 5.
+
+So the arm is not reachable by sampling. The MECHANISM is proven on a
+hand-built day; the LIVE arm goes to CP4 unverified, as ruled. **Lowering the
+rest dwell until a 40-minute gap qualified would have been tuning a threshold
+to pass a test**, and was refused.
+
+The attempt found a real defect: the trigger's `>= "19:00"` was a **clock
+literal that missed the composer's own most common dinner** (every dinner
+window is 17:30–21:30 and the objective centres a 90-minute dinner at 18:45).
+DELETED, not retuned — the condition is now "the day's last meal", which is
+structural and cannot drift when the seating objective is refitted. **The
+fixture failing its own premise is what surfaced it.**
+
+**Recorded as a coupled CP4 calibration input:** `seating.wIdle` and
+`rest.physicalLoadMinutes` are one question for the founder's body — the idle
+penalty squeezes the very gaps a rest stop needs.
+
+### 3.4 The matrix — full pairwise, 8 personas
+
+```
+anchors seated                8/8   PASS
+closes (restated)             7/7   PASS   (raw 7/8)
+venue overlap                 mean 0.014 (AC ≤0.35)  max 0.40 (AC ≤0.5)  PASS
+exam                          8/8 days validated clean
+category-sequence (reported, non-gating, n=21)   mean 0.511  max 0.80
+cross-shape (|Δstops|≥2, n=7, non-gating)        mean 0.238  max 0.67
+all pairs (n=28)              mean 0.443  max 0.80   [S9 baseline 0.693]
+role-sequence (observed)      mean 0.931
+seat-centering A/B            52.5min → 6.5min from window centre (IMPROVED)
+```
+
+### 3.5 Two findings the good islands day surfaced — both fixed before CP4
+
+1. **`route.detour-avoidable` advised moving the LCBO after the island**, to
+   save 34 minutes. Arithmetically true; it would have sent the traveller to a
+   beach with nothing to eat. One clause: a swap that moves a `provision` stop
+   after what it serves is never advised. **Causality outranks distance.**
+2. **Every venue on a single-zone theme day wore the zone's name** — a
+   mainland waterfront LCBO read "· Toronto Islands", a correct stop with a
+   wrong address. Labels now come from the nearest DISCOVERY anchor; a venue
+   genuinely on the islands matches no mainland anchor and keeps the theme
+   label as the true answer.
+
+
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
 Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
