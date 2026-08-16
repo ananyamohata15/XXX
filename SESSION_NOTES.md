@@ -181,16 +181,227 @@ straddle the reset** — every dollar in this session's budget is drawn
 against the CURRENT period. If the session runs past 2026-08-31 the spend
 lines will say which side of the reset each row fell on.
 
-### 0.7 What I want ratified before Step 1
+### 0.7 The three defects — landed (PO rulings, CP0)
 
-1. **The theme's geography door** (§0.4) — that an experience theme may set
-   the day's zones the way a user anchor already does, rather than the lens
-   setting them.
-2. **Whether (b) is in scope** (§0.5) — the `outdoor` tag fix is three lines
-   and it is load-bearing for the day-7 sunset exam. My reading: in scope,
-   because the exam cannot be honest without it.
-3. **The day-numbering collision** (§0.5c) — a rename now is cheap; after
-   golden day 8 lands it is not.
+All three ruled fixes are in, with the census the ruling asked for. Gates
+after: `tsc --noEmit` clean · `eslint` clean · `npm run build` exit 0 ·
+**540 passed**, 3 skipped, 27 files (from 527 — +13 tests, no test removed).
+Golden set unchanged.
+
+**(1) Apostrophe defect — fixed, and the record corrected.**
+`prefilterToken` (`src/shared/anchor-calibre.ts`) takes the longest
+ALPHANUMERIC RUN, which is a substring of the raw name AND of its normalized
+form whichever apostrophe the source used. `curation-resolve.ts` uses it, and
+now also **refuses to support an absence verdict when its prefilter hit the
+row cap** — an arbitrary 1000-row slice cannot prove a name is missing.
+
+Re-verified through the fixed resolver:
+
+| S13 recorded gap | verdict now |
+|---|---|
+| `Hanlan's Point` | **FALSE NEGATIVE** — present as `Hanlan's Point Beach` (parks, unlinked) |
+| `Mildred's Temple Kitchen` | **FALSE NEGATIVE** — present (restaurants, unlinked) |
+| `Kensington Market` | **real** — nothing in the pool by that identity |
+| `Riverdale Park East` | **real** — the pool carries only `Riverdale Park West` |
+
+S13 §5.4c and §5.7 item 9 are corrected in place. **No curated entry was
+harmed**: every name in `FOUNDER_ANCHOR_WORTHY` happens to have its longest
+token free of apostrophes, so the list resolved correctly by luck of spelling
+rather than by the instrument being right.
+
+Regression: `tests/generation/anchor-worthiness.test.ts`, four cases, Hanlan's
+as the fixture — including the defect itself pinned as "the old token is NOT
+a substring of the pool name".
+
+**(2) The outdoor tag — fixed, and it cost a close. That is the fix working.**
+
+`isOutdoorCategory` (`src/shared/vocabulary.ts`) is now the single owner.
+`retrieveCandidates` derives `PlaceTags.outdoor` from it instead of
+`category === "parks"`; `buildMenus`' dusk clamp calls the same function.
+
+Regressions in both directions: the producer side pins the tag against
+`CATEGORY_FAMILY` **per category** (not "the set is non-empty" — CLAUDE.md's
+standing rule) and proves `composeDay`'s dusk clamp binds on a viewpoint with
+an indoor control; the rule side proves `daylight.outdoor-after-dark` fires on
+a viewpoint past civil dusk, **and pins the defect itself** — the same slot
+with the tag false reports nothing.
+
+One control had to be rebuilt mid-write and it is worth recording: at
+`outdoorLatestEnd = 20:30` the indoor control ALSO ended at 20:30, because the
+seat objective centres a 60-minute stop in an 18:00–22:00 window at
+19:30–20:30. The control agreed with the treatment by arithmetic. Moved to
+19:00, where a clamp and a coincidence look different.
+
+**THE CONSEQUENCE, measured and not hidden: `closes (restated)` moves
+7/7 → 6/7.** `persona-shopper` now reports `unfilled=close`. Reproduced, then
+explained, per constraint 7 — and my first explanation was wrong, which is why
+the rule exists:
+
+- **What the close WAS**, before the fix: `Spadina Wave Deck`, a waterfront
+  lookout, seated **20:45–21:25** — entirely after the 20:30 civil dusk,
+  tagged `outdoor: false`, so not one daylight rule could see it.
+- So S13's `closes 7/7 PASS` was **counting a viewpoint in the dark as a
+  seated close.** The metric moved because the instrument got honest, exactly
+  as the discretionary re-baseline did in S13. A day that now says "no close"
+  is more truthful than a day that ended at a dark lookout.
+
+**(3) Naming collision — renamed.** `day-7-shopper` → `persona-shopper`,
+`day-8-scenic` → `persona-scenic`. Golden days keep their numbers: they are
+founder-verified documents of record, and `day-1-…`–`day-6-…` genuinely ARE
+those days' persona lines. The two renamed entries have no golden day behind
+them, which is now said in the module doc. Every consumer derives its key list
+from `GOLDEN_PERSONAS` (the room's `PERSONA_KEYS`, the generate route's Zod
+enum, eight scripts), so **no call site needed editing**. One consequence
+stated rather than discovered: a trace persisted under an old key no longer
+resolves, and `seed-fidelity.ts` / `generation-report.ts` already fail loudly
+on an unknown persona rather than guessing.
+
+### 0.8 The census the ruling asked for
+
+`category === "<literal>"` and hardcoded category lists, across `src/` and
+`scripts/`, against the vocabulary-v2 ten:
+
+| site | literal | verdict |
+|---|---|---|
+| `retrieve.ts:254` | `category === "parks"` → `outdoor` | **FIXED** (ruled) |
+| `engine.ts:916` | family test inlined at the dusk clamp | **FIXED** — routed to the one owner |
+| `arc.ts:348` | `eveningOk = ["nightlife_bars","historic_sites"]` | **FIXED** — see below |
+| `compose.ts:575` | `eveningOk` (four entries) | **FIXED** — merged into the owner |
+| `compose.test.ts:35` | `outdoor: category === "parks"` in the FIXTURE | **FIXED** — a fixture that derives a tag differently from the producer cannot catch the producer's defect (harness-fidelity doctrine, S12) |
+| `discovery/plan.ts:33` | `CATEGORIES` is still the **v1 SEVEN** | **CENSUSED, not fixed** — see below |
+| `discovery/plan.ts:69` | `category.key === "parks"` → search radius | **CENSUSED** — same file, same decision |
+| `offline-recompose.ts:366`, `harness-fidelity-probe.ts:92`, `trace-audit.ts:178,241` | `c === "restaurants" \|\| c === "cafes"` | **CENSUSED** — four hand-rolled copies of `GRAMMAR_PARAMS.pacing.foodCategories`. Instruments, not the pipeline; they silently disagree the day that list widens |
+| `arc.ts` warmup / close lists | curated preference lists | **not defects** — each is argued at the constant, and S13 deliberately excluded `scenic_viewpoints` from warmup with a reason |
+
+**The `eveningOk` finding is the one worth reading.** It existed **twice, and
+the copies had drifted.** Session 13 found `compose.ts`'s copy deleting
+`scenic_viewpoints` from every close, fixed it, and wrote it into CLAUDE.md as
+the fourth load-bearing constant. It did not know `pickContrast` held a second
+copy — still the original two entries — so for a whole session an evening
+CONTRAST could not be a viewpoint while an evening CLOSE could.
+
+The fix is one owner, but the DURABLE half is that `EVENING_VIABLE` is an
+exhaustive `Record<PlaceCategory, boolean>` rather than an admit-list: adding a
+category to the vocabulary now **fails to compile** until someone rules on its
+evening. A single owner alone would have preserved the failure mode in one
+file instead of two.
+
+**Measured, not assumed:** an A/B of the old drifted list against the new one
+produces **byte-identical** category sequences across all eight personas at
+seed 42 — no contrast step in this matrix seats after 19:00, so the drifted
+copy never bound here. The defect is real and latent; the exhaustive map is
+what stops the next one.
+
+**One value left deliberately unchanged, and it is an open question for the
+founder:** `shopping: false`. Eaton Centre trades until 21:00, so an evening
+shopping stop is plausible in a way a 19:30 museum is not. Widening it is a
+behaviour change the founder has not seen, and smuggling one in under a
+deduplication would be an unrecorded tightening in reverse.
+
+**`discovery/plan.ts` is censused rather than fixed, and it is bigger than it
+looks.** Its `CATEGORIES` list is the v1 seven: `shopping`,
+`scenic_viewpoints` and `grocery` were never added. The paid Google discovery
+run has therefore never searched for a shop, a lookout or a grocer. It does
+not break vocabulary v2 — those categories reach the pool through the FSQ base
+layer, which is mapped separately — but it means the Google-discovered half of
+the pool has a seven-category shape. Out of scope: no discovery run is planned
+this session, and re-running one is a spend decision.
+
+### 0.9 The finding this uncovered — and it is CP1 material, not a fix
+
+Chasing the lost close produced something larger, and it is measured rather
+than argued. For `persona-shopper`'s close intent (window 20:15–22:00,
+categories `[scenic_viewpoints, nightlife_bars, historic_sites, restaurants]`),
+here is what survived every filter, per category, **before the menu cap**:
+
+```
+  scenic_viewpoints     65
+  nightlife_bars       338
+  historic_sites       106
+  restaurants          391
+```
+
+**The menu that was offered contained four viewpoints and nothing else.**
+
+`buildMenus` sorts by `intent.categories.indexOf(category)` FIRST and then
+takes `slice(0, MENU_SIZE)` — four. So whenever the drawn head category has
+four or more survivors, which is nearly always, **the menu is
+single-category and the diced second, third and fourth choices are
+unreachable.** 338 legal bars and 106 legal historic sites were invisible to
+the selector, to the alternates fallback, and to the repair loop.
+
+`buildSkeleton`'s own comment states the opposite intent — *"The whole diced
+ORDER is carried, not its head: `buildMenus` filters across every category in
+this list, so when the drawn first choice has nothing open at this hour the
+DICED second choice is used."* That is true only in the degenerate case where
+the head has **nothing**. With 65 viewpoints available, the rest of the order
+never existed.
+
+This is **Session 12's funnel rule recurring one layer lower**: *a die rolled
+upstream of a funnel is still a funnel* — and a cap is a funnel. Two
+consequences worth weighing at CP1:
+
+1. It is why the close was lost: the menu held only the category my fix had
+   just made honest about dusk, so there was no indoor fallback to fall to.
+2. It is a strong candidate cause for **the discretionary-overlap failure
+   Session 14 inherited** (max = 1.00, `day-3-winter` vs `day-4-budget`, S13
+   §5.7 item 1). If menus are single-category, the composed category sequence
+   IS the drawn category order, and no amount of venue-level variety can
+   separate two days that drew the same categories.
+
+**Not fixed.** It is unruled, it is menu-composition design, and the theme
+layer's *palette* sits on exactly this surface — so it belongs in the Step 1
+proposal rather than in a CP0 fix round.
+
+**One related change I did land, and its honest status.** `hardFilter`'s
+window may now be **per-candidate**, and `buildMenus` clamps to dusk per
+CANDIDATE rather than narrowing the whole intent whenever any one of its
+categories is outdoor. That per-intent clamp struck indoor candidates with an
+outdoor rule — a constraint that belongs to each MEMBER applied to the SET,
+the same shape as the dead `Retail > Farmers Market` rule. It is in scope by
+the ruling's own terms (it is the very expression I was ruled to fix), but it
+is **currently latent**: the matrix is byte-identical with and without it,
+because the cap above makes these menus single-category anyway. Recorded as
+correct-but-unmeasured rather than claimed as an improvement.
+
+### 0.10 Spend after the fix round
+
+Still **$0.00**. Every measurement above — the pool checks, the A/Bs, the
+close probe, four full matrix runs — is a Supabase read against the persisted
+pool. No Google endpoint, no Anthropic call. $15.00 remains against the gate.
+
+### 0.11 CP0 rulings — of record
+
+1. **Theme insertion above `buildSkeleton`** — ratified as argued (§0.3):
+   single owner of template family, palette and anchor mode; a post-filter is
+   provably insufficient.
+2. **"A theme has a geography"** — ratified as the design line (§0.4). Themes
+   carry their own zone geography and override lens geography through the same
+   door user anchors already use; the lens remains the themeless default.
+   **No `ZONE_SLACK_KM` nudging** — the refusal is commended and recorded.
+3. **Ferry facts get a home**: a minimal **city-scoped facts table** (city ×
+   fact-kind × route/mode key, under the full provenance law), built this
+   session with the founder-verified ferry timetable as its first tenant.
+   XXX-39's pipeline inherits the shape later.
+4. **Auto-mode prompt declined permanently** — the permission regime stays
+   hand-legislated.
+
+And on the three defects: **fix all three now** (§0.7), with the literal
+census reported and only this session's surface fixed (§0.8). The apostrophe
+finding joins the sampler lesson as a standing line: *an instrument that lies
+about absence is worse than none.*
+
+### 0.12 Carried into Step 1 as design input
+
+- **Menu composition** (§0.9) — the 4-deep cap over a category-preference sort
+  makes menus single-category and the diced order unreachable. Theme palettes
+  land on this surface, and it is a candidate cause of the inherited
+  discretionary failure.
+- **`shopping` evening viability** (§0.8) — an open founder question, left at
+  today's behaviour rather than widened quietly.
+- **The per-candidate dusk clamp is latent** (§0.9) — correct, landed,
+  unmeasured. If CP1 changes menu composition it should start biting, and that
+  is the moment to re-measure it rather than now.
 
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
