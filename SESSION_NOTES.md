@@ -1089,6 +1089,18 @@ currently overrule fame.
 `markets`, which is the small-business dilution §3.5 measured, showing up in
 a founder's own eyeline.
 
+> **CORRECTED 2026-08-16 (Session 14 CP0, PO ruling).** `Hanlan's Point` was
+> a **FALSE NEGATIVE of `curation-resolve.ts`**, not a pool gap. The script
+> stripped apostrophes from the query and matched against raw pool names, so
+> `%Hanlans%` found nothing while `Hanlan's Point Beach` (parks, unlinked) sat
+> in the pool the whole time. `Mildred's Temple Kitchen` was hidden the same
+> way and is also present. Re-verified through the fixed resolver: **the other
+> two gaps are REAL** — `Kensington Market` and `Riverdale Park East` are
+> genuinely absent (the pool carries only `Riverdale Park West`). No curated
+> entry was harmed: every name in `FOUNDER_ANCHOR_WORTHY` happens to have its
+> longest token free of apostrophes, so the list resolved correctly by luck of
+> spelling rather than by the instrument being right.
+
 ### 5.5 Standing lines this session earned
 
 > **A die nobody plumbed is a die nobody rolled** (Session 12's, now proven
@@ -1152,8 +1164,10 @@ surface by `seed-fidelity.ts` rather than promoted again.
    "not ticked" mean "not anchor-worthy"?
 8. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
 9. **Pool gaps from the curation round** — `Kensington Market`,
-   `Riverdale Park East`, `Hanlan's Point` absent as identities; `Buzz PR`
-   mapped to `markets`.
+   `Riverdale Park East`, ~~`Hanlan's Point`~~ absent as identities; `Buzz PR`
+   mapped to `markets`. **CORRECTED (S14 CP0): `Hanlan's Point` is PRESENT**
+   as `Hanlan's Point Beach` — the absence was `curation-resolve.ts`'s
+   apostrophe defect, now fixed and re-verified. The other two gaps stand.
 
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 

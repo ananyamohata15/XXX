@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import { normalizeName } from "../src/shared/anchor-calibre";
+import { normalizeName, prefilterToken } from "../src/shared/anchor-calibre";
+
+/** How many rows the prefilter may return before its verdict is unsafe. */
+const ROW_CAP = 1000;
 
 /**
  * Resolve founder-curated names to POOL IDENTITIES (XXX-35, Session 13).
@@ -58,19 +61,24 @@ async function main(): Promise<void> {
   );
 
   for (const wanted of names) {
-    // Prefilter on the LONGEST token — the most selective one — so the row
-    // cap cannot decide the answer (the bug this script's sibling shipped
-    // twice before it was right).
-    const token = wanted
-      .replace(/[’']/g, "")
-      .split(/\s+/)
-      .reduce((a, b) => (b.length > a.length ? b : a), "");
+    /**
+     * Prefilter on the LONGEST ALPHANUMERIC RUN — the most selective token
+     * that cannot disagree with the pool's own spelling.
+     *
+     * This line used to strip apostrophes from the QUERY and then `ilike`
+     * against RAW pool names, so `"Hanlan's Point"` searched for `Hanlans`
+     * and found nothing while `Hanlan's Point Beach` sat in the pool. The
+     * script reported NOT IN POOL, and that verdict reached Session 13's
+     * close-out as a recorded pool gap for two identities that are both
+     * present. See `prefilterToken` for the full account.
+     */
+    const token = prefilterToken(wanted);
     const { data, error } = await client
       .from("places")
       .select("id, name, google_place_id, facts(fact_key, value)")
       .eq("city", "toronto")
       .ilike("name", `%${token}%`)
-      .limit(1000);
+      .limit(ROW_CAP);
     if (error) throw new Error(`${wanted}: ${error.message}`);
 
     const rows = (data ?? []) as unknown as Row[];
@@ -82,6 +90,18 @@ async function main(): Promise<void> {
     if (rows.length === 0) {
       line(`   NOT IN POOL — no identity contains "${token}"`);
       continue;
+    }
+    /**
+     * A prefilter that hit its own cap cannot support an absence verdict.
+     * The rows returned are an arbitrary slice, so "no exact match among
+     * them" is not "no exact match in the pool" — and this script's whole
+     * job is to be trusted about absence.
+     */
+    if (rows.length >= ROW_CAP) {
+      line(
+        `   ⚠ prefilter "${token}" hit the ${ROW_CAP}-row cap — an absence verdict below is NOT safe.`,
+      );
+      line(`     Re-run with a longer, more distinctive spelling of this name.`);
     }
     const exact = rows.filter(
       (r) => normalizeName(r.name) === normalizeName(wanted),

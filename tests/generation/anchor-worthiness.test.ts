@@ -18,6 +18,7 @@ import {
   matchesCuratedName,
   normalizeName,
   partitionByCalibre,
+  prefilterToken,
 } from "@/shared/anchor-calibre";
 import type { PlaceCategory } from "@/shared/vocabulary";
 
@@ -145,6 +146,65 @@ describe("curated names match the way a founder would expect", () => {
   it("respects category — a curated park does not admit a market", () => {
     expect(judge("High Park", 5, "parks").basis).toBe("founder-curated");
     expect(judge("High Park", 5, "markets").basis).toBe("below-bar");
+  });
+});
+
+/**
+ * The prefilter that decides whether `matchesCuratedName` is ever CONSULTED
+ * (XXX-40, Session 14 CP0).
+ *
+ * `curation-resolve.ts` normalized the search term and then queried raw pool
+ * names, so every possessive identity read as absent — and Session 13's
+ * close-out recorded `Hanlan's Point` as a pool gap on the strength of it.
+ * It is in the pool. `Mildred's Temple Kitchen` was reported absent the same
+ * way and is also in the pool.
+ *
+ * Hanlan's is the fixture on purpose: it is the identity the defect actually
+ * lied about, and golden Day 7 is built on it.
+ */
+describe("the prefilter cannot disagree with the pool's own spelling", () => {
+  it("picks a token that survives every apostrophe form", () => {
+    // The three spellings a source might use for one name. All must share
+    // the token, or the search finds nothing and calls it absence.
+    expect(prefilterToken("Hanlan's Point")).toBe("hanlan");
+    expect(prefilterToken("Hanlan’s Point")).toBe("hanlan");
+    expect(prefilterToken("Hanlans Point")).toBe("hanlans");
+
+    // The regression, stated as the query it produces: the OLD token was
+    // "Hanlans", which is not a substring of the pool's "Hanlan's Point
+    // Beach". The new one is.
+    const poolName = "Hanlan's Point Beach";
+    expect(poolName.toLowerCase()).toContain(prefilterToken("Hanlan's Point"));
+    expect(poolName.toLowerCase()).not.toContain("hanlans");
+  });
+
+  it("survives the other identity the defect hid", () => {
+    const poolName = "Mildred's Temple Kitchen";
+    expect(poolName.toLowerCase()).toContain(
+      prefilterToken("Mildred's Temple Kitchen"),
+    );
+  });
+
+  it("is a substring of the normalized form too, not just the raw name", () => {
+    // Both sides of the comparison must contain it — that is the whole
+    // property. A token drawn from one spelling of one side is the defect.
+    for (const name of [
+      "Hanlan's Point",
+      "St. Lawrence Market",
+      "El Catrin Destileria",
+      "Sneaky Dee's",
+      "Longo’s",
+    ]) {
+      const token = prefilterToken(name);
+      expect(token.length).toBeGreaterThan(0);
+      expect(name.toLowerCase()).toContain(token);
+      expect(normalizeName(name)).toContain(token);
+    }
+  });
+
+  it("stays selective — it takes the longest run, not the first", () => {
+    expect(prefilterToken("St. Lawrence Market")).toBe("lawrence");
+    expect(prefilterToken("The Porch")).toBe("porch");
   });
 });
 

@@ -176,6 +176,49 @@ export function normalizeName(name: string): string {
 }
 
 /**
+ * The most selective substring that survives BOTH spellings of a name —
+ * for use as a database prefilter before `matchesCuratedName` decides.
+ *
+ * This exists because of a defect it is worth naming precisely (XXX-40,
+ * Session 14 CP0). `curation-resolve.ts` normalized the SEARCH TERM and then
+ * ran `ilike` against RAW pool names:
+ *
+ *     wanted "Hanlan's Point"  →  token "Hanlans"  →  ilike '%Hanlans%'
+ *     pool    "Hanlan's Point Beach"                  ← never matches
+ *
+ * The exact-match test below it is correct and normalizes both sides — but
+ * it never received a row to test, because the prefilter had already emptied
+ * the haystack. The instrument printed "NOT IN POOL", and that verdict went
+ * into Session 13's close-out as a recorded pool gap (§5.4c) for two
+ * identities that are both present. `Mildred's Temple Kitchen` went the same
+ * way.
+ *
+ * **Normalize both sides of a comparison, or the instrument will report the
+ * pool is missing what only its own query is missing.** The sampler lesson
+ * from Session 13 with the failure mode inverted: that one accused good data
+ * by looking at one corner of it, this one accused good data by looking for
+ * a spelling nothing uses. An instrument that lies about ABSENCE is worse
+ * than no instrument, because absence is what nobody double-checks.
+ *
+ * The fix is to pick a token that cannot disagree: the longest run of
+ * ALPHANUMERIC characters, which is by construction a substring of the raw
+ * name AND of its normalized form, whichever apostrophe the source used
+ * (straight, curly, or none at all).
+ *
+ *     "Hanlan's Point"          → "Hanlan"   (not "Hanlans", not "Hanlan's")
+ *     "Mildred's Temple Kitchen"→ "Kitchen"
+ *     "St. Lawrence Market"     → "Lawrence"
+ *
+ * It is deliberately a PREFILTER and not a match: it is permissive on
+ * purpose, and `matchesCuratedName` still decides. Widening a prefilter can
+ * only cost a few rows to inspect; narrowing one costs a true answer.
+ */
+export function prefilterToken(name: string): string {
+  const runs = name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return runs.reduce((best, run) => (run.length > best.length ? run : best), "");
+}
+
+/**
  * Whether a pool place's name matches a curated entry — EXACT, normalized.
  *
  * This was containment in both directions for about an hour, on the
