@@ -465,6 +465,94 @@ threshold is three.
 
 **Ruling 1 (menu allocation) and ruling 5** carried into Step 1 — see §0.13.
 
+### 0.12b The close palette lands — and the A/B proves the menu defect is the binding one
+
+`shopping` joins `closeCategories`' experience list, offered **universally**
+per the ruling: the palette offers, affinity weights, the die orders. No
+per-persona `if` — `categoryAffinity` already returns 0 for a persona with no
+shopping interest, and a category-level threshold would re-import the
+knife-edge the `night >= 0.35` gate was deleted for.
+
+**The palette philosophy works exactly as ruled.** The raw draw for
+`persona-shopper` puts `shopping` **first**:
+
+```
+persona-shopper (shopping>food>local_life)
+  raw closeCategories draw : [shopping, parks, historic_sites, scenic_viewpoints, nightlife_bars, restaurants]
+  close intent AS BUILT    : [scenic_viewpoints, nightlife_bars, shopping, historic_sites, restaurants]
+  roles: meal:restaurants > anchor:shopping > contrast:museums_galleries > meal:restaurants > close:scenic_viewpoints
+```
+
+**And the close is still unfilled.** The ruling's prediction did not hold, and
+the reason is the whole point:
+
+1. `EVENING_VIABLE.shopping = true` was **necessary** — `forEvening` would
+   otherwise strike it outright.
+2. `shopping` in `closeCategories` was **necessary** — it is never drawn
+   otherwise, and the die puts it first when it is.
+3. Neither is **sufficient**, because two things downstream undo them:
+   - **`demoteRatherThanDrop` pushes the draw's winner to third.** The anchor
+     is `shopping`, `shopping` is in the MARKET family (S13's deliberate
+     conservative call), so family-freshness demotes the persona's own
+     top-affinity category out of the head.
+   - **The 4-deep head-category slice** then takes four `scenic_viewpoints`
+     and stops — the same dead menu as before.
+
+So the measured chain is: the die wanted shopping, freshness demoted it, and
+the cap buried it. **This is the empirical case for ruling 1.** Menu
+allocation is the binding constraint; until it lands, palette and gate changes
+cannot express themselves.
+
+**A second interaction this exposed, and it is not small.** The same shape hits
+`persona-scenic`: raw draw `scenic_viewpoints` first (affinity 1.0), demoted
+because the anchor already spent OUTDOOR, close becomes `historic_sites`.
+Generalised: **a close can never share the anchor's family, so a persona's
+single strongest interest is structurally barred from the day's ending.** For
+a shopper the founder's own example is Yorkville by day and the Eaton Centre
+class in the evening — a shape the family rule currently forbids. Raised for
+CP1 rather than changed: `demoteRatherThanDrop` exists to stop A-B-A-B
+monotony and is doing its job; what is missing is a licence for a
+gravity-dominant persona, which is the same "persona intensity as a licence"
+item S13 §5.4c left open for the single-venue anchor exception.
+
+**A/B, seed 42, date 2026-08-15:**
+
+| | before | after |
+|---|---|---|
+| day-1 … day-6 sequences | — | **byte-identical** |
+| `persona-shopper` | close unfilled | close unfilled (unchanged) |
+| `persona-scenic` close | `nightlife_bars` | `historic_sites` |
+| raw category-sequence mean | 0.615 | **0.577** |
+| discretionary mean | 0.483 | **0.425** |
+| discretionary max (gates) | 1.00 FAIL | 1.00 FAIL (unmoved) |
+| anchors seated | 8/8 | 8/8 |
+| closes (restated) | 6/7 | 6/7 |
+
+`persona-scenic`'s close moved as a **draw-cardinality side effect**, not
+because shopping won: adding a sixth option to `weightedOrderBy` changes which
+dice values each position consumes, so the whole order reshuffles. Stated
+rather than left as an unexplained diff.
+
+### 0.12c PRINCIPLE OF RECORD — category gates are honest-absence armor
+
+Promoted from this session's measurement (§0.12b), and it **supersedes** the
+earlier "hours gate the truth" phrasing:
+
+> **A category gate is honest-absence ARMOR. It encodes what per-venue,
+> per-weekday hours WOULD say if we held them — and for 98.87% of the pool we
+> do not.** A gate may be relaxed only under one of two conditions:
+>   **(i) hours-present-at-the-decision-point**, or
+>   **(ii) categorical uniformity** — the whole class behaves alike, as the
+>   mall class does.
+>
+> Design consequence, binding on the theme layer: **any theme that relaxes a
+> gate must name what catches the venue instead.**
+
+The evidence is §0.12b: 451 of 39,849 Toronto identities carry a Google link
+(1.13%), zero hours facts are persisted, and hours are fetched for a ≤30
+shortlist while menus draw from ~2,700. `shopping` was relaxed under (ii),
+which is why it stands.
+
 ### 0.13 Carried into Step 1 as design input
 
 - **Menu allocation** (§0.9), ratified with its principle of record: *the menu

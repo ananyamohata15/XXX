@@ -491,11 +491,29 @@ export function closeCategories(
    * outdoor slots, so a sunset close is bounded by real ephemeris rather
    * than by hope.
    */
+  /**
+   * `shopping` joins the CLOSE list (XXX-40, Session 14 CP0, founder ruling).
+   *
+   * It is offered UNIVERSALLY rather than gated on a shopping persona, and
+   * that is the palette philosophy stated plainly: **the palette offers,
+   * affinity weights, the die orders.** A category-level `if` for "is this a
+   * shopper" would re-import the knife-edge the `night >= 0.35` gate above
+   * was deleted for — `categoryAffinity` already returns 0 for a persona with
+   * no shopping interest, so the draw sinks it without a threshold to
+   * mis-tune.
+   *
+   * The gate change alone was inert: `EVENING_VIABLE.shopping = true` filters
+   * what the palette proposes, and this list was not proposing it. Measured
+   * at the ruling — 271 shopping candidates survive `persona-shopper`'s
+   * 20:15–22:00 close window, so the category was legal, wanted, and
+   * unreachable.
+   */
   const experience: PlaceCategory[] = [
     "nightlife_bars",
     "scenic_viewpoints",
     "historic_sites",
     "parks",
+    "shopping",
   ];
   const drawn = weightedOrderBy(
     experience,
