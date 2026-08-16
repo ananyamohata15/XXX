@@ -389,3 +389,100 @@ describe("a venue day is byte-identical to a themeless day", () => {
     }
   });
 });
+
+/**
+ * THE ANCHORLESS-DAY TRAP, through the THEME door (XXX-40, Session 14 Step 3
+ * ruling 4).
+ *
+ * Session 11's defect: the matrix lost its anchor in 3 of 6 days and every
+ * one still returned status "ok". The founder's words are on the record
+ * twice — *"the day isnt anchored on anything"*.
+ *
+ * It came back in Session 14 because both guards asked about the ELECTION
+ * RECORD (`skeleton.electedAnchor !== null`), and a themed day has none by
+ * design. The first live islands generation shipped without its composite
+ * block, reporting *"This day holds up — 8 notes."*
+ *
+ * The rule this pins: **a guard asks about the DAY, never about the record
+ * of how the day was decided.** There must not be a third visit.
+ */
+describe("the anchorless-day trap, through the theme door", () => {
+  it("a themed skeleton has NO elected anchor — the state the guards missed", () => {
+    for (const theme of [
+      { mode: "thread", threadId: "history-of-toronto" } as const,
+      { mode: "experience", experienceId: "toronto-islands" } as const,
+    ]) {
+      const built = buildSkeleton(
+        {
+          city: "toronto",
+          date: DATE,
+          persona: GOLDEN_PERSONAS["day-2-old-town"],
+          budgetBand: null,
+          transport: ["walk", "transit"],
+          seed: 42,
+        },
+        { seed: 42, theme },
+      );
+      // null here is CORRECT — the theme owns the centre. What was wrong was
+      // reading it as "this day needs no centre".
+      expect(built.electedAnchor).toBeNull();
+      // ...and the day still HAS an anchor intent, which is the thing a
+      // guard must actually look at.
+      expect(built.intents.some((i) => i.role === "anchor")).toBe(true);
+    }
+  });
+
+  it("an experience block is sized to run through the day, with room to arrive", () => {
+    // Both halves of ruling 3. The first live run had a 240-minute window for
+    // a 240-minute dwell: the only legal start was its first minute, and the
+    // provisioning stop before it ended one minute later.
+    const built = buildSkeleton(
+      {
+        city: "toronto",
+        date: "2026-07-18",
+        persona: {
+          pace: "relaxed",
+          gravity: ["nature", "food", "local_life"],
+          foodCourage: "adventurous",
+          structure: "scheduler",
+          lens: "corners",
+        },
+        budgetBand: { min: 0, max: 140, currency: "CAD" },
+        transport: ["walk", "transit"],
+        seed: 42,
+      },
+      { seed: 42, theme: { mode: "experience", experienceId: "toronto-islands" } },
+    );
+    const anchor = built.intents.find((i) => i.role === "anchor")!;
+    const windowMinutes = anchor.window.end - anchor.window.start;
+    // The block dominates the day rather than fitting between two meals.
+    expect(anchor.dwellMinutes).toBeGreaterThanOrEqual(360); // 6h+
+    // And its window is strictly larger than its dwell, so it can be REACHED.
+    expect(windowMinutes).toBeGreaterThan(anchor.dwellMinutes);
+  });
+
+  it("absorbs the middle meal — the picnic is lunch", () => {
+    // Ruling 2. The remaining meals are the one before the block and the one
+    // after it; the provisioning stop is the absorbed meal's evidence.
+    const built = buildSkeleton(
+      {
+        city: "toronto",
+        date: "2026-07-18",
+        persona: {
+          pace: "relaxed",
+          gravity: ["nature", "food", "local_life"],
+          foodCourage: "adventurous",
+          structure: "scheduler",
+          lens: "corners",
+        },
+        budgetBand: null,
+        transport: ["walk", "transit"],
+        seed: 42,
+      },
+      { seed: 42, theme: { mode: "experience", experienceId: "toronto-islands" } },
+    );
+    const meals = built.intents.filter((i) => i.kind === "meal");
+    expect(meals.map((m) => m.label)).toEqual(["breakfast", "dinner"]);
+    expect(built.intents.some((i) => i.role === "provision")).toBe(true);
+  });
+});

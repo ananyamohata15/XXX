@@ -102,6 +102,31 @@ export const ARC_TEMPLATES: readonly ArcTemplate[] = [
 ];
 
 /**
+ * THE EXPERIENCE TEMPLATE FAMILY (XXX-38, Session 14 Step 3 — granted as
+ * recorded legislation).
+ *
+ * Kept out of `ARC_TEMPLATES` because it is not a variation on a city day.
+ * The first live islands generation proved the difference: filtering the
+ * ordinary templates gave the composite block a 240-minute window between
+ * lunch and dinner, which is a four-hour island day with no room to walk to
+ * the ferry. Golden Day 7's own block runs **12:00–20:00**.
+ *
+ * The shape is `meal → [provision] → anchor-block → meal`. The block is
+ * permitted to DOMINATE the day and to run through meal windows; the trailing
+ * meal seats after it, which is the founder's conditional late dinner.
+ * `provision` is inserted ahead of the anchor by `buildSkeleton` when the
+ * spec declares it, so it is not written here.
+ */
+export const EXPERIENCE_TEMPLATES: readonly ArcTemplate[] = [
+  {
+    id: "experience-a",
+    structure: "scheduler",
+    pace: "relaxed",
+    steps: ["meal", "anchor", "meal"],
+  },
+];
+
+/**
  * Invariants every template holds, asserted in tests rather than trusted:
  *
  *  1. exactly one `anchor` — a day has one centre
@@ -133,6 +158,24 @@ export const TEMPLATE_INVARIANTS = {
    * the same shape from the other side.
    */
   lastSteps: ["close", "meal"] as ArcStep[],
+  /**
+   * A scheduler template carries at least two meal steps — **AMENDED**
+   * (XXX-38, Session 14 Step 3 ruling 2, cited here because invariants are
+   * rulings and this one now has its vote).
+   *
+   * The amendment: **a composite block whose `ExperienceSpec` declares
+   * `absorbsMeals` counts as one meal step.** The picnic is lunch, and the
+   * provisioning stop is its evidence — so an experience day that eats
+   * brunch, spends eight hours on a beach with a grocery bag, and offers a
+   * conditional late dinner has three meals, not two, even though only two
+   * are seated as stops.
+   *
+   * The original reasoning is untouched and still holds for city days: a
+   * scheduler with ONE meal step strands its whole non-meal arc on one side
+   * of a single meal window, which is how the first draft produced days that
+   * started at 19:00. An absorbed meal does not strand anything — it is
+   * happening inside the block.
+   */
   minMealStepsScheduler: 2,
   minMealStepsWanderer: 1,
 };

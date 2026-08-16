@@ -193,6 +193,23 @@ export interface ExperienceSpec {
   zones: string[];
   /** Rain kills this day; the weather gate is a SELECTION input. */
   requiresGoodWeather: boolean;
+  /**
+   * How many of the meal pattern's own stops the composite block ABSORBS
+   * (XXX-38, Session 14 Step 3 ruling 2).
+   *
+   * The picnic IS lunch, and the provisioning stop is its evidence. An
+   * eight-hour block on an island cannot also break for a restaurant meal in
+   * the middle of itself, and pretending otherwise is how golden Day 7 got
+   * squeezed into the gap between lunch and dinner.
+   *
+   * Absorption drops the MIDDLE window, so the day's remaining meals are the
+   * one before the block and the one after it — brunch and a conditional late
+   * dinner, which is the founder's verified shape exactly.
+   *
+   * `absorbsMeals` was declared on `ThreadSpec` in CP1 and deliberately left
+   * unbuilt. This is its first consumer.
+   */
+  absorbsMeals?: number;
 }
 
 /**
@@ -251,6 +268,12 @@ export const EXPERIENCE_SPECS: readonly ExperienceSpec[] = [
     legs: { mode: "ferry", routeKey: "ferry:hanlans" },
     zones: ["toronto_islands"],
     requiresGoodWeather: true,
+    /**
+     * One: the picnic. Golden Day 7 eats brunch at Mildred's before the
+     * ferry and offers a CONDITIONAL late dinner after the 21:30 boat — the
+     * middle meal happens on the beach, out of a grocery bag.
+     */
+    absorbsMeals: 1,
   },
 ];
 

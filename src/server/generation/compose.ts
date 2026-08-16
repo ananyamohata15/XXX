@@ -73,10 +73,10 @@ import {
 } from "@/shared/vocabulary";
 import {
   ANCHOR_ELECTOR_SOURCE,
+  EXPERIENCE_TEMPLATES,
   closeCategories,
   electAnchor,
   holdsAThread,
-  holdsAnExperience,
   isEveningViable,
   pickContrast,
   pickTemplate,
@@ -122,6 +122,16 @@ const OPEN_PERIOD_NOTICEABLE_MINUTES = 45;
  * for the objective to centre it, not enough to swallow the next meal.
  */
 const ANCHOR_WINDOW_SLACK_MINUTES = 60;
+
+/**
+ * The minimum inbound leg every stop's window must leave room for.
+ *
+ * 30 minutes, and the number is the islands day's own: a walk to the ferry
+ * terminal plus the verified 15-minute crossing. Below this a window is
+ * asserting that the traveller arrives without travelling — which is what a
+ * 240-for-240 window asserted, and what cost the first live generation.
+ */
+const STEP_TRAVEL_HEADROOM_MINUTES = 30;
 
 /**
  * The default day, with a tail that can actually hold an ending
@@ -365,15 +375,20 @@ export function buildSkeleton(
    * thread needs two discretionary positions for its spine; an experience
    * needs a template that does not fight a multi-hour block.
    */
-  const template = pickTemplate(
-    persona,
-    seed,
-    thread !== null
-      ? holdsAThread
-      : experience !== null
-        ? holdsAnExperience
-        : undefined,
-  );
+  /**
+   * An EXPERIENCE draws from its own template family, not from a filtered
+   * city-day list (XXX-38, Session 14 Step 3 ruling 1). Filtering the
+   * ordinary templates gave the composite block a 240-minute window between
+   * lunch and dinner — a four-hour island day with no room to reach the
+   * ferry. A thread still filters, because a thread IS a city day.
+   */
+  const template =
+    experience !== null
+      ? EXPERIENCE_TEMPLATES[
+          (personaIdentity(persona) ^ (Math.abs(seed) >>> 0)) >>>
+            0 % EXPERIENCE_TEMPLATES.length
+        ] ?? EXPERIENCE_TEMPLATES[0]
+      : pickTemplate(persona, seed, thread !== null ? holdsAThread : undefined);
 
   /**
    * One dice key per (site, context) — the funnel rule's machinery.
@@ -434,7 +449,19 @@ export function buildSkeleton(
   // override the family logic AND overwrite the elected anchor's own
   // category with a bar.
   const mealStepCount = template.steps.filter((s) => s === "meal").length;
-  const windows = mealWindowsFor(pattern, mealStepCount);
+  /**
+   * An ABSORBED meal drops the MIDDLE window (XXX-38, Session 14 Step 3).
+   *
+   * `mealWindowsFor` takes the LAST k windows, which is right for a city day
+   * — travelling, breakfast is the meal that goes. It is wrong for an
+   * experience: the block absorbs the middle meal (the picnic), so what
+   * remains is the meal BEFORE it and the meal AFTER it. Golden Day 7's own
+   * shape is brunch, then eight hours, then a conditional late dinner.
+   */
+  const windows =
+    experience?.absorbsMeals !== undefined && mealStepCount >= 2
+      ? [pattern.windows[0], pattern.windows[pattern.windows.length - 1]]
+      : mealWindowsFor(pattern, mealStepCount);
 
   interface Step {
     step: ArcStep;
@@ -630,14 +657,50 @@ export function buildSkeleton(
       // the trace still claimed an anchor was elected. So the anchor's
       // window is widened past its slice instead; the cursor and the
       // meal's own (wide) window sort out the ordering from there.
-      if (step.step === "anchor" && spanMinutes(window) < step.need) {
-        window = spanClip(
-          {
-            start: window.start,
-            end: window.start + step.need + ANCHOR_WINDOW_SLACK_MINUTES,
-          },
-          daySpan,
-        );
+      /**
+       * THE ANCHOR'S WINDOW CARRIES TRAVEL HEADROOM (XXX-38, Session 14
+       * Step 3 ruling 3 — the run-1 finding generalized).
+       *
+       * A 240-minute window for a 240-minute dwell is a zero-walk fiction.
+       * The first live islands day got exactly that: the block's only legal
+       * start was 13:54 and the provisioning stop before it ended at 13:55,
+       * so a single minute of walking made the day's centre unschedulable.
+       *
+       * A stop must be REACHED. The window is therefore sized as the dwell
+       * plus a minimum inbound leg, and a composite block — which is reached
+       * across a harbour — gets the wider slack it already had.
+       */
+      if (step.step === "anchor") {
+        if (experience !== null) {
+          /**
+           * A COMPOSITE BLOCK RUNS THROUGH THE MEAL WINDOWS (ruling 1).
+           *
+           * An experience day is not a city day with a long stop in it. The
+           * block owns the middle of the day and the trailing meal seats
+           * AFTER it — golden Day 7 is on the island from noon until the
+           * sunset and offers a conditional late dinner off the 21:30 ferry.
+           *
+           * So the window runs from here to the day's end, less what the
+           * trailing meal and its own approach need. Slicing it against the
+           * dinner window instead is what produced a four-hour island day.
+           */
+          const trailingMeal = mealAt[mealAt.length - 1];
+          const reserved =
+            (trailingMeal?.need ?? 0) + STEP_TRAVEL_HEADROOM_MINUTES;
+          window = spanClip(
+            { start: window.start, end: daySpan.end - reserved },
+            daySpan,
+          );
+        } else if (spanMinutes(window) < step.need + STEP_TRAVEL_HEADROOM_MINUTES) {
+          window = spanClip(
+            {
+              start: window.start,
+              end:
+                window.start + step.need + ANCHOR_WINDOW_SLACK_MINUTES,
+            },
+            daySpan,
+          );
+        }
       }
       const floor = NOMINAL_MIN[step.step as Exclude<ArcStep, "meal">];
       if (spanMinutes(window) < floor) {
@@ -942,9 +1005,21 @@ export function buildSkeleton(
      * that range's max. An ordinary anchor takes its elected dwell.
      */
     const composite = item.step === "anchor" ? experience?.anchor.dwell : undefined;
+    /**
+     * The block's dwell leaves its own arrival room (ruling 3). Taking the
+     * whole window is the zero-walk fiction that cost the first live run:
+     * the only legal start was the window's first minute, so any travel at
+     * all made the day's centre unschedulable.
+     */
     const dwell =
       composite !== undefined
-        ? Math.min(composite.max, spanMinutes(item.window))
+        ? Math.max(
+            composite.min,
+            Math.min(
+              composite.max,
+              spanMinutes(item.window) - STEP_TRAVEL_HEADROOM_MINUTES,
+            ),
+          )
         : item.step === "anchor" && elected !== null
           ? elected.dwellMinutes
           : item.step === "meal"
