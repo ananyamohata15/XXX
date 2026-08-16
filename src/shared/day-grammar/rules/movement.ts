@@ -258,6 +258,21 @@ function checkDetour(
     const b = slots[i + 1];
     if (a.origin === "user" || b.origin === "user") continue;
 
+    /**
+     * CAUSALITY OUTRANKS DISTANCE (XXX-38, Session 14 Step 3 ruling 2).
+     *
+     * A `provision` stop exists BECAUSE of the stop it serves — the picnic
+     * supplies are bought before the picnic — so a swap that moves it AFTER
+     * its target is not a shorter day, it is an incoherent one.
+     *
+     * Found live on the first good islands day: this rule advised visiting
+     * Toronto Island Park before the LCBO to save 34 minutes, which is
+     * arithmetically true and would have sent the traveller to a beach with
+     * nothing to eat. The route optimizer cannot see why a stop is there;
+     * this is the one clause that tells it.
+     */
+    if (a.role === "provision") continue;
+
     const swapped = [...slots];
     swapped[i] = b;
     swapped[i + 1] = a;

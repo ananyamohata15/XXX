@@ -29,7 +29,11 @@ import {
 import { FERRY_HANLANS_SUMMER_2026 } from "@/server/city-facts/ferry-seed";
 import { THEME_ZONES, experienceSpec, type DayTheme } from "@/shared/theme";
 import { haversineKm } from "@/shared/day-grammar/travel";
-import { CATEGORY_FAMILY } from "@/shared/vocabulary";
+import { CATEGORY_FAMILY, TIERS } from "@/shared/vocabulary";
+import { validateDay } from "@/shared/day-grammar/validate";
+import type { GrammarDay } from "@/shared/day-grammar/types";
+import { CONCIERGE, present } from "@/shared/fixtures/golden/support";
+import { HaversineStubProvider } from "@/shared/day-grammar/travel";
 
 /**
  * Golden Day 7's own persona line, verbatim from the document:
@@ -225,5 +229,80 @@ describe("what the first live islands day cost us", () => {
     expect(km).toBeGreaterThan(zone.radiusM / 1000);
     // ...and it WOULD have been admitted with the discovery slack applied.
     expect(km).toBeLessThan(zone.radiusM / 1000 + 1.0);
+  });
+});
+
+/**
+ * The two findings the first GOOD islands day surfaced (Session 14 Step 3
+ * ruling 2). Both are cosmetic-looking and neither is: one would send a
+ * traveller to a beach with nothing to eat, the other would put a wrong
+ * address on a right stop in front of the founder.
+ */
+describe("what the first good islands day surfaced", () => {
+  it("never advises reordering a provision stop after what it serves", () => {
+    // The route rule advised visiting Toronto Island Park before the LCBO to
+    // save 34 minutes. Arithmetically true; the picnic supplies are bought
+    // BEFORE the picnic. Causality outranks distance.
+    const day: GrammarDay = {
+      id: "provision-order",
+      city: "toronto",
+      date: JULY_SATURDAY,
+      archetype: "city",
+      dayStart: "09:00",
+      dayEnd: "22:00",
+      places: {
+        shop: {
+          id: "shop",
+          name: "LCBO",
+          neighborhood: "Harbourfront",
+          coords: { lat: 43.6382, lng: -79.3906 },
+          tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+          category: present("grocery", CONCIERGE, TIERS.observed),
+        },
+        island: {
+          id: "island",
+          name: "Toronto Island Park",
+          neighborhood: "Toronto Islands",
+          coords: { lat: 43.6207, lng: -79.3756 },
+          tags: { outdoor: true, goldenHourAffine: false, highCrowd: false },
+          category: present("parks", CONCIERGE, TIERS.observed),
+        },
+      },
+      slots: [
+        {
+          id: "s1",
+          origin: "concierge",
+          kind: "activity",
+          startTime: "10:50",
+          endTime: "11:00",
+          placeId: "shop",
+          arriveBy: "transit",
+          role: "provision",
+        },
+        {
+          id: "s2",
+          origin: "concierge",
+          kind: "activity",
+          startTime: "11:25",
+          endTime: "19:25",
+          placeId: "island",
+          arriveBy: "transit",
+          role: "anchor",
+        },
+      ],
+    };
+    const found = validateDay(day, {
+      daylight: null,
+      windows: null,
+      mealPattern: "classic",
+      persona: { structure: "scheduler" },
+      budgetBand: null,
+      lodging: null,
+      transport: ["walk", "transit"],
+      anchorBaseline: null,
+      travel: new HaversineStubProvider(),
+      params: GRAMMAR_PARAMS,
+    });
+    expect(found.map((f) => f.ruleId)).not.toContain("route.detour-avoidable");
   });
 });

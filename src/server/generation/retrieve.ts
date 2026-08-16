@@ -232,7 +232,10 @@ interface PoolRow {
   fetched_at: string;
 }
 
-function nearestZone(zones: RetrievalZone[], coords: LatLng): RetrievalZone | null {
+function nearestZone(
+  zones: readonly RetrievalZone[],
+  coords: LatLng,
+): RetrievalZone | null {
   let best: RetrievalZone | null = null;
   let bestKm = Infinity;
   for (const z of zones) {
@@ -295,6 +298,21 @@ export async function retrieveCandidates(
       const coords = { lat: row.lat, lng: row.lng };
       const zone = nearestZone(zones, coords);
       if (zone === null) continue; // inside the bbox but outside every circle
+      /**
+       * The LABEL is the venue's own neighbourhood, never the admitting
+       * zone's name (XXX-40, Session 14 Step 3 ruling 2).
+       *
+       * A theme day draws from ONE zone, so labelling by the admitting zone
+       * made every venue read "· Toronto Islands" — including a mainland
+       * waterfront LCBO the traveller visits before the ferry, which is a
+       * correct stop wearing a wrong address.
+       *
+       * Discovery anchors are what neighbourhoods are FOR, so the label comes
+       * from the nearest of those. A venue genuinely out on the islands
+       * matches no mainland anchor and keeps the theme zone's label, which is
+       * then the true answer rather than a default.
+       */
+      const labelZone = nearestZone(ANCHORS, coords) ?? zone;
       const categoryFact: GrammarFact<PlaceCategory> = {
         status: "present",
         value: category,
@@ -306,7 +324,7 @@ export async function retrieveCandidates(
         place: {
           id: row.id,
           name: row.name,
-          neighborhood: zone.label,
+          neighborhood: labelZone.label,
           coords,
           /**
            * `outdoor` derives from the FAMILY, never from a category literal
