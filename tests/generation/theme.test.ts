@@ -21,6 +21,7 @@ import {
   type DayTheme,
 } from "@/shared/theme";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import { holdsAThread, templatesHolding } from "@/server/generation/arc";
 import { buildSkeleton } from "@/server/generation/compose";
 import { COMPOSE_PARAMS } from "@/server/generation/compose-params";
 import { GOLDEN_PERSONAS, gravityDominance } from "@/shared/persona";
@@ -235,6 +236,156 @@ describe("persona intensity as a licence", () => {
       expect(families.size, key).toBeGreaterThanOrEqual(
         GRAMMAR_PARAMS.pacing.minTextureFamilies,
       );
+    }
+  });
+});
+
+/**
+ * THE THREAD EXAM (XXX-40, Session 14 Step 2).
+ *
+ * Mechanical this session, per the brief: golden day 8 is founder-drafted
+ * later via the bootstrap, so the AC here is structural rather than a
+ * comparison against a verified document.
+ */
+describe("a thread day is a spine, not a venue day with a label", () => {
+  const HISTORY: DayTheme = { mode: "thread", threadId: "history-of-toronto" };
+  const threadSkeleton = (personaKey: string) =>
+    buildSkeleton(
+      {
+        city: "toronto",
+        date: DATE,
+        persona: GOLDEN_PERSONAS[personaKey],
+        budgetBand: null,
+        transport: ["walk", "transit"],
+        seed: 42,
+      },
+      { seed: 42, theme: HISTORY },
+    );
+
+  it("puts the spine in 2-3 discretionary positions, for EVERY persona", () => {
+    // Per persona, not one sample. Measured before the template restriction
+    // landed: `relaxed-a` has no contrast step, so day-3-winter and
+    // persona-scenic drew a "history tour" whose whole tour was one historic
+    // site — the exact shape the founder ruled cannot carry a day. A
+    // single-persona check would have passed straight through it.
+    for (const key of Object.keys(GOLDEN_PERSONAS)) {
+      const persona = GOLDEN_PERSONAS[key];
+      // A wanderer cannot hold a thread and says so — see below. Asserting a
+      // good spine for one would be asserting a shape we deliberately refuse
+      // to fabricate.
+      if (templatesHolding(persona, holdsAThread).length === 0) continue;
+      const spine = threadSkeleton(key).intents.filter(
+        (i) => i.role === "anchor" || i.role === "contrast",
+      );
+      expect(spine.length, key).toBeGreaterThanOrEqual(
+        THEME_INVARIANTS.threadMinStops,
+      );
+      expect(spine.length, key).toBeLessThanOrEqual(
+        THEME_INVARIANTS.threadMaxStops,
+      );
+    }
+  });
+
+  it("draws the spine from the thread's own categories", () => {
+    const built = threadSkeleton("day-2-old-town");
+    const spine = built.intents.filter(
+      (i) => i.role === "anchor" || i.role === "contrast",
+    );
+    expect(spine.length).toBeGreaterThanOrEqual(2);
+    expect(spine.length).toBeLessThanOrEqual(3);
+    for (const stop of spine) {
+      expect(stop.categories).toEqual(["historic_sites", "museums_galleries"]);
+    }
+  });
+
+  it("elects no venue anchor — the narrative IS the anchor", () => {
+    // The founder's ruling: a single historic site cannot carry a day, but a
+    // history tour of Toronto can.
+    expect(threadSkeleton("day-2-old-town").electedAnchor).toBeNull();
+  });
+
+  it("interleaves meals exactly as an ordinary day does", () => {
+    const built = threadSkeleton("day-2-old-town");
+    const meals = built.intents.filter((i) => i.kind === "meal");
+    expect(meals.length).toBeGreaterThanOrEqual(2);
+    // Connective tissue: a meal never sits in the spine.
+    for (const meal of meals) {
+      expect(meal.role).toBe("meal");
+      expect(meal.categories).not.toContain("historic_sites");
+    }
+  });
+
+  it("deliberately repeats the spine's family — the rule threads exist to break", () => {
+    // `pickContrast` structurally forbids a second stop in the anchor's
+    // family, which is right for a venue day and is exactly what makes a
+    // thread need its own machinery.
+    const built = threadSkeleton("day-2-old-town");
+    const spineFamilies = built.intents
+      .filter((i) => i.role === "anchor" || i.role === "contrast")
+      .map((i) => CATEGORY_FAMILY[i.categories[0]]);
+    expect(new Set(spineFamilies).size).toBe(1);
+    expect(spineFamilies[0]).toBe("culture");
+  });
+
+  it("refuses a thread for a wanderer instead of faking a one-stop tour", () => {
+    // Measured, not assumed: NO wanderer template carries a `contrast` step,
+    // because the CP1 ruling gave wanderers three intents and negative
+    // space. A 2-3 stop scheduled spine is in tension with that shape by
+    // design, so the honest answer is infeasible — not a "history tour" that
+    // visits one historic site.
+    expect(
+      templatesHolding(GOLDEN_PERSONAS["day-5-wanderer"], holdsAThread),
+    ).toHaveLength(0);
+    // And every scheduler CAN hold one.
+    for (const key of Object.keys(GOLDEN_PERSONAS)) {
+      const persona = GOLDEN_PERSONAS[key];
+      if (persona.structure === "wanderer") continue;
+      expect(templatesHolding(persona, holdsAThread).length, key).toBeGreaterThan(0);
+    }
+  });
+
+  it("still holds the day's texture floor overall", () => {
+    // The spine repeats a family ON PURPOSE; the finished day must still have
+    // three textures, which the meals and the close supply.
+    for (const key of Object.keys(GOLDEN_PERSONAS)) {
+      if (templatesHolding(GOLDEN_PERSONAS[key], holdsAThread).length === 0) {
+        continue;
+      }
+      const families = new Set(
+        threadSkeleton(key).intents.map((i) => CATEGORY_FAMILY[i.categories[0]]),
+      );
+      // Measured across all eight: three or four. Asserted at the real
+      // floor rather than a defensive one — a weakened assertion is a test
+      // that stops noticing.
+      expect(families.size, key).toBeGreaterThanOrEqual(
+        GRAMMAR_PARAMS.pacing.minTextureFamilies,
+      );
+    }
+  });
+});
+
+/**
+ * THE VENUE BYTE-IDENTITY AC (XXX-40, Session 14 CP1 §1.1).
+ *
+ * The theme layer must not have changed themeless days. This is the
+ * regression that proves it, and it is written as an equality on the whole
+ * skeleton rather than on a few fields — a spot-check would pass while a
+ * field nobody thought of drifted.
+ */
+describe("a venue day is byte-identical to a themeless day", () => {
+  it("holds for every exam persona", () => {
+    for (const key of Object.keys(GOLDEN_PERSONAS)) {
+      const request = {
+        city: "toronto" as const,
+        date: DATE,
+        persona: GOLDEN_PERSONAS[key],
+        budgetBand: null,
+        transport: ["walk" as const, "transit" as const],
+        seed: 42,
+      };
+      const themeless = buildSkeleton(request, { seed: 42 });
+      const explicit = buildSkeleton(request, { seed: 42, theme: VENUE_THEME });
+      expect(JSON.stringify(explicit), key).toBe(JSON.stringify(themeless));
     }
   });
 });

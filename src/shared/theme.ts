@@ -275,6 +275,18 @@ export function themeId(theme: DayTheme): string {
   }
 }
 
+/**
+ * Why a theme is not possible for this day. Honest failure, never a silent
+ * downgrade to a venue day (constraint 4, pointed at scheduling).
+ */
+export type ThemeInfeasibility =
+  /** No template of this traveller's shape can hold the theme. */
+  | { reason: "no-template"; detail: string }
+  /** A scheduled route the theme depends on does not run on this date. */
+  | { reason: "route-out-of-season"; detail: string }
+  /** The theme needs weather it is not going to get. */
+  | { reason: "weather"; detail: string };
+
 /** The zones a theme draws from; empty = it has no geography of its own. */
 export function themeZoneSlugs(theme: DayTheme): readonly string[] {
   switch (theme.mode) {

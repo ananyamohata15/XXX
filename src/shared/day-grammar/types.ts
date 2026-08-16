@@ -163,6 +163,26 @@ export interface GrammarSlot {
    * they can see from categories alone rather than assuming a shape.
    */
   role?: SlotRole;
+  /**
+   * A COMPOSITE BLOCK's own dwell bounds, in minutes (XXX-38, Session 14
+   * CP1 — the ruled owner-swap).
+   *
+   * Present = this slot is a multi-hour block containing micro-activities,
+   * and its plausible duration comes from the curated `ExperienceSpec`
+   * INSTEAD OF `GRAMMAR_PARAMS.dwellMinutes[category]`. Absent = an ordinary
+   * stop, governed by the category table exactly as before.
+   *
+   * The swap is an OWNER swap, not an exemption: `dwell.overstay` still
+   * fires, against `max` here. A composite anchor is bounded by curation,
+   * never unbounded. Golden Day 7 is why the category table cannot govern
+   * it — `parks.max` is 150 minutes and the islands day is eight hours, so
+   * the founder's own verified day would be rejected by a ceiling written
+   * for an afternoon in a park.
+   *
+   * Recorded as a ruling rather than slipped in: an unrecorded LOOSENING is
+   * the same offence as an unrecorded tightening.
+   */
+  compositeDwell?: { min: number; max: number };
 }
 
 export const DAY_ARCHETYPES = ["city", "excursion"] as const;

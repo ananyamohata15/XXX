@@ -102,6 +102,13 @@ export interface SlotIntent {
    * licensed category on the menu, not one.
    */
   licensedCategory?: PlaceCategory;
+  /**
+   * Present = this intent is an experience's COMPOSITE BLOCK, and its dwell
+   * is governed by the `ExperienceSpec` rather than the category table
+   * (XXX-38, Session 14 CP1 owner-swap). Rides onto the seated
+   * `GrammarSlot.compositeDwell`, which is what `dwell.overstay` reads.
+   */
+  composite?: { min: number; max: number };
 }
 
 /**

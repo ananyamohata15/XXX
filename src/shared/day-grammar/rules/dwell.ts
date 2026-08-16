@@ -43,7 +43,26 @@ export function checkDwell(day: GrammarDay, ctx: GrammarContext): Violation[] {
       continue;
     }
 
-    const range = ctx.params.dwellMinutes[category.value];
+    /**
+     * A COMPOSITE BLOCK is governed by its own curated range, not by the
+     * category table (XXX-38, Session 14 CP1 — a ruled OWNER SWAP).
+     *
+     * `parks.max` is 150 minutes, written for an afternoon in a park. Golden
+     * Day 7's centre is eight hours on the Toronto Islands, containing named
+     * micro-activities — so the founder's own verified day would be REJECTED
+     * by a ceiling that was never about it. The category table is not wrong;
+     * it is answering a different question.
+     *
+     * The swap is not an exemption. `dwell.overstay` still fires, against the
+     * `ExperienceSpec`'s own max: a composite anchor is bounded by CURATION
+     * rather than unbounded. And it is recorded as a ruling because an
+     * unrecorded LOOSENING is the same offence as an unrecorded tightening —
+     * the standard `TEMPLATE_INVARIANTS.lastStep` cost this codebase once.
+     */
+    const categoryRange = ctx.params.dwellMinutes[category.value];
+    const composite = slot.compositeDwell !== undefined;
+    const range: { min: number; max: number } =
+      slot.compositeDwell ?? categoryRange;
     const minutes = durationOf(spanOf(slot));
 
     if (minutes > range.max) {
@@ -51,13 +70,18 @@ export function checkDwell(day: GrammarDay, ctx: GrammarContext): Violation[] {
         violation(
           "dwell.overstay",
           [slot.id],
-          `${label} gives ${name} ${minutes} minutes; ${minutes - range.max} more than the ${range.max}-minute ceiling for ${category.value.replace("_", " ")} (typical stay ${range.typical}).`,
+          composite
+            ? `${label} gives ${name} ${minutes} minutes; ${minutes - range.max} more than the ${range.max}-minute ceiling this experience declares for its composite block.`
+            : `${label} gives ${name} ${minutes} minutes; ${minutes - range.max} more than the ${range.max}-minute ceiling for ${category.value.replace("_", " ")} (typical stay ${categoryRange.typical}).`,
           {
             placeId: place.id,
             category: category.value,
             minutes,
             maxMinutes: range.max,
-            typicalMinutes: range.typical,
+            // The bound's OWNER, so a reader of the finding knows which
+            // number was consulted rather than assuming the category table.
+            boundedBy: composite ? "composite_block" : "category",
+            ...(composite ? {} : { typicalMinutes: categoryRange.typical }),
           },
         ),
       );
@@ -66,13 +90,16 @@ export function checkDwell(day: GrammarDay, ctx: GrammarContext): Violation[] {
         violation(
           "dwell.understay",
           [slot.id],
-          `${label} gives ${name} only ${minutes} minutes; ${category.value.replace("_", " ")} need at least ${range.min} (typical stay ${range.typical}).`,
+          composite
+            ? `${label} gives ${name} only ${minutes} minutes; this experience's composite block needs at least ${range.min}.`
+            : `${label} gives ${name} only ${minutes} minutes; ${category.value.replace("_", " ")} need at least ${range.min} (typical stay ${categoryRange.typical}).`,
           {
             placeId: place.id,
             category: category.value,
             minutes,
             minMinutes: range.min,
-            typicalMinutes: range.typical,
+            boundedBy: composite ? "composite_block" : "category",
+            ...(composite ? {} : { typicalMinutes: categoryRange.typical }),
           },
         ),
       );

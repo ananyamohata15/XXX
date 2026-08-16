@@ -120,6 +120,27 @@ export const SLOT_ROLES = [
   "contrast",
   "close",
   "meal",
+  /**
+   * The stop that exists BECAUSE of another stop (XXX-38, Session 14).
+   *
+   * Golden Day 7's own trap list: *"Skipping provisioning (the grocery stop
+   * exists BECAUSE of the picnic — causality)"*. A provision stop is not a
+   * warmup and not a contrast — it has no interest in being either, and
+   * calling it one would lose exactly the causal relationship that makes it
+   * narratable. It is always upstream of the experience it serves.
+   */
+  "provision",
+  /**
+   * A deliberate return to lodging (XXX-42, Session 14).
+   *
+   * Distinct from free time, which is `OpenPeriod` and is not a stop. A rest
+   * stop IS a stop: it has a place (the hotel), a duration, and a reason —
+   * either accumulated physical load or preparation for the evening ahead.
+   * Session 11's `structure.reset-gap-without-lodging` advisory exists
+   * because we could not vouch for a gap; with lodging known, this is the
+   * gap being vouched for.
+   */
+  "rest",
 ] as const;
 export type SlotRole = (typeof SLOT_ROLES)[number];
 

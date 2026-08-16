@@ -175,15 +175,91 @@ export function templatesForDraw(
  * symptom. Seed still varies the draw, so one persona on two dates gets
  * two shapes — the property the arc needs to avoid trip-level monotony.
  */
-export function pickTemplate(persona: Persona, seed: number): ArcTemplate {
-  return templateForDraw(
-    {
-      identity: personaIdentity(persona),
-      structure: persona.structure,
-      pace: persona.pace,
-    },
-    seed,
+export function pickTemplate(
+  persona: Persona,
+  seed: number,
+  /**
+   * Restricts the draw to templates that can hold this shape (XXX-40).
+   *
+   * A THREAD needs at least two discretionary positions, because its spine is
+   * 2–3 same-family stops and `THREAD_INVARIANTS.threadMinStops` says a
+   * one-stop spine is a venue day with extra words. Measured before it was
+   * added: `relaxed-a` has no `contrast` step, so `day-3-winter` and
+   * `persona-scenic` drew a history-thread day whose whole "tour" was a
+   * single historic site — precisely the shape the founder ruled cannot
+   * carry a day.
+   *
+   * Returns null rather than throwing when nothing matches, so the caller
+   * decides whether a themeless fallback or an honest failure is right.
+   */
+  requires?: (template: ArcTemplate) => boolean,
+): ArcTemplate {
+  const draw = {
+    identity: personaIdentity(persona),
+    structure: persona.structure,
+    pace: persona.pace,
+  };
+  if (requires === undefined) return templateForDraw(draw, seed);
+  const options = templatesForDraw(draw).filter(requires);
+  if (options.length === 0) return templateForDraw(draw, seed);
+  const key = (draw.identity ^ (Math.abs(seed) >>> 0)) >>> 0;
+  return options[key % options.length];
+}
+
+/**
+ * Templates that can hold a THREAD.
+ *
+ * Two requirements, and the second was found by measuring rather than by
+ * reasoning:
+ *
+ *  1. a `contrast` step, so the spine has its second stop. Without it the
+ *     "tour" is one historic site, which is exactly the shape the founder
+ *     ruled cannot carry a day.
+ *  2. a `warmup` or a `close`, so the day has a THIRD TEXTURE. A spine is
+ *     same-family by construction and meals are all `table`, so a template
+ *     of `[meal, anchor, contrast, meal]` — `relaxed-d` — produces a
+ *     two-family day and trips `pacing.minTextureFamilies`. Measured:
+ *     `persona-scenic` drew exactly that and came back at 2.
+ *
+ * A thread breaks anti-alternation ON PURPOSE at its spine; it does not get
+ * to break the texture floor as a side effect.
+ */
+export function holdsAThread(template: ArcTemplate): boolean {
+  return (
+    template.steps.includes("contrast") &&
+    (template.steps.includes("warmup") || template.steps.includes("close"))
   );
+}
+
+/**
+ * Can this traveller's template set hold this shape at all?
+ *
+ * **Wanderers cannot hold a thread**, and that is a real answer rather than
+ * a gap to paper over: no wanderer template carries a `contrast` step,
+ * because the CP1 ruling gave wanderers three intents and negative space.
+ * A 2–3 stop scheduled spine is in tension with that shape by design.
+ *
+ * Returned as a feasibility fact so theme SELECTION can filter on it — the
+ * funnel rule, filter first then roll — and so a REQUESTED thread for a
+ * wanderer fails honestly instead of silently degrading to a one-stop
+ * "tour". Adding a wanderer-thread template is a founder call about what a
+ * drifting history day even is, not something to invent here.
+ */
+export function templatesHolding(
+  persona: Persona,
+  requires: (template: ArcTemplate) => boolean,
+): ArcTemplate[] {
+  return templatesFor(persona).filter(requires);
+}
+
+/**
+ * Templates that can hold a multi-hour composite block without the day
+ * collapsing around it. A template already carrying two contrast steps has
+ * committed its afternoon to variety, which is the opposite of what an
+ * experience day wants.
+ */
+export function holdsAnExperience(template: ArcTemplate): boolean {
+  return template.steps.filter((s) => s === "contrast").length <= 1;
 }
 
 /**

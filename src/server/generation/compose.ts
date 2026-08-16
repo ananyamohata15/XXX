@@ -56,6 +56,12 @@ import {
   gravityDominance,
   type Persona,
 } from "@/shared/persona";
+import {
+  VENUE_THEME,
+  experienceSpec,
+  threadSpec,
+  type DayTheme,
+} from "@/shared/theme";
 import { minutesToTime, timeToMinutes } from "@/shared/time";
 import {
   CATEGORY_FAMILY,
@@ -69,6 +75,8 @@ import {
   ANCHOR_ELECTOR_SOURCE,
   closeCategories,
   electAnchor,
+  holdsAThread,
+  holdsAnExperience,
   isEveningViable,
   pickContrast,
   pickTemplate,
@@ -315,9 +323,29 @@ export function buildSkeleton(
      * (XXX-35 CP2 ruling 1).
      */
     excludeAnchorCategories?: readonly PlaceCategory[];
+    /**
+     * The day's THEME — the organizing mode above the arc (XXX-40).
+     *
+     * Ratified at Session 14 CP0 as belonging HERE: `buildSkeleton` is the
+     * single owner of the three things a theme must be able to change —
+     * template family, palette, and anchor mode — and nothing downstream can
+     * widen any of them. `buildMenus` filters within `intent.categories`, the
+     * selector picks within the menu, and `composeDay` seats what it is
+     * given.
+     *
+     * Defaults to `venue`, which is today's arc unchanged. That default is an
+     * ACCEPTANCE CRITERION, not a convenience: a venue day must be
+     * byte-identical to the pre-theme output for the same (persona, date,
+     * seed), so the theme layer cannot have broken themeless days.
+     */
+    theme?: DayTheme;
   },
 ): Skeleton {
   const persona = request.persona;
+  const theme = options.theme ?? VENUE_THEME;
+  const experience =
+    theme.mode === "experience" ? experienceSpec(theme.experienceId) : null;
+  const thread = theme.mode === "thread" ? threadSpec(theme.threadId) : null;
   const defaults = DEFAULT_DAY[persona.pace];
   const daySpan: Span = {
     start: timeToMinutes(request.dayStart ?? defaults.start),
@@ -332,7 +360,20 @@ export function buildSkeleton(
   const mealPattern = request.mealPattern ?? defaultMealPattern(persona);
   const pattern = GRAMMAR_PARAMS.mealPatterns[mealPattern];
   const seed = options.seed;
-  const template = pickTemplate(persona, seed);
+  /**
+   * THE TEMPLATE FAMILY IS A THEME'S FIRST LEVER (XXX-40, CP1 §1.1). A
+   * thread needs two discretionary positions for its spine; an experience
+   * needs a template that does not fight a multi-hour block.
+   */
+  const template = pickTemplate(
+    persona,
+    seed,
+    thread !== null
+      ? holdsAThread
+      : experience !== null
+        ? holdsAnExperience
+        : undefined,
+  );
 
   /**
    * One dice key per (site, context) — the funnel rule's machinery.
@@ -348,7 +389,20 @@ export function buildSkeleton(
     diceStream({ seed, identity, site, context: `${request.date}|${context}` });
 
   const hasUserAnchor = (request.anchors ?? []).length > 0;
-  const elected: ElectedAnchor | null = hasUserAnchor
+  /**
+   * A THEME pre-empts election exactly as a user anchor does, and for the
+   * same reason (XXX-40).
+   *
+   * `electAnchor` answers "which category is this traveller's day centred
+   * on". A thread has already answered it — the narrative IS the anchor — and
+   * an experience has answered it with a composite block. Electing a second
+   * centre would be the duplicate ownership XXX-27 exists to prevent, and the
+   * founder's own ruling is the reason the question is malformed for these
+   * days: *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE MUSEUM ... BUT A
+   * HISTORY TOUR OF TORONTO WOULD BE AN ANCHOR"*.
+   */
+  const themeOwnsAnchor = experience !== null || thread !== null;
+  const elected: ElectedAnchor | null = hasUserAnchor || themeOwnsAnchor
     ? null
     : electAnchor(persona, {
         exclude: options.excludeAnchorCategories ?? [],
@@ -392,10 +446,27 @@ export function buildSkeleton(
 
   /** Nominal needs. Deliberately coarse: layout only needs a shape. */
   const NOMINAL: Record<Exclude<ArcStep, "meal">, number> = {
-    anchor: elected?.dwellMinutes ?? 120,
+    /**
+     * A composite block asks for its curated minimum, not a category's
+     * typical (XXX-38). Asking for the MIN rather than the max is deliberate:
+     * layout has to fit inside a real day, and golden Day 7's own eight hours
+     * come from the seating below widening to the block's max where the
+     * window allows. Asking for 480 up front would drop the anchor from every
+     * template whose slice is shorter.
+     */
+    anchor: experience?.anchor.dwell.min ?? elected?.dwellMinutes ?? 120,
     warmup: 45,
     contrast: 90,
     close: 90,
+    /**
+     * A provisioning stop is an errand with a purpose (XXX-38): long enough
+     * to pick up a picnic and a bottle, short enough that it never reads as
+     * an activity. `grocery.typical` is 25 and that is the right number —
+     * this step is the one place the category table and the role agree.
+     */
+    provision: 25,
+    /** A hotel reset that is worth going back for (XXX-42). */
+    rest: 60,
     open: OPEN_PERIOD_MINUTES,
   };
 
@@ -416,16 +487,42 @@ export function buildSkeleton(
    * grammar itself already enforces.
    */
   const NOMINAL_MIN: Record<Exclude<ArcStep, "meal">, number> = {
-    anchor: Math.min(elected?.dwellMinutes ?? 120, 60),
+    anchor: experience
+      ? experience.anchor.dwell.min
+      : Math.min(elected?.dwellMinutes ?? 120, 60),
     warmup: 20,
     contrast: 30,
     close: 45,
+    provision: 10,
+    /**
+     * Below three quarters of an hour a "reset" is a detour to drop bags.
+     * That may be worth doing, but it is not the rest the load trigger is
+     * answering, and calling it one would make the reason a lie.
+     */
+    rest: 45,
     open: OPEN_PERIOD_MINUTES,
   };
 
   let mealCursor = 0;
   const steps: Step[] = [];
+  /**
+   * PROVISIONING is inserted ahead of the anchor, never appended (XXX-38).
+   *
+   * Golden Day 7's trap list names the failure directly: *"Skipping
+   * provisioning (the grocery stop exists BECAUSE of the picnic —
+   * causality)"*. Causality has a direction, and a supplies stop placed after
+   * the picnic is not a late stop — it is a different, incoherent day. So the
+   * step is dealt into the template stream immediately before `anchor` rather
+   * than left to the layout to place.
+   */
+  const withProvisioning: ArcStep[] = [];
   for (const step of template.steps) {
+    if (step === "anchor" && experience?.provisioning !== undefined) {
+      withProvisioning.push("provision");
+    }
+    withProvisioning.push(step);
+  }
+  for (const step of withProvisioning) {
     if (step === "meal") {
       const window = windows[mealCursor];
       if (window === undefined) continue; // fewer windows than steps: honest drop
@@ -718,16 +815,41 @@ export function buildSkeleton(
       // A meal's window comes from the pattern, so it is already legal at
       // its hour; the evening filter would only ever narrow dinner to
       // restaurants, which it already is.
+    } else if (item.step === "provision") {
+      /**
+       * The stop that exists BECAUSE of the anchor (XXX-38). Its category is
+       * the spec's, not a draw: a picnic needs a grocer, and offering the die
+       * a choice here would be pretending there is one.
+       */
+      categories = [experience!.provisioning!.category];
+      label = "provisioning";
     } else if (item.step === "anchor") {
+      /**
+       * A THEME owns the anchor when it has one (XXX-40).
+       *
+       * An experience's composite block draws from its curated categories; a
+       * thread's spine takes the anchor position and the contrast beside it.
+       * Neither consults `electAnchor`, because both have already answered
+       * the question it asks.
+       */
       // The elected category is not negotiable — it is the day's centre.
       // If it cannot be open at this hour the hard filters will say so and
       // the intent goes unfilled honestly, which is a visible thin day
       // rather than a silently different one.
       categories =
-        elected !== null
-          ? [elected.category]
-          : rankedActivityCategories(persona, rollFor("activity", "anchor"));
-      label = "the day's anchor";
+        experience !== null
+          ? [...experience.anchor.categories]
+          : thread !== null
+            ? [...thread.spine.categories]
+            : elected !== null
+              ? [elected.category]
+              : rankedActivityCategories(persona, rollFor("activity", "anchor"));
+      label =
+        experience !== null
+          ? experience.label
+          : thread !== null
+            ? thread.label
+            : "the day's anchor";
     } else if (item.step === "warmup") {
       // THE FUNNEL RULE. The die is rolled here, at the point of use, over
       // the options that have already survived both narrowings — never
@@ -742,6 +864,24 @@ export function buildSkeleton(
         (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
       label = "warm-up";
+    } else if (item.step === "contrast" && thread !== null) {
+      /**
+       * A THREAD's spine occupies the contrast position too — roles adapt.
+       *
+       * This is the one place a theme deliberately BREAKS the arc's own
+       * anti-alternation rule, and it is the reason threads need machinery
+       * rather than a cleverer `pickContrast`: a spine is same-family by
+       * construction, and `pickContrast` structurally forbids a second stop
+       * in the anchor's family. The founder ruled that a history TOUR is an
+       * anchor where a single historic site is not, and a tour is exactly
+       * two or three culture stops in a row.
+       *
+       * The texture floor is not abandoned — the meals and the close still
+       * bring their own families, and `pacing.minTextureFamilies` still
+       * governs the finished day.
+       */
+      categories = [...thread.spine.categories];
+      label = thread.label;
     } else if (item.step === "contrast") {
       const at = String(item.window.start);
       const anchorCategory =
@@ -796,17 +936,39 @@ export function buildSkeleton(
 
     const primary = categories[0];
     usedFamilies.add(CATEGORY_FAMILY[primary]);
+    /**
+     * A COMPOSITE BLOCK is sized by its own curated range (XXX-38, the ruled
+     * owner-swap) and takes as much of its window as the day allows, up to
+     * that range's max. An ordinary anchor takes its elected dwell.
+     */
+    const composite = item.step === "anchor" ? experience?.anchor.dwell : undefined;
     const dwell =
-      item.step === "anchor" && elected !== null
-        ? elected.dwellMinutes
-        : item.step === "meal"
-          ? item.need
-          : GRAMMAR_PARAMS.dwellMinutes[primary].typical;
+      composite !== undefined
+        ? Math.min(composite.max, spanMinutes(item.window))
+        : item.step === "anchor" && elected !== null
+          ? elected.dwellMinutes
+          : item.step === "meal"
+            ? item.need
+            : GRAMMAR_PARAMS.dwellMinutes[primary].typical;
     const fitted = Math.min(dwell, spanMinutes(item.window));
-    if (fitted < GRAMMAR_PARAMS.dwellMinutes[primary].min) {
+    /**
+     * The floor a composite block must clear is ITS OWN, not the category's.
+     * `parks.min` is 20 minutes, which an eight-hour island block would clear
+     * trivially — and clearing it would let a 30-minute "composite" ship as
+     * one. The spec's min is the number that says whether this is still the
+     * experience it claims to be.
+     */
+    const floorMinutes =
+      composite !== undefined
+        ? composite.min
+        : GRAMMAR_PARAMS.dwellMinutes[primary].min;
+    if (fitted < floorMinutes) {
       dropped.push({
         step: item.step,
-        reason: `${primary} needs ${GRAMMAR_PARAMS.dwellMinutes[primary].min}min and the window holds ${spanMinutes(item.window)}min`,
+        reason:
+          composite !== undefined
+            ? `the composite block needs ${floorMinutes}min and the window holds ${spanMinutes(item.window)}min`
+            : `${primary} needs ${floorMinutes}min and the window holds ${spanMinutes(item.window)}min`,
       });
       continue;
     }
@@ -815,6 +977,7 @@ export function buildSkeleton(
     // and that is how a 20-minute park became an anchor in silence.
     if (
       item.step === "anchor" &&
+      composite === undefined &&
       fitted < COMPOSE_PARAMS.anchor.minDwellMinutes
     ) {
       anchorDegraded = {
@@ -845,6 +1008,7 @@ export function buildSkeleton(
       dwellMinutes: fitted,
       role: item.step,
       ...(licensed === undefined ? {} : { licensedCategory: licensed }),
+      ...(composite === undefined ? {} : { composite }),
     });
     lastIntentId = id;
   }
@@ -1353,6 +1517,11 @@ export function composeDay(input: ComposeInput): ComposedDay {
         placeId: place.id,
         arriveBy,
         ...(intent.role === undefined ? {} : { role: intent.role }),
+        // The composite bound travels with the SLOT, because the validator
+        // reads slots and must know which owner bounded this dwell.
+        ...(intent.composite === undefined
+          ? {}
+          : { compositeDwell: intent.composite }),
       });
       cursor = seat.start + seat.dwell;
       prevCoords = place.coords;
