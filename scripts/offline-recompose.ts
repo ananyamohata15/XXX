@@ -62,6 +62,13 @@ async function main(): Promise<void> {
   let seated = 0;
   const rows: string[] = [];
   const roleSeq = new Map<string, string[]>();
+  /**
+   * REST FIRE-RATE (XXX-42, Session 14 ruling): reported so drift in either
+   * direction is visible. A rare intervention that silently becomes common
+   * is as wrong as one that silently stops firing — and the second is what
+   * this session's first build did, undetected by five green tests.
+   */
+  const restFired = new Map<string, string | null>();
   const catSeq = new Map<string, string[]>();
   const venues = new Map<string, Set<string>>();
   const templateHasClose = new Map<string, boolean>();
@@ -163,8 +170,15 @@ async function main(): Promise<void> {
      * engine's path and MIRRORS ITS SEQUENCE. An instrument that omits an
      * input the engine always supplies is measuring a different engine.
      */
+    const composedRequest: GenerationRequest = {
+      ...request,
+      // The rest stop needs lodging to have anywhere to be. The harness
+      // measures the fire-rate WITH lodging known, which is the condition
+      // the metric is about; the lodging-unknown path is asserted in tests.
+      lodging: { lat: 43.6517, lng: -79.3817 },
+    };
     const composed = composeDay({
-      request,
+      request: composedRequest,
       skeleton,
       selections,
       candidatesById: byId,
@@ -175,6 +189,10 @@ async function main(): Promise<void> {
       ),
     });
 
+    restFired.set(
+      key,
+      composed.restReason === null ? null : composed.restReason.trigger,
+    );
     roleSeq.set(
       key,
       composed.day.slots.map((sl) => sl.role ?? "?"),
@@ -186,9 +204,7 @@ async function main(): Promise<void> {
     // the thing this metric is about.
     catSeq.set(
       key,
-      composed.day.slots.map(
-        (sl) => byId.get(sl.placeId)?.category ?? "?",
-      ),
+      composed.day.slots.map((sl) => byId.get(sl.placeId)?.category ?? "?"),
     );
     venues.set(key, new Set(composed.day.slots.map((sl) => sl.placeId)));
     templateHasClose.set(
@@ -270,10 +286,28 @@ async function main(): Promise<void> {
    * 0.693, Session 11 0.711, Session 13 CP1 0.614) are retained as
    * old-instrument history and are NOT comparable to this number.
    */
+  /**
+   * STRUCTURAL roles, excluded from the discretionary sequence.
+   *
+   * `meal` was the original exclusion and the reasoning generalises: a
+   * discretionary position is one where a CONCIERGE CHOSE A CATEGORY. Session
+   * 14 added two roles that are not choices of that kind, and both would
+   * corrupt the metric if counted:
+   *
+   *   `rest`      — the venue is the hotel. It is not in the candidate pool,
+   *                 so its category reads "?" and two days that both rest
+   *                 would score as sharing a discretionary choice they never
+   *                 made. Caught the moment the fire-rate metric landed: the
+   *                 comparable-pair count moved 21 -> 16 on a change that
+   *                 altered no category decision anywhere.
+   *   `provision` — the category comes from the ExperienceSpec, not a draw.
+   *                 Counting a determined value as a choice measures the spec.
+   */
+  const STRUCTURAL_ROLES = new Set(["meal", "rest", "provision"]);
   const discretionaryOf = (key: string): string[] => {
     const roles = roleSeq.get(key)!;
     const cats = catSeq.get(key)!;
-    return cats.filter((_, i) => roles[i] !== "meal");
+    return cats.filter((_, i) => !STRUCTURAL_ROLES.has(roles[i]));
   };
 
   let dSum = 0, dMax = 0, dN = 0, dWorst = "";
@@ -377,6 +411,11 @@ async function main(): Promise<void> {
   console.log(
     `  closes [restated: seated / templates WITH a close step]: ${closes}/${wanted.length}` +
       ` → ${closes === wanted.length ? "PASS" : "MISS"}   (raw, for the record: ${raw}/${keys.length})`,
+  );
+  const restCount = [...restFired.values()].filter((t) => t !== null).length;
+  console.log(
+    `  rest fire-rate [lodging known]: ${restCount}/${keys.length}` +
+      `   ${[...restFired.entries()].filter(([, t]) => t !== null).map(([k, t]) => `${k}:${t}`).join(" ") || "(none)"}`,
   );
   console.log(`  role sequences:`);
   for (const k of keys) console.log(`    ${k.padEnd(17)}${roleSeq.get(k)!.join(">")}`);
