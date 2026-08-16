@@ -572,6 +572,392 @@ which is why it stands.
   unmeasured. Menu allocation should make it bite; that is the moment to
   re-measure it.
 
+## Step 1 — Design (CHECKPOINT 1)
+
+Everything below is a PROPOSAL. Nothing here is built yet.
+
+### 1.1 `DayTheme` — the type, and what it is allowed to change
+
+`src/shared/theme.ts` (shared law: no I/O, no React, dependency-light).
+A discriminated union, not flags — CLAUDE.md's standing preference:
+
+```ts
+export type DayTheme =
+  | { mode: "venue" }                                   // today's arc, unchanged
+  | { mode: "thread"; threadId: ThreadId }              // the narrative IS the anchor
+  | { mode: "experience"; experienceId: ExperienceId }; // the composite block
+```
+
+Thread and experience definitions are CURATED DATA in the shape of
+`ARC_TEMPLATES` — literal rows, no DSL, every row asserted against invariants
+in tests:
+
+```ts
+interface ThreadSpec {
+  id: ThreadId; label: string;
+  spine: { categories: PlaceCategory[]; minStops: 2; maxStops: 3 };
+  zones?: ThemeZoneSlug[];        // §1.4
+  absorbsMeals?: number;          // §1.3 — declared, unused in v1
+}
+interface ExperienceSpec {
+  id: ExperienceId; label: string;
+  anchor: { categories: PlaceCategory[]; dwell: { min: 240; max: 480 };
+            microActivities: string[] };
+  provisioning?: { category: "grocery"; reason: string };
+  legs?: { mode: "ferry"; routeKey: string };
+  zones: ThemeZoneSlug[];
+  requiresGoodWeather: boolean;
+}
+```
+
+**What the theme changes, per mode** — and it changes nothing else:
+
+| | template family | anchor mode | palette | geography |
+|---|---|---|---|---|
+| `venue` | today's `templatesFor` | `electAnchor` | today's draws | lens |
+| `thread` | templates with >=2 discretionary steps | **bypassed** — the spine IS the anchor | spine categories at anchor+contrast | spec or lens |
+| `experience` | templates that can hold a long anchor | **bypassed** — composite block | spec anchor + provisioning upstream | **spec** |
+
+`buildSkeleton(request, { seed, theme })`. Ratified at CP0 as the single owner
+of all three.
+
+**The `venue` regression guarantee, stated as an AC:** a `{mode:"venue"}` day
+must be byte-identical to today's output for the same (persona, date, seed).
+`themeId` is the only thing that appears in the trace.
+
+### 1.2 Selection — requested or derived
+
+```ts
+export type ThemeSelection =
+  | { origin: "requested"; theme: DayTheme }
+  | { origin: "derived"; theme: DayTheme; reason: string };
+```
+
+The tasting room's picker offers the concrete themes plus **"concierge's
+choice"**, which is not a theme — it is the ABSENCE of a request, and falls
+through to derivation. Recorded that way so the room cannot express a fourth
+mode by accident.
+
+Derivation follows the FUNNEL RULE — filter first, then roll:
+
+1. **Feasibility gates** (facts, not preferences): season (is the ferry route
+   present for this date, from the city-facts table), weather (an experience
+   with `requiresGoodWeather` needs a clear window — this is the founder's
+   *"if the weather is good"* as a SELECTION input, argued), daylight (a
+   sunset-side experience needs a sunset at a civilised hour), transport (a
+   ferry route needs the traveller to accept it).
+2. **Weight by persona affinity** — a thread by its spine's affinity, an
+   experience by its anchor categories'. `{mode:"venue"}` is always eligible
+   and carries the persona's own best non-food affinity, so a themeless day
+   competes on the same scale rather than being a fallback.
+3. **Roll** `weightedOrderBy(..., COMPOSE_PARAMS.dice.theme)`, seeded by the
+   S12 dice at site `"theme"`, context = the date. Take the head.
+
+Proposed `dice.theme = 0.25`. Argued: a theme is a bigger commitment than a
+contrast (0.3) and a smaller one than an anchor (0.05) — it should follow
+gravity firmly but not be immovable, or every nature-first persona gets the
+islands every time.
+
+**Recorded in the trace and the outcome**: `theme_mode`, `theme_id`,
+`theme_origin`, `theme_reason`, and the feasibility gates that FAILED. A theme
+that was refused for weather is a thing a reviewer must be able to see.
+
+### 1.3 Composition rule of record — meals are connective tissue
+
+> **Meals and coffee are never the theme.** They are the day's connective
+> tissue; the theme is what the day is FOR.
+
+Founder verbatim, and this session's own measurement agrees: **0.417 of the
+0.577 raw category-sequence overlap is the meal pattern alone.** A day
+organised around eating three times is not organised.
+
+Enforced, not just written: `THREAD_INVARIANTS` / `EXPERIENCE_INVARIANTS`
+assert that no spec's spine or composite anchor names a category in
+`GRAMMAR_PARAMS.pacing.foodCategories` — the same shape as
+`TEMPLATE_INVARIANTS`, asserted per row rather than over the set (CLAUDE.md).
+
+Thread days: the thread deals its spine into DISCRETIONARY positions only;
+meals interleave from the pattern exactly as today.
+
+**The food-crawl tension, stated rather than silently resolved.** The brief
+names "food crawl" as a thread. A crawl's spine IS food, which collides with
+the rule above and with `pacing.maxFoodStops` (4) — three pattern meals plus a
+three-stop crawl is six food stops. The mechanism that resolves it is
+`ThreadSpec.absorbsMeals`: a crawl reduces the pattern's meal step count by
+the number of spine stops it contributes. **Declared in the type, not built
+in v1** — this session ships the culture thread the exam actually needs, and
+the crawl arrives when a founder-drafted golden day defines what one is. No
+speculative abstraction; the interface does not preclude it.
+
+### 1.4 Zone geography — the theme's own door
+
+`zonesFor` gains a theme argument, with precedence stated once:
+
+```
+user anchors  >  theme zones  >  lens bucket
+```
+
+The lens remains the themeless default (CP0 ruling 2).
+
+**`THEME_ZONES` is a SEPARATE list from `ANCHORS`, and that is the whole
+design.** Adding `toronto_islands` to `ANCHORS` would have three silent
+consequences, all of them the vocabulary-widening failure this session has
+already hit twice:
+
+1. the `icons_with_corners` lens takes `[...ANCHORS]`, so **every**
+   mixed-lens day would suddenly draw island venues;
+2. `discovery/plan.ts` iterates `ANCHORS x CATEGORIES`, so the next paid
+   discovery run would silently gain ~10 cells of spend;
+3. `nearestZone` would start labelling waterfront places with an island
+   neighbourhood.
+
+Separate lists, unioned only when a theme asks. Mainland days are provably
+unaffected.
+
+```ts
+const THEME_ZONES = [
+  { slug: "toronto_islands", label: "Toronto Islands",
+    lat: 43.6205, lng: -79.3785, radiusM: 2500 },
+] as const;
+```
+
+Checked against the pool: that circle reaches `Hanlan's Point Beach`
+(1.30 km), `Gibraltar Point Lighthouse` (0.85 km), `Ward's Island` (2.13 km)
+and `Toronto Islands` itself (0.24 km) — the 30 identities CP0 measured as
+out-of-zone come in, and **no `ZONE_SLACK_KM` was touched.**
+
+**Consequence to sanction at close-out:** the islands are NOT in the Sep 1-3
+discovery run unless someone adds them deliberately. Recorded beside the
+XXX-25 work order.
+
+### 1.5 The family licence — ONE mechanism, two clients
+
+S13 §5.4c left *"persona intensity as a licence"* open for the single-venue
+anchor exception (*"only if someone is a die hard museum fan"*). CP0's A/B
+produced a second client: a close can never share the anchor's family, so a
+persona's strongest interest is structurally barred from the day's ending.
+
+One mechanism, in `src/shared/persona.ts`:
+
+```ts
+export interface GravityDominance {
+  category: PlaceCategory;
+  /** top affinity minus the best affinity of any OTHER family. */
+  margin: number;
+  dominant: boolean;
+}
+export function gravityDominance(persona: Persona): GravityDominance;
+```
+
+Proposed `COMPOSE_PARAMS.persona.dominanceMargin = 0.4`, versioned and Tier 3.
+Argued rather than picked: `GRAVITY_WEIGHTS` steps by **0.35**, so a margin
+above one whole declared rank is the honest definition of "this traveller's
+first interest is not close to their second". 0.4 leaves headroom above the
+knife-edge — and the knife-edge is not hypothetical, it is exactly the
+`night >= 0.35` defect Session 12 deleted.
+
+**Client 1 — the family licence (this session).** When `dominant` holds and
+the licensed category shares the anchor's family, `demoteRatherThanDrop` does
+not demote it for the CLOSE step.
+
+Texture rules still bind, and this is the part that makes it safe:
+`rhythm.alternating-texture` still forbids A-B-A-B, and
+`pacing.minTextureFamilies` (3) still applies. So a licensed day is
+`anchor(F) ... close(F)` with at least three families in between — **a
+bookend, not an alternation.** The founder's own shopper example, Yorkville by
+day and the Eaton Centre class in the evening, is a bookend.
+
+**Client 2 — the single-venue anchor exception (NOT built this session).** The
+same `dominant` predicate is the licence for a single museum, historic site or
+market to carry a day. It needs the composite/theme anchor to exist first,
+which is what this session builds; the call site is named so the next session
+wires one predicate rather than inventing a second.
+
+Applies chiefly to DERIVED days — a requested theme carries an explicit
+palette and does not consult the licence.
+
+### 1.6 Lodging topology (XXX-42)
+
+**Lodging becomes a PLACE.** One mechanism serves four requirements that would
+otherwise need four:
+
+- the first leg `lodging -> stop1` becomes a real recorded `ComposedLeg`
+  (today it is priced and thrown away — `recordLeg` needs a `prevPlaceId`);
+- the return leg is priced and must fit inside `daySpan.end`; if it does not,
+  the composer shortens or drops the close rather than shipping a day the
+  traveller cannot end;
+- a REST STOP has somewhere to be — `slots.place_id` is NOT NULL, and a rest
+  stop at the hotel is a slot at a place;
+- honest absence stays honest: **lodging unset -> behaviour is unchanged**,
+  and the tasting room says so on the page rather than defaulting to downtown.
+
+`SLOT_ROLES` gains `rest`. Triggers, both versioned in `COMPOSE_PARAMS.rest`:
+
+- **(a) physical load** — cumulative walking + commute minutes since day start
+  crosses `physicalLoadMinutes` (proposed **150**, Tier 3, founder's eye at
+  CP4). Dealt into the next gap that already meets `resetGapMinutes` (90).
+- **(b) event-prep** — the next slot is the fancy-dinner class, defined
+  honestly and narrowly as **price band in the top band for the trip's budget
+  AND window start >= 19:00 AND category `restaurants`**. Named as a
+  three-part test rather than a vibe, per the brief.
+
+**The S11 advisory upgrades.** `structure.reset-gap-without-lodging` fires
+today because we cannot vouch for a gap. With lodging known, the gap becomes a
+PLACED rest stop with a reason, and the advisory is not emitted. Lodging
+unknown keeps the advisory unchanged. Morning slots bias toward lodging via a
+small `wLodging` term on the FIRST discretionary seat only — Tier 3,
+versioned, and off when lodging is null.
+
+### 1.7 Experience machinery (XXX-38, as the EXPERIENCE theme's machinery)
+
+- **Composite anchor block.** `SlotIntent.composite?: { minutes, microActivities }`.
+  The seated slot carries its micro-activities as NARRATION, not sub-slots
+  (brief, verbatim). Dwell 4-8h comes from the spec.
+
+  **This breaks a constant, and the constant is named now rather than
+  discovered later:** `GRAMMAR_PARAMS.dwellMinutes.parks.max` is **150**, so
+  `dwell.overstay` rejects an 8-hour island day. `anchorDwellFor` clamps to
+  the same ceiling. Both assumed a stop is a stop. A composite block is not,
+  and the grammar must learn the difference — **proposed as a RULING, not
+  slipped in**: `dwell.overstay` exempts slots carrying a composite block, and
+  the block's own min/max governs. An unrecorded tightening is legislation
+  nobody voted for, and so is an unrecorded loosening.
+
+- **Provisioning role.** `SLOT_ROLES` gains `provision`; category `grocery`
+  (already `NON_ANCHOR`, already dwelled 10/25/45 by S13 — that groundwork
+  was laid for exactly this). Placed UPSTREAM of the experience it serves and
+  the causality is narrated: the picnic supplies exist BECAUSE of the picnic.
+
+- **Ferry as a mode.** `ferry` joins `TRANSPORT_MODES`, and its estimate comes
+  from the city-facts timetable rather than a speed model — it is the first
+  SCHEDULED mode. **Vocabulary-widening census owed at build time**: every
+  list that enumerated the four modes must be found and ruled on
+  (`modeFor`, `SHELTERED_MODES`, the exposure caps, the travel matrix, the
+  timeline's mode labels). This session has hit that failure four times; the
+  census is written into the build plan, not left to memory.
+
+- **Travel-as-experience.** `ComposedLeg.experiential?: { reason: string }` —
+  the ferry is narrated as part of the day, not as a cost.
+
+- **Seasonal infeasibility is an HONEST FAILURE.** Winter -> the Hanlan's
+  route is absent from the city facts -> the experience theme is infeasible ->
+  `generateDay` returns a themed failure naming the reason. It does **not**
+  silently fall back to a venue day. That is constraint 4 pointed at our own
+  scheduling.
+
+### 1.8 The city-scoped facts table (CP0 ruling 3)
+
+Forward-only migration, first tenant the founder-verified ferry timetable:
+
+```sql
+create table city_facts (
+  id          uuid primary key default gen_random_uuid(),
+  city        text        not null,
+  fact_kind   text        not null,   -- 'ferry_timetable'
+  subject_key text        not null,   -- route/mode key: 'ferry:hanlans'
+  value       jsonb       not null,
+  source      text        not null,   -- provenance law, all three columns
+  tier        smallint    not null check (tier in (1,2,3)),
+  fetched_at  timestamptz not null,
+  valid_from  date,                   -- seasonal validity: May 13 - Sep 15
+  valid_to    date,
+  created_at  timestamptz not null default now(),
+  unique (city, fact_kind, subject_key, valid_from)
+);
+```
+
+Provenance is NOT NULL on all three columns — constraint 2 admits no exception,
+including seed data. Zod at the boundary; the timetable enters as
+`source = 'founder_groundtruth'`, `tier = 1`, which is the always-legal
+operator channel. XXX-39's pipeline inherits the shape and adds rows with a
+different `source` and `tier`, changing nothing else.
+
+### 1.9 Menu allocation — the die's last mile (CP0 ruling 1)
+
+> **Allocation preserves the diced order ACROSS categories. Never a
+> head-category-only slice.**
+
+Today `buildMenus` sorts by `intent.categories.indexOf(category)` then score,
+and takes `slice(0, 4)`. CP0 measured what that costs: 338 legal bars and 106
+historic sites invisible behind four viewpoints; and with the palette fixed,
+the die's own first choice buried at position three.
+
+**Proposed: round-robin over the diced category order**, best-scoring unused
+survivor from each non-empty category in turn, cycling until the menu is full.
+The head still leads the menu — so the deterministic selector's `options[0]`
+still honours the die — but positions 2..n are now genuinely different
+categories, which is what the alternates fallback and the LLM selector need.
+
+- **`MENU_SIZE` stays 4 for single-category intents** (meals).
+- **Discretionary intents get `MENU_SIZE_DISCRETIONARY = 6`.** Argued: with 4
+  or 5 categories in a diced order, a 4-deep menu gives the head exactly one
+  option and no within-category depth to survive an hours failure. 6 buys
+  depth without buying spend.
+- **Spend is untouched, and this is the load-bearing claim:** `MENU_SIZE`
+  governs menu composition only. `SHORTLIST_NOMINAL` (24) and `DETAILS_CAP`
+  (30) are the spend bounds and **neither moves.**
+- **`pickShortlist` must mirror allocation.** `SHORTLIST_DEPTH = MENU_SIZE + 2`
+  today; if the menu becomes cross-category and the shortlist stays
+  head-category, Details get spent on venues the menu will not offer. The
+  shortlist allocates the same way, at the same cap — the harness-fidelity
+  doctrine applied to spend.
+- **Interaction with the armor principle (§0.12c), named rather than
+  discovered:** allocation puts MORE unknown-hours venues on menus. What
+  catches them is unchanged and must stay: `EVENING_VIABLE`, the per-candidate
+  dusk clamp, and `hardFilter`'s known-bad checks. Mirroring the shortlist is
+  what keeps Details pointed where the menu looks.
+
+**Measurement owed, not assumed.** The discretionary max = 1.00 failure is a
+STRONG SUSPECT for this defect, not a diagnosis. It gets re-measured after
+allocation lands, and if it does not move, the suspicion was wrong and is
+recorded as wrong.
+
+### 1.10 Exams, gates and budget
+
+**The day-7 shape exam** (offline, replayed from captured/synthetic
+candidates, because the live pool reaches the islands only through the theme
+zone). Given the islands persona, date, lodging and the experience theme, the
+engine must produce an islands-SHAPED day:
+
+| assertion | source |
+|---|---|
+| composite anchor block >= 4h | golden day 7 traps: "capping the island at parks' 150-min dwell" |
+| a `provision` slot, grocery, BEFORE the anchor | "the grocery stop exists BECAUSE of the picnic" |
+| >= 2 ferry legs, schedule-gated from tier-1 facts | "ferry as dead time" trap |
+| the sunset beat inside the anchor, on the sunset side | "Hanlan's beach is west-facing" |
+| a conditional ending, narrated | founder-ratified concept |
+| winter date -> honest infeasibility, not a venue day | "WINTER = Ward's route ONLY" |
+
+**Venue-for-venue match is NOT required** — shape and constraint compliance is
+the AC, per the brief.
+
+**The thread exam** is mechanical this session: a history-of-Toronto day
+generates, is grammar-clean, has a spine of 2-3 historic/museum sites, meals
+interleaved, and holds the discretionary gate. Golden day 8 is
+founder-drafted later via the bootstrap.
+
+**Standing gates**: venue overlap · anchors/theme seated · closes-restated ·
+discretionary max <= 0.67 · golden 6/6 · day-7 exam.
+**Regression**: every prior golden day still clean, and a "concierge's choice"
+venue day looks like S13's output class (§1.1's AC).
+
+**Budget**: offline-first, $0. ONE live confirm set at CP3 (~$3-4); founder
+vet at CP4 (~$5). Projected session total **~$8-9 against the $15 gate**,
+leaving headroom for one HOLD-and-refix round. Free tier resets 2026-09-01;
+nothing in this plan straddles it.
+
+### 1.11 Open questions carried INTO the build
+
+1. **`dwell.overstay` exempting composite blocks** (§1.7) — proposed as a
+   ruling because loosening a rule silently is the same offence as tightening
+   one silently.
+2. **`dominanceMargin = 0.4`** (§1.5) — Tier 3, and the founder's eye at CP4
+   is what settles it.
+3. **`physicalLoadMinutes = 150`** (§1.6) — same status.
+4. **The islands are outside the Sep discovery run** (§1.4) — sanction or
+   accept.
+
+
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
 Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
