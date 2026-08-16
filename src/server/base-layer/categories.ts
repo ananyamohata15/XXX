@@ -26,23 +26,19 @@ export const CATEGORY_BREADCRUMB_RULES: Record<PlaceCategory, string[]> = {
     // "Cafe, Coffee, and Tea House"; a bare "Cafe" prefix over-captured
     // "Cafeteria" (found in the 2026-07-09 pin review, excluded on purpose).
     "Dining and Drinking > Cafe,",
-    "Dining and Drinking > Coffee",
     "Dining and Drinking > Bakery",
   ],
   nightlife_bars: [
     "Dining and Drinking > Bar",
-    "Dining and Drinking > Night Club",
     "Arts and Entertainment > Night Club",
     "Nightlife",
   ],
   museums_galleries: [
     "Arts and Entertainment > Museum",
     "Arts and Entertainment > Art Gallery",
-    "Arts and Entertainment > Gallery",
   ],
   historic_sites: [
     "Landmarks and Outdoors > Historic and Protected Site",
-    "Landmarks and Outdoors > Historic Site",
     "Landmarks and Outdoors > Monument",
   ],
   markets: [

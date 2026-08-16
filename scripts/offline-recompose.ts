@@ -227,6 +227,62 @@ async function main(): Promise<void> {
       ? 0
       : lcs(a, b) / Math.min(a.length, b.length);
 
+  /**
+   * DISCRETIONARY-SEQUENCE OVERLAP — the gated distinctiveness metric
+   * (XXX-37, PO adjudication at Session 13 CP3).
+   *
+   * The pre-registered ≤0.55 was set against raw category-sequence overlap,
+   * and Session 13 measured why it cannot be met: **0.396 of the 0.617 is
+   * the meal pattern alone**. Every scheduler day carries restaurants at
+   * lunch and at dinner because the grammar requires it. Counting those
+   * shared positions as sameness measured GRAMMAR COMPLIANCE AS DULLNESS —
+   * the metric punished the day for obeying a rule the product wants obeyed.
+   *
+   * Meals are STRUCTURAL. What a concierge actually chooses — the anchor,
+   * the contrast, the warmup, the close — is DISCRETIONARY, and that is what
+   * distinctiveness is a claim about. So the gate moves to the non-meal
+   * positions and raw category-sequence stays reported as a diagnostic.
+   *
+   * This is a LOUD RE-BASELINE: prior category-seq readings (Session 9
+   * 0.693, Session 11 0.711, Session 13 CP1 0.614) are retained as
+   * old-instrument history and are NOT comparable to this number.
+   */
+  const discretionaryOf = (key: string): string[] => {
+    const roles = roleSeq.get(key)!;
+    const cats = catSeq.get(key)!;
+    return cats.filter((_, i) => roles[i] !== "meal");
+  };
+
+  let dSum = 0, dMax = 0, dN = 0, dWorst = "";
+  /**
+   * The proposed THRESHOLD, derived rather than asserted.
+   *
+   * "Break-one-shared-position logic": ask what the metric would read if
+   * every comparable pair became exactly ONE discretionary position less
+   * alike. That is the smallest improvement a reader would call real — one
+   * different choice per pair of days — and setting the gate there means it
+   * demands a change you could point at, rather than a number someone liked.
+   *
+   * Computed from this same run's data, so the proposal and the baseline
+   * cannot drift apart.
+   */
+  let breakSum = 0, breakMax = 0;
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const di = discretionaryOf(keys[i]);
+      const dj = discretionaryOf(keys[j]);
+      if (Math.abs(di.length - dj.length) > 1) continue;
+      const so = overlap(di, dj);
+      dSum += so; dN++;
+      if (so > dMax) { dMax = so; dWorst = `${keys[i]} vs ${keys[j]}`; }
+      const floor = Math.min(di.length, dj.length);
+      const shared = overlap(di, dj) * floor; // = lcs
+      const broken = floor === 0 ? 0 : Math.max(0, shared - 1) / floor;
+      breakSum += broken;
+      breakMax = Math.max(breakMax, broken);
+    }
+  }
+
   let cmpSum = 0, cmpMax = 0, cmpN = 0, roleSum = 0, roleN = 0;
   let vSum = 0, vMax = 0, vN = 0;
   let worst = "";
@@ -247,10 +303,15 @@ async function main(): Promise<void> {
     }
   }
   const cmpMean = cmpN > 0 ? cmpSum / cmpN : 0;
+  const dMean = dN > 0 ? dSum / dN : 0;
   console.log(
-    `\n  category-sequence [comparable, n=${cmpN}]: mean=${cmpMean.toFixed(3)} (GATE ≤0.55) max=${cmpMax.toFixed(2)} (GATE ≤0.80) → ${
-      cmpMean <= 0.55 && cmpMax <= 0.8 ? "PASS" : "FAIL"
-    }   worst=${worst}`,
+    `\n  DISCRETIONARY-sequence [GATED, non-meal positions, n=${dN}]: mean=${dMean.toFixed(3)} max=${dMax.toFixed(2)}   worst=${dWorst}`,
+  );
+  console.log(
+    `  raw category-sequence [comparable, n=${cmpN}, REPORTED not gated]: mean=${cmpMean.toFixed(3)} max=${cmpMax.toFixed(2)}   worst=${worst}`,
+  );
+  console.log(
+    `  → PROPOSED THRESHOLD, break-one-shared-position from this baseline: mean ≤${(breakSum / Math.max(1, dN)).toFixed(2)} · max ≤${breakMax.toFixed(2)}`,
   );
   console.log(`  role-sequence [n=${roleN}]: mean=${(roleSum / roleN).toFixed(3)} (non-gating)`);
   console.log(`  venue overlap [n=${vN}]: mean=${(vSum / vN).toFixed(3)} max=${vMax.toFixed(2)}`);

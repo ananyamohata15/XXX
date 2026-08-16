@@ -28,7 +28,11 @@ import {
 } from "@/shared/anchor-calibre";
 import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
-import { CITY_GEO, type PlaceCategory } from "@/shared/vocabulary";
+import {
+  CATEGORY_FAMILY,
+  CITY_GEO,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
 import { assembleTravelProvider, type TransitLeg } from "../travel/assemble";
 import { GOOGLE_TRANSIT_EST_COST_USD } from "../travel/google-transit";
@@ -889,7 +893,20 @@ export function buildMenus(
 ): Menu[] {
   return skeleton.intents.map((intent) => {
     const struck = repair?.strikes.get(`s-${intent.id}`) ?? new Set<string>();
-    const window = intent.categories.some((c) => c === "parks")
+    /**
+     * Outdoor stops are clamped to dusk — keyed on the texture FAMILY, not
+     * on the literal `"parks"` it used to test (XXX-37, Session 13).
+     *
+     * `scenic_viewpoints` is an outdoor category and was not clamped, so a
+     * viewpoint could be seated after dark: an outdoor stop with nothing to
+     * see, which is the exact failure the daylight rules exist to prevent.
+     * The literal was correct when `parks` was the only outdoor category and
+     * became wrong the moment it was not — so it now asks the question it
+     * means ("is this outdoor?") instead of naming the one member it had.
+     */
+    const window = intent.categories.some(
+      (c) => CATEGORY_FAMILY[c] === "outdoor",
+    )
       ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
       : intent.window;
     const { kept } = hardFilter(

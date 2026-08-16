@@ -576,6 +576,29 @@ export function buildSkeleton(
     "nightlife_bars",
     "historic_sites",
     "restaurants",
+    /**
+     * `scenic_viewpoints` (XXX-37, Session 13 CP3 diagnostic).
+     *
+     * Session 13 added scenic to `closeCategories` and then measured 6 of 8
+     * days still ending on a bar. The cause was here: this list is a
+     * hardcoded three, written when the vocabulary had seven categories, and
+     * it silently deleted the new one from every close seated at or after
+     * 19:00 — which is most closes. The category was ranked ahead of
+     * `nightlife_bars` and never survived to be chosen.
+     *
+     * The same shape as the dead `Retail > Farmers Market` rule and
+     * `TEMPLATE_INVARIANTS.lastStep`: a constant whose correctness depended
+     * on a vocabulary that has since changed. CLAUDE.md's standard, hit for
+     * the fourth time in two sessions.
+     *
+     * A viewpoint IS an evening category — golden hour is the entire point,
+     * and golden Day 7 is built on it. What it must never be is an outdoor
+     * stop after dark, and that is not this list's job: `buildMenus` clamps
+     * outdoor windows to dusk, so a scenic close can only seat while there
+     * is still something to see. Adding it here WITHOUT that clamp would be
+     * the outdoor-after-dark failure; the two changes are one change.
+     */
+    "scenic_viewpoints",
   ];
   const isEvening = (window: Span) => window.start >= timeToMinutes("19:00");
   /**
