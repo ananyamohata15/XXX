@@ -391,17 +391,98 @@ census reported and only this session's surface fixed (§0.8). The apostrophe
 finding joins the sampler lesson as a standing line: *an instrument that lies
 about absence is worse than none.*
 
-### 0.12 Carried into Step 1 as design input
+### 0.12 Post-fix rulings — landed, with one premise that did not survive measurement
 
-- **Menu composition** (§0.9) — the 4-deep cap over a category-preference sort
-  makes menus single-category and the diced order unreachable. Theme palettes
-  land on this surface, and it is a candidate cause of the inherited
-  discretionary failure.
-- **`shopping` evening viability** (§0.8) — an open founder question, left at
-  today's behaviour rather than widened quietly.
+**Ruling 3 (`EVENING_VIABLE.shopping = true`) is landed** with the founder's
+reasoning at the constant: *the coarse category gate should stop encoding what
+per-venue, per-weekday hours already know.*
+
+Two things the offline A/B ($0) then said, and both need the founder before
+the ruling's intended OUTCOME exists.
+
+**(a) The change is inert for closes, because the close palette never offers
+shopping.** Measured at seed 42:
+
+```
+closeCategories(persona-shopper) = [scenic_viewpoints, parks, nightlife_bars,
+                                    historic_sites, restaurants]
+```
+
+`EVENING_VIABLE` is a FILTER over whatever the palette proposes. `shopping` is
+not in `closeCategories` (nor in the evening arm of `pickContrast` for most
+draws), so raising its gate admits a category nobody was offering. The A/B is
+byte-identical across all eight personas — same anchors, same sequences, same
+`closes 6/7`. The ruling's stated outcome — *"the Eaton Centre class becomes
+legally available for evening closes"* — needs `shopping` added to
+`closeCategories`, which is a **palette** decision the ruling did not make.
+
+Worth knowing while deciding: **271 shopping candidates survive
+`persona-shopper`'s 20:15–22:00 close window**, so the palette change would
+very likely seat the close this session's tag fix exposed.
+
+**(b) The ruling's premise — "a 18:00-closing boutique dies on its own hours" —
+does not hold for this pool today.** Measured against the live database:
+
+```
+toronto fsq pool identities : 39,849
+  with a google link        :    451   (1.13%)
+  stored 'hours' facts      :      0
+```
+
+Hours are never persisted (decision 001) and are fetched in memory for the
+SHORTLIST only — `DETAILS_CAP` 30, `SHORTLIST_NOMINAL` 24 — while `buildMenus`
+draws from the whole re-scored pool of ~2,700. So for all but a couple of
+dozen candidates a day, `canHoldVisit` returns null, `hardFilter` keeps them
+under honest-absence discipline, and **nothing downstream knows whether the
+door is open.**
+
+That is why 351 `museums_galleries` — the AGO among them — and 108 `markets`
+— including `St Lawrence Market`, which golden Day 2 verifies as Sat
+07:00–17:00 — "survive" a 20:15–22:00 window. They survive because we have no
+hours for them, not because they are open.
+
+So the category gate is **not** redundant with per-venue hours today; it is
+the only thing standing between the menu and a 20:15 museum, which is exactly
+why Session 9 CP2 put it there (*"museums and markets at 19:30 are the
+unverified-junk trap the first live run walked into"*).
+
+**None of this contradicts the shopping ruling itself** — the mall class is
+genuinely an evening, and `shopping: true` stays landed as ruled. What it
+contradicts is the general principle offered with it. Recorded so the next
+category gate is not relaxed on a premise that costs 1.13% link coverage to
+be true.
+
+**Ruling 2 → close-out work order (XXX-25).** Extend `discovery/plan.ts`'s
+`CATEGORIES` to the S13 vocabulary before the Sep 1–3 re-discovery: +3
+categories × 9 anchors = **+27 cells ≈ +$0.90 list**, sanctioned for that run,
+so September refreshes clocks and discovers the new categories in one pass.
+
+**Ruling 4 → close-out work order.** Extract the four hand-rolled
+`c === "restaurants" || c === "cafes"` copies
+(`offline-recompose.ts`, `harness-fidelity-probe.ts`, `trace-audit.ts` ×2) to
+`GRAMMAR_PARAMS.pacing.foodCategories`. Fourth occurrence; the extraction
+threshold is three.
+
+**Ruling 1 (menu allocation) and ruling 5** carried into Step 1 — see §0.13.
+
+### 0.13 Carried into Step 1 as design input
+
+- **Menu allocation** (§0.9), ratified with its principle of record: *the menu
+  is the die's last mile.* Allocation preserves the diced order ACROSS
+  categories — interleaved or proportional from top-k — never a
+  head-category-only slice. Strong-suspect status for the discretionary
+  max = 1.00 is noted and gets **measured after the design lands**, not
+  assumed.
+- **The close palette** (§0.12a) — whether `shopping` joins
+  `closeCategories`, which is what the shopping ruling's stated outcome
+  actually requires.
+- **Hours coverage is 1.13%** (§0.12b) — the theme layer leans on category
+  palettes, and palettes are load-bearing precisely because per-venue hours
+  are absent for the pool at menu time. Any design that relaxes a category
+  gate must say what catches the venue instead.
 - **The per-candidate dusk clamp is latent** (§0.9) — correct, landed,
-  unmeasured. If CP1 changes menu composition it should start biting, and that
-  is the moment to re-measure it rather than now.
+  unmeasured. Menu allocation should make it bite; that is the moment to
+  re-measure it.
 
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 

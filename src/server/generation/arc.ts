@@ -237,17 +237,28 @@ export function templateForDraw(draw: TemplateDraw, seed: number): ArcTemplate {
  *     — and a single owner alone would have kept that failure mode intact,
  *     just in one file instead of two.
  *
- * The values below preserve Session 13's ruled behaviour exactly. Two are
- * arguable and are recorded as open rather than decided quietly:
+ * `historic_sites` is TRUE and inherited: many are open-air and lit, and the
+ * hours filter is what stops the ones that are not.
  *
- * - `shopping`: FALSE, and this is the one worth revisiting. Eaton Centre
- *   trades until 21:00, so an evening shopping stop is plausible in a way a
- *   19:30 museum is not. Left false because widening it is a behaviour
- *   change the founder has not seen, and smuggling one in under a
- *   deduplication is exactly the unrecorded tightening CLAUDE.md forbids —
- *   in reverse. **Open question for the founder.**
- * - `historic_sites`: TRUE and inherited. Many are open-air and lit; the
- *   hours filter is what stops the ones that are not.
+ * **`shopping` is TRUE by founder ruling (Session 14 CP0), and it is a
+ * BEHAVIOUR CHANGE recorded as one.** It was carried in at `false` — today's
+ * behaviour — as an open question, on the ground that Eaton Centre trades
+ * until 21:00. The founder's ruling names the better principle:
+ *
+ *   *the coarse category gate should stop encoding what per-venue,
+ *   per-weekday hours already know.*
+ *
+ * That is the honest division of labour. A boutique that shuts at 18:00 dies
+ * on its own verified hours in `hardFilter`, where the decision belongs and
+ * where it is a FACT. Refusing the whole category here instead makes the
+ * grammar guess on behalf of every venue in it — and guesses badly, because
+ * the mall class it was accidentally excluding is precisely the class that IS
+ * open. This list's job is "could a stop of this kind plausibly be an evening
+ * at all", not "is this particular door open", and `museums_galleries`
+ * remains false because the answer to the first question is genuinely no.
+ *
+ * Proven by an offline A/B ($0) at the ruling, and due the founder's eye at
+ * CP4 rather than treated as settled by the argument alone.
  */
 export const EVENING_VIABLE = {
   restaurants: true,
@@ -257,7 +268,7 @@ export const EVENING_VIABLE = {
   markets: false,
   nightlife_bars: true,
   parks: false,
-  shopping: false,
+  shopping: true,
   scenic_viewpoints: true,
   grocery: false,
 } as const satisfies Record<PlaceCategory, boolean>;
