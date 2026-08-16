@@ -65,6 +65,7 @@ import {
   ANCHOR_ELECTOR_SOURCE,
   closeCategories,
   electAnchor,
+  isEveningViable,
   pickContrast,
   pickTemplate,
   warmupCategories,
@@ -572,34 +573,27 @@ export function buildSkeleton(
   // --- 3. choose categories, in time order --------------------------------
   const usedFamilies = new Set<CategoryFamily>();
   if (elected !== null) usedFamilies.add(CATEGORY_FAMILY[elected.category]);
-  const eveningOk: readonly PlaceCategory[] = [
-    "nightlife_bars",
-    "historic_sites",
-    "restaurants",
-    /**
-     * `scenic_viewpoints` (XXX-37, Session 13 CP3 diagnostic).
-     *
-     * Session 13 added scenic to `closeCategories` and then measured 6 of 8
-     * days still ending on a bar. The cause was here: this list is a
-     * hardcoded three, written when the vocabulary had seven categories, and
-     * it silently deleted the new one from every close seated at or after
-     * 19:00 — which is most closes. The category was ranked ahead of
-     * `nightlife_bars` and never survived to be chosen.
-     *
-     * The same shape as the dead `Retail > Farmers Market` rule and
-     * `TEMPLATE_INVARIANTS.lastStep`: a constant whose correctness depended
-     * on a vocabulary that has since changed. CLAUDE.md's standard, hit for
-     * the fourth time in two sessions.
-     *
-     * A viewpoint IS an evening category — golden hour is the entire point,
-     * and golden Day 7 is built on it. What it must never be is an outdoor
-     * stop after dark, and that is not this list's job: `buildMenus` clamps
-     * outdoor windows to dusk, so a scenic close can only seat while there
-     * is still something to see. Adding it here WITHOUT that clamp would be
-     * the outdoor-after-dark failure; the two changes are one change.
-     */
-    "scenic_viewpoints",
-  ];
+  /**
+   * Evening viability now lives in ONE place — `arc.ts:EVENING_VIABLE`
+   * (XXX-40, Session 14 CP0 census).
+   *
+   * This was a local list of three, which Session 13 found silently deleting
+   * `scenic_viewpoints` from every close seated at or after 19:00 (it was
+   * ranked ahead of `nightlife_bars` and never survived to be chosen), fixed
+   * to four, and recorded in CLAUDE.md as the fourth load-bearing constant.
+   *
+   * The census this session ran found the rest of that defect: `pickContrast`
+   * held a SECOND copy, still at the original three, which Session 13's fix
+   * never reached. One owner now, and — the durable half — an exhaustive
+   * `Record<PlaceCategory, boolean>` there, so the next category added to the
+   * vocabulary cannot default to "not evening" in silence.
+   *
+   * Session 13's own pairing note still holds and is why the clamp is not
+   * this list's job: a viewpoint IS an evening category — golden hour is the
+   * entire point, and golden Day 7 is built on it — but it must never be an
+   * outdoor stop after dark. `buildMenus` clamps outdoor windows to dusk, so
+   * a scenic close can only seat while there is still something to see.
+   */
   const isEvening = (window: Span) => window.start >= timeToMinutes("19:00");
   /**
    * Evening stops draw only from categories plausibly open at night —
@@ -613,9 +607,7 @@ export function buildSkeleton(
     categories: PlaceCategory[],
     window: Span,
   ): PlaceCategory[] =>
-    isEvening(window)
-      ? categories.filter((c) => eveningOk.includes(c))
-      : categories;
+    isEvening(window) ? categories.filter(isEveningViable) : categories;
 
   /**
    * Family-freshness is a PREFERENCE, so it reorders — it must never

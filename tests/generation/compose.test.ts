@@ -15,7 +15,12 @@ import type {
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
 import { timeToMinutes } from "@/shared/time";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
-import type { PlaceCategory } from "@/shared/vocabulary";
+import {
+  CATEGORY_FAMILY,
+  PLACE_CATEGORIES,
+  isOutdoorCategory,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 const SAT = "2026-08-15"; // a Saturday
 
@@ -33,7 +38,16 @@ function candidate(
       neighborhood: "Downtown",
       coords: { lat, lng },
       tags: {
-        outdoor: category === "parks",
+        /**
+         * Mirrors `retrieveCandidates` — the HARNESS-FIDELITY doctrine
+         * (Session 12 CP1): a fixture that derives a tag differently from the
+         * producer is testing a day the engine never builds.
+         *
+         * It read `category === "parks"`, the same literal the producer had,
+         * so the fixture could not have caught the producer's defect. Both now
+         * call `isOutdoorCategory`.
+         */
+        outdoor: isOutdoorCategory(category),
         goldenHourAffine: false,
         highCrowd: false,
       },
@@ -410,5 +424,109 @@ describe("modeFor", () => {
     expect(modeFor(4.8, ["walk", "transit"])).toBe("transit");
     expect(modeFor(4.8, ["walk"])).toBe("walk");
     expect(modeFor(60, ["drive"])).toBe("drive");
+  });
+});
+
+/**
+ * The outdoor TAG and the outdoor FAMILY must agree (XXX-40, Session 14 CP0
+ * — the fifth load-bearing constant).
+ *
+ * `retrieveCandidates` decided `PlaceTags.outdoor` from `category ===
+ * "parks"`, a literal that was correct while `parks` was the only outdoor
+ * category and wrong from the moment `scenic_viewpoints` joined the family
+ * in Session 13. It failed SILENTLY, which is the whole problem: a `false`
+ * here rejects nothing and breaks no test — it just removes the place from
+ * the sight of `composeDay`'s dusk clamp and of every daylight and weather
+ * rule, all three of which read the tag rather than the family.
+ *
+ * Golden Day 7's closing beat is a sunset from a west-facing beach, so this
+ * is on the session's critical path rather than beside it.
+ */
+describe("an outdoor category arrives outdoors", () => {
+  it("derives the tag from the family for EVERY category, not a literal", () => {
+    // Per-CATEGORY, not "the set is non-empty" — CLAUDE.md's standing rule.
+    // A set-level check passes forever on `parks` alone while every category
+    // added after it is wrong, which is exactly what happened.
+    for (const category of PLACE_CATEGORIES) {
+      expect(isOutdoorCategory(category)).toBe(
+        CATEGORY_FAMILY[category] === "outdoor",
+      );
+    }
+    // The two the literal knew about, and the one it did not.
+    expect(isOutdoorCategory("parks")).toBe(true);
+    expect(isOutdoorCategory("scenic_viewpoints")).toBe(true);
+    expect(isOutdoorCategory("museums_galleries")).toBe(false);
+  });
+
+  it("carries outdoor=true on a retrieved viewpoint, so the tag readers see it", () => {
+    const viewpoint = candidate("lookout", "scenic_viewpoints", 43.64, -79.38);
+    expect(viewpoint.place.tags.outdoor).toBe(true);
+  });
+
+  /**
+   * The clamp this defect disabled. `composeDay` narrows an outdoor slot's
+   * window to `outdoorLatestEnd` — and only ever asks `place.tags.outdoor`,
+   * so with the tag false a viewpoint was seated past dusk with nothing to
+   * see and no rule to say so.
+   */
+  it("clamps a viewpoint to dusk inside composeDay", () => {
+    /**
+     * Dusk at 19:00 rather than 20:30, and the reason is worth keeping: at
+     * 20:30 the CONTROL passed for the wrong reason. The seat objective
+     * centres a 60-minute stop in an 18:00–22:00 window at 19:30–20:30, so
+     * the indoor stop ended at exactly 20:30 too and the test could not tell
+     * a clamp from a coincidence. A control that agrees with the treatment
+     * by arithmetic is not a control.
+     */
+    const dusk = timeToMinutes("19:00");
+    const viewpoint = candidate("lookout", "scenic_viewpoints", 43.64, -79.38);
+    const indoor = candidate("gallery", "museums_galleries", 43.64, -79.38);
+
+    // A hand-built skeleton so the assertion is about the clamp and not
+    // about which template the dice drew: one late intent, wide enough that
+    // only the clamp can decide where it ends.
+    const lateWindow = {
+      start: timeToMinutes("18:00"),
+      end: timeToMinutes("22:00"),
+    };
+    const skeletonOf = (categories: PlaceCategory[]) => ({
+      intents: [
+        {
+          id: "i1",
+          kind: "activity" as const,
+          label: "the day's close",
+          window: lateWindow,
+          categories,
+          dwellMinutes: 60,
+          role: "close" as const,
+        },
+      ],
+      opens: [],
+      daySpan: { start: timeToMinutes("09:00"), end: timeToMinutes("22:00") },
+      mealPattern: "classic" as const,
+      templateId: "test",
+      electedAnchor: null,
+      droppedSteps: [],
+      anchorDegraded: null,
+    });
+
+    const compose = (c: Candidate) =>
+      composeDay({
+        request: request(),
+        skeleton: skeletonOf([c.category]),
+        selections: [{ intentId: "i1", placeId: c.place.id }],
+        candidatesById: new Map([[c.place.id, c]]),
+        travel: new HaversineStubProvider(),
+        outdoorLatestEnd: dusk,
+      });
+
+    const outdoorSlot = compose(viewpoint).day.slots[0];
+    expect(outdoorSlot).toBeDefined();
+    expect(timeToMinutes(outdoorSlot.endTime)).toBeLessThanOrEqual(dusk);
+
+    // The control: an indoor stop in the same window is NOT clamped, so the
+    // assertion above is measuring the clamp rather than the window.
+    const indoorSlot = compose(indoor).day.slots[0];
+    expect(timeToMinutes(indoorSlot.endTime)).toBeGreaterThan(dusk);
   });
 });

@@ -21,6 +21,7 @@ import {
 } from "@/shared/day-grammar/validate";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
+import type { Span } from "@/shared/day-grammar/predicates";
 import type { Violation } from "@/shared/day-grammar/types";
 import {
   ANCHOR_MIN_RATING_COUNT,
@@ -29,8 +30,8 @@ import {
 import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
 import {
-  CATEGORY_FAMILY,
   CITY_GEO,
+  isOutdoorCategory,
   type PlaceCategory,
 } from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
@@ -903,19 +904,45 @@ export function buildMenus(
      * The literal was correct when `parks` was the only outdoor category and
      * became wrong the moment it was not — so it now asks the question it
      * means ("is this outdoor?") instead of naming the one member it had.
+     *
+     * Session 14 (XXX-40) fixed the other half twice over.
+     *
+     * FIRST: routed through `isOutdoorCategory` rather than repeating the
+     * family test inline. The fifth load-bearing constant was the other half
+     * of this same question — `retrieveCandidates` was still deciding
+     * `PlaceTags.outdoor` from `category === "parks"`, and that tag is what
+     * `composeDay`'s own dusk clamp and every daylight/weather rule read. So
+     * for a whole session the clamp here and the tag there disagreed about
+     * `scenic_viewpoints`.
+     *
+     * SECOND, and larger: **the clamp is PER CANDIDATE, not per intent.**
+     * `intent.categories.some(isOutdoorCategory)` narrowed the WHOLE window
+     * whenever any one category was outdoor — and `closeCategories` always
+     * offers `parks`, so every close intent in the product was dusk-clamped
+     * for all four of its categories.
+     *
+     * What that cost, measured on `persona-shopper` at seed 42: a close
+     * window of 20:15–22:00 became 20:15–20:30, and fifteen minutes is a span
+     * only `scenic_viewpoints` (min dwell 15) can hold. Bars, historic sites
+     * and restaurants were struck from the menu by an outdoor rule that does
+     * not apply to them, so the menu returned four viewpoints and nothing
+     * else. A 21:00 bar close was legal and unreachable.
+     *
+     * A constraint that belongs to each MEMBER, applied to the SET — the same
+     * shape as the dead `Retail > Farmers Market` rule, and CLAUDE.md's own
+     * standing line about asserting per rule rather than over a set.
      */
-    const window = intent.categories.some(
-      (c) => CATEGORY_FAMILY[c] === "outdoor",
-    )
-      ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
-      : intent.window;
+    const windowFor = (candidate: Candidate): Span =>
+      isOutdoorCategory(candidate.category)
+        ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
+        : intent.window;
     const { kept } = hardFilter(
       scored.filter(
         (c) =>
           intent.categories.includes(c.category) && !struck.has(c.place.id),
       ),
       date,
-      window,
+      windowFor,
       (c) => GRAMMAR_PARAMS.dwellMinutes[c.category].min,
     );
     // An intent's category list is a preference order (breakfast wants

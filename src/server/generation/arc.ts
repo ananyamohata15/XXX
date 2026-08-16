@@ -213,6 +213,60 @@ export function templateForDraw(draw: TemplateDraw, seed: number): ArcTemplate {
   return options[key % options.length];
 }
 
+/**
+ * Which categories a stop seated in the EVENING may draw from — the single
+ * owner of the question (XXX-40, Session 14 CP0 census).
+ *
+ * This existed TWICE and the two copies had drifted. Session 13 found
+ * `compose.ts`'s copy silently deleting `scenic_viewpoints` from every close
+ * — a hardcoded three written when the vocabulary had seven — fixed it, and
+ * recorded the lesson in CLAUDE.md as the fourth load-bearing constant. It
+ * did not know there was a second copy in `pickContrast`, which still read
+ * `["nightlife_bars", "historic_sites"]`. So for a whole session an evening
+ * CONTRAST could not be a viewpoint while an evening CLOSE could, and
+ * nothing said so.
+ *
+ * Two things fix that, and only the second one is durable:
+ *
+ *  1. one owner, so the copies cannot disagree; and
+ *  2. **an EXHAUSTIVE map rather than an admit-list.** `satisfies
+ *     Record<PlaceCategory, boolean>` means adding a category to the
+ *     vocabulary does not compile until someone rules on its evening. An
+ *     admit-list defaults a new category to "no" in silence, which is
+ *     precisely how `scenic_viewpoints` was deleted from every evening close
+ *     — and a single owner alone would have kept that failure mode intact,
+ *     just in one file instead of two.
+ *
+ * The values below preserve Session 13's ruled behaviour exactly. Two are
+ * arguable and are recorded as open rather than decided quietly:
+ *
+ * - `shopping`: FALSE, and this is the one worth revisiting. Eaton Centre
+ *   trades until 21:00, so an evening shopping stop is plausible in a way a
+ *   19:30 museum is not. Left false because widening it is a behaviour
+ *   change the founder has not seen, and smuggling one in under a
+ *   deduplication is exactly the unrecorded tightening CLAUDE.md forbids —
+ *   in reverse. **Open question for the founder.**
+ * - `historic_sites`: TRUE and inherited. Many are open-air and lit; the
+ *   hours filter is what stops the ones that are not.
+ */
+export const EVENING_VIABLE = {
+  restaurants: true,
+  cafes: false,
+  museums_galleries: false,
+  historic_sites: true,
+  markets: false,
+  nightlife_bars: true,
+  parks: false,
+  shopping: false,
+  scenic_viewpoints: true,
+  grocery: false,
+} as const satisfies Record<PlaceCategory, boolean>;
+
+/** Is a stop of this category plausibly worth seating after ~19:00? */
+export function isEveningViable(category: PlaceCategory): boolean {
+  return EVENING_VIABLE[category];
+}
+
 export interface ElectedAnchor {
   category: PlaceCategory;
   /** Minutes — an ANCHOR dwell, not an ordinary stop's. See `anchorDwellFor`. */
@@ -345,13 +399,16 @@ export function pickContrast(
   options: { eveningOnly?: boolean; dice: () => number },
 ): PlaceCategory[] {
   const anchorFamily = CATEGORY_FAMILY[anchor];
-  const eveningOk: readonly PlaceCategory[] = ["nightlife_bars", "historic_sites"];
   const evening = options.eveningOnly === true;
   const eligible = PLACE_CATEGORIES.filter((c) => {
     if (GRAMMAR_PARAMS.pacing.foodCategories.includes(c)) return false;
     if (CATEGORY_FAMILY[c] === anchorFamily) return false;
     if (used.has(CATEGORY_FAMILY[c])) return false;
-    if (evening && !eveningOk.includes(c)) return false;
+    // `EVENING_VIABLE`, not a local list. This line held its own copy —
+    // `["nightlife_bars", "historic_sites"]` — which Session 13's fix to the
+    // OTHER copy never reached, so an evening contrast could not be a
+    // viewpoint while an evening close could.
+    if (evening && !isEveningViable(c)) return false;
     return true;
   });
   // A bar is an EVENING contrast. Daytime windows exclude `night` outright

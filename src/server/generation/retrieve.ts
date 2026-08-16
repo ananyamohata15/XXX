@@ -19,7 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
-import type { PlaceCategory } from "@/shared/vocabulary";
+import { isOutdoorCategory, type PlaceCategory } from "@/shared/vocabulary";
 import { weightedOrderBy } from "@/shared/dice";
 import { ANCHORS, type Anchor } from "../discovery/plan";
 import { COMPOSE_PARAMS } from "./compose-params";
@@ -251,7 +251,19 @@ export async function retrieveCandidates(
           name: row.name,
           neighborhood: zone.label,
           coords,
-          tags: { outdoor: category === "parks", goldenHourAffine: false, highCrowd: false },
+          /**
+           * `outdoor` derives from the FAMILY, never from a category literal
+           * (XXX-40, Session 14 CP0). It read `category === "parks"` — true
+           * when `parks` was the only outdoor category, wrong the moment
+           * `scenic_viewpoints` joined the family in Session 13, and silent
+           * about it because a `false` here does not fail anything: it just
+           * removes the place from every daylight and weather rule's sight.
+           */
+          tags: {
+            outdoor: isOutdoorCategory(category),
+            goldenHourAffine: false,
+            highCrowd: false,
+          },
           category: categoryFact,
         },
         category,

@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ARC_TEMPLATES,
+  EVENING_VIABLE,
   TEMPLATE_INVARIANTS,
   electAnchor,
   pickContrast,
@@ -30,7 +31,13 @@ import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { present } from "@/shared/fixtures/golden/support";
 import { GOLDEN_PERSONAS, type Persona } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
-import { CATEGORY_FAMILY, TIERS, type PlaceCategory } from "@/shared/vocabulary";
+import { mulberry32 } from "@/shared/dice";
+import {
+  CATEGORY_FAMILY,
+  PLACE_CATEGORIES,
+  TIERS,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 const DATE = "2026-09-19"; // a Saturday
 
@@ -732,5 +739,53 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
         `${key} dropped arc steps`,
       ).toEqual([]);
     }
+  });
+});
+
+/**
+ * Evening viability has ONE owner, and it is exhaustive (XXX-40, Session 14
+ * CP0 census).
+ *
+ * Session 13 fixed a hardcoded three-category evening list in `compose.ts`
+ * that was silently deleting `scenic_viewpoints` from every close, and
+ * recorded it in CLAUDE.md as the fourth load-bearing constant. The census
+ * this session ran found the other half: `pickContrast` held a SECOND copy,
+ * still at the original three, which the fix never reached.
+ */
+describe("evening viability is owned once and ruled on per category", () => {
+  it("classifies EVERY category — a new one cannot default to 'no'", () => {
+    // The type already enforces this at compile time; the test states the
+    // property in the place a reader looks for it. An admit-list would let a
+    // new category fall through to false in silence, which is the exact
+    // mechanism that deleted `scenic_viewpoints` from every close.
+    for (const category of PLACE_CATEGORIES) {
+      expect(typeof EVENING_VIABLE[category]).toBe("boolean");
+    }
+  });
+
+  it("an evening CONTRAST can be a viewpoint — the drifted copy's defect", () => {
+    // Before the dedup, `pickContrast`'s own list was
+    // ["nightlife_bars", "historic_sites"], so this returned nothing scenic
+    // no matter what the persona wanted or the dice drew.
+    const scenicPersona = GOLDEN_PERSONAS["persona-scenic"];
+    const picks = pickContrast(
+      scenicPersona,
+      "museums_galleries",
+      new Set(),
+      { eveningOnly: true, dice: mulberry32(7) },
+    );
+    expect(picks).toContain("scenic_viewpoints");
+  });
+
+  it("still refuses the categories the evening filter exists to refuse", () => {
+    const picks = pickContrast(
+      GOLDEN_PERSONAS["day-3-winter"],
+      "parks",
+      new Set(),
+      { eveningOnly: true, dice: mulberry32(7) },
+    );
+    expect(picks).not.toContain("museums_galleries");
+    expect(picks).not.toContain("markets");
+    expect(picks).not.toContain("cafes");
   });
 });

@@ -179,6 +179,37 @@ export const CATEGORY_FAMILY: Record<PlaceCategory, CategoryFamily> = {
   grocery: "market",
 };
 
+/**
+ * Is a stop of this category spent OUTSIDE? — the single owner of the
+ * question (XXX-40, Session 14 CP0; the fifth load-bearing constant).
+ *
+ * Four places need this answer and they used to derive it two different
+ * ways. `buildMenus` clamps an outdoor intent's window to dusk and asks the
+ * FAMILY (Session 13 fixed it to, having found it asking `c === "parks"`).
+ * `retrieveCandidates` sets `PlaceTags.outdoor`, which is what `composeDay`'s
+ * own dusk clamp and every daylight and weather rule read — and it was still
+ * asking `category === "parks"`.
+ *
+ * So `scenic_viewpoints`, added to the outdoor FAMILY in Session 13 on the
+ * stated grounds that *"the exposure and dusk rules already treat them
+ * alike"*, arrived in every retrieved day with `outdoor: false`. It was
+ * invisible to `daylight.outdoor-after-dark`, to
+ * `daylight.outdoor-in-twilight`, and to every `weather.*` rule. A lookout
+ * could be seated in the dark and the validator had nothing to say about it.
+ *
+ * The Session 13 fix was written as *"the two changes are one change"* — the
+ * menu clamp and the evening list. There was a third half: a family a
+ * category BELONGS to, and a tag a retrieved place CARRIES, must not be able
+ * to disagree. One function, so they cannot.
+ *
+ * Golden Day 7 is why this is not a rider. Its closing beat is a sunset from
+ * a west-facing beach — the one day in the set whose entire point is an
+ * outdoor slot timed against the ephemeris.
+ */
+export function isOutdoorCategory(category: PlaceCategory): boolean {
+  return CATEGORY_FAMILY[category] === "outdoor";
+}
+
 export const TRANSPORT_MODES = ["walk", "cycle", "drive", "transit"] as const;
 export type TransportMode = (typeof TRANSPORT_MODES)[number];
 
