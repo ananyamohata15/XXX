@@ -137,6 +137,33 @@ export interface ThreadSpec {
   absorbsMeals?: number;
 }
 
+/**
+ * **Wanderer threads — the successor design, recorded not built** (XXX-40,
+ * founder-ratified concept, Session 14).
+ *
+ * A thread is infeasible for a wanderer in v1 and the picker says so with the
+ * reason, because no wanderer template carries a `contrast` step: the CP1
+ * ruling gave wanderers three intents and negative space, and a 2–3 stop
+ * scheduled spine is in real tension with that.
+ *
+ * The successor is not "add a contrast step to wanderer templates". It is a
+ * different shape of thread:
+ *
+ *   **Wanderer threads are THEMED ZONES, not themed slots — spine-as-geography.**
+ *
+ * Instead of dealing 2–3 same-family stops into scheduled positions, a
+ * wanderer thread drifts historically-themed NEIGHBOURHOODS with loose
+ * same-family anchors: the Old Town, the Distillery, Fort York as places to
+ * be in rather than stops to arrive at. The spine becomes the day's
+ * geography, which is exactly how a wanderer already experiences a city —
+ * golden Day 5's *"the strip is the plan"*, applied to a theme.
+ *
+ * It needs a future template family and it needs the founder to say which
+ * neighbourhoods carry which threads, so it is not invented here. The
+ * interface does not preclude it: `ThreadSpec.zones` already exists and is
+ * where spine-as-geography would live.
+ */
+
 export interface ExperienceSpec {
   id: ExperienceId;
   label: string;

@@ -913,9 +913,13 @@ export function allocateMenu(
    * the same category sat six deep behind three other categories, so the
    * shopper's day still closed on a bar.
    *
-   * Two slots rather than more, because a licence is a bookend and not a
-   * takeover — the rest of the menu still round-robins, so the fallback if
-   * both licensed venues fail is a genuinely different texture.
+   * EXACTLY two, and the licensed category is then EXCLUDED from the
+   * round-robin remainder (Session 14 ruling). The licence grants a reserved
+   * PAIR, not a rotation share: left in the rotation it took three of six
+   * slots and pushed the tail category off the menu entirely, which is a
+   * takeover wearing a bookend's clothes. Two is what the founder's shape
+   * needs — one venue by day, a different one in the evening — and the rest
+   * of the menu stays genuinely different textures.
    *
    * Deduplication against already-seated venues needs no extra machinery:
    * `DeterministicSelector` skips venues it has already used and `composeDay`
@@ -940,7 +944,8 @@ export function allocateMenu(
     const list = byCategory.get(priorityCategory) ?? [];
     const take = Math.min(LICENSED_MENU_DEPTH, list.length, size);
     for (let i = 0; i < take; i += 1) out.push(list[i]);
-    cursor.set(priorityCategory, take);
+    // Spent. The reserved pair is the whole grant.
+    byCategory.delete(priorityCategory);
   }
 
   let progressed = true;
