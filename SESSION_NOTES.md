@@ -1082,6 +1082,68 @@ seat-centering A/B            52.5min → 6.5min from window centre (IMPROVED)
    label as the true answer.
 
 
+## Step 4 — Founder vet (CHECKPOINT 4, phone)
+
+**The room is live and serving the current build.**
+
+```
+http://192.168.2.10:3000/tasting
+```
+
+Same Wi-Fi, phone browser, passphrase as usual. Verified before handing over:
+`/tasting` returns 200 on the LAN address, and the client bundle contains
+both new controls (`A day on the Toronto Islands`, `Staying downtown`) — the
+first attempt found a stale dev server from earlier in the session still
+serving pre-theme code, which is why this was checked rather than assumed.
+
+**Budget for the evening**: ~$0.50 a generation, so ten days is ~$5. Spent so
+far **$7.6535**; the $15 gate leaves **$7.35**.
+
+### 4.1 What is new on the page
+
+- a **theme picker** — *Concierge's choice* (the absence of a request; the
+  engine derives one), *A day around one place*, *A history of Toronto*,
+  *A day on the Toronto Islands*;
+- a **"Staying downtown"** toggle that sets lodging. Off by default, and the
+  page says what is lost without it rather than assuming;
+- every day now prints its **theme and origin**, so a derived theme can be
+  told from a requested one;
+- a refused theme gets its own amber panel saying nothing was generated and
+  nothing was spent.
+
+### 4.2 What to look for, in the founder's own terms
+
+| what | the verdict it answers |
+|---|---|
+| **the islands day against your own golden Day 7** | THE moment of the session. Shape, not venue-for-venue: brunch → provisioning → a block of six to eight hours → a late dinner after it |
+| a history thread day | *"a history tour of Toronto would be an anchor"* — does a 2–3 site spine read as a tour, or as two museums in a row? |
+| a shopper venue day | does Yorkville by day and the Eaton Centre class in the evening feel right as a BOOKEND, or as repetition? (the family licence) |
+| same-persona re-rolls | do themed days vary the way venue days do |
+| **the rest stop** | `day-1-jays` with lodging on is the day that deals one. Does it land where your body wants it? |
+
+### 4.3 The three calibrations this evening decides
+
+All Tier 3, all recorded as pending your eye rather than settled:
+
+1. **`dominantFamilyPositions = 2`** — does the family licence fire only for
+   genuine dominance? It licenses `day-3-winter`, `persona-shopper` and
+   `persona-scenic`, and nobody else.
+2. **`physicalLoadMinutes = 150` and `seating.wIdle = 0.5` are ONE COUPLED
+   QUESTION.** The idle penalty squeezes the very gaps a rest stop needs: the
+   objective leaves ~40 minutes before dinner and a reset wants 60. Judging
+   them separately will produce a rest stop that never fires or a day full of
+   dead time.
+3. **The event-prep rest stop is FORMALLY UNVERIFIED.** It never fired live —
+   the pool holds one price fact in 39,849 identities, so a top-band dinner is
+   not something more generations would buy. If you generate a fancy-dinner
+   day and a hotel stop appears before it with its reason, that is its first
+   real firing. If none appears, it stays unverified and does not ship claimed
+   working.
+
+**Verdicts go IN THE APP**, not in chat — Session 12's process note: findings
+that live only in chat are findings the miners never see.
+
+
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
 Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
