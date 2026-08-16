@@ -304,14 +304,42 @@ async function main(): Promise<void> {
   }
   const cmpMean = cmpN > 0 ? cmpSum / cmpN : 0;
   const dMean = dN > 0 ? dSum / dN : 0;
+  /**
+   * PRE-REGISTERED at Session 13 close-out (PO ruling 1):
+   *
+   *   max  ≤0.67  — GATES
+   *   mean          REPORTED ONLY
+   *
+   * The mean does not gate, and the reason is arithmetic rather than
+   * leniency. Discretionary sequences run 2–4 positions, so a single shared
+   * position swings the pair's score by 0.25–0.50. A mean gate set by
+   * break-one-shared-position lands at ≤0.15, which punishes GRANULARITY
+   * rather than sameness: two genuinely different days of three stops each
+   * cannot help scoring far above it. The max asks the question that
+   * matters — is any PAIR of days too alike — and one pair sharing every
+   * discretionary position (1.00, as day-3-winter and day-4-budget do
+   * today) is exactly the failure worth gating on.
+   *
+   * REVISIT TRIGGER, recorded: the mean graduates to gating if and when
+   * discretionary sequences LENGTHEN — more activity slots per pattern. At
+   * 5+ discretionary positions one shared position is worth ≤0.20 and the
+   * mean stops being a measure of how short the sequences are.
+   */
+  const DISCRETIONARY_MAX_GATE = 0.67;
+  const gatePass = dMax <= DISCRETIONARY_MAX_GATE;
   console.log(
-    `\n  DISCRETIONARY-sequence [GATED, non-meal positions, n=${dN}]: mean=${dMean.toFixed(3)} max=${dMax.toFixed(2)}   worst=${dWorst}`,
+    `\n  DISCRETIONARY-sequence [non-meal positions, n=${dN}]:` +
+      ` max=${dMax.toFixed(2)} (GATE ≤${DISCRETIONARY_MAX_GATE}) → ${gatePass ? "PASS" : "FAIL"}   worst=${dWorst}`,
+  );
+  console.log(
+    `      mean=${dMean.toFixed(3)} (REPORTED ONLY — see the pre-registration note; short sequences make a mean gate measure granularity)`,
   );
   console.log(
     `  raw category-sequence [comparable, n=${cmpN}, REPORTED not gated]: mean=${cmpMean.toFixed(3)} max=${cmpMax.toFixed(2)}   worst=${worst}`,
   );
   console.log(
-    `  → PROPOSED THRESHOLD, break-one-shared-position from this baseline: mean ≤${(breakSum / Math.max(1, dN)).toFixed(2)} · max ≤${breakMax.toFixed(2)}`,
+    `  break-one-shared-position from this run: mean would read ${(breakSum / Math.max(1, dN)).toFixed(2)} · max ${breakMax.toFixed(2)}` +
+      ` (the derivation the ≤${DISCRETIONARY_MAX_GATE} max gate came from)`,
   );
   console.log(`  role-sequence [n=${roleN}]: mean=${(roleSum / roleN).toFixed(3)} (non-gating)`);
   console.log(`  venue overlap [n=${vN}]: mean=${(vSum / vN).toFixed(3)} max=${vMax.toFixed(2)}`);

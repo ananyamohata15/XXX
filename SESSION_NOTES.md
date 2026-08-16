@@ -770,6 +770,44 @@ full route table including the new `/api/tasting/quota` · **523 passed**,
 Golden set: **49 passed, unchanged** — the six founder-authored days stay
 clean under vocabulary v2.
 
+### 5.4b Close-out ratification (PO, Session 13) — of record
+
+**Ruling 1 — the discretionary gate is pre-registered as: `max ≤0.67` GATES,
+`mean` REPORTED ONLY.** The caveat was accepted as decisive: with 2–4
+discretionary positions a single shared position swings 0.25–0.50, so a mean
+gate at 0.15 punishes ARITHMETIC GRANULARITY rather than sameness. The max
+asks the question that matters — is any PAIR of days too alike.
+
+**REVISIT TRIGGER, recorded:** the mean graduates to gating if and when
+discretionary sequences LENGTHEN (more activity slots per pattern). At 5+
+discretionary positions one shared position is worth ≤0.20 and the mean stops
+measuring how short the sequences are. Implemented in `offline-recompose.ts`
+with the reasoning at the constant.
+
+**The newly-gated metric FAILS on today's data, and that is the gate
+working.** `max = 1.00`, worst pair **day-3-winter vs day-4-budget**: both
+compose the discretionary spine `markets > museums_galleries >
+nightlife_bars` — identical, from two different personas (art/food/history,
+relaxed, icons versus local_life/art/nature, moderate, corners). Two
+travellers who share one interest should not receive the same three
+discretionary choices. Recorded as the first honest reading of the new
+instrument rather than as a regression, and it is the work Session 14
+inherits: this collision is anchor/contrast/close diversity across personas,
+and meal-pattern variety will not touch it.
+
+**Ruling 2 — both standing lines promoted to CLAUDE.md verbatim.**
+
+**Ruling 3 — the `eveningOk` fix accepted as within-ruled-machinery**, and
+the finding is recorded to the load-bearing-constant ledger in CLAUDE.md as
+its **fourth instance**. The ruling names the catch explicitly: the
+dusk-clamp-keys-on-family half was what made the fix safe, and it is written
+into the ledger entry so the next reader inherits the pairing rather than
+just the symptom.
+
+**Ruling 4 — spend discipline commended.** Declining the ~$3 live
+confirmation of an already-failing offline result is recorded as the budget
+policy working, not as a gap in evidence.
+
 ### 5.5 Standing lines this session earned
 
 > **A die nobody plumbed is a die nobody rolled** (Session 12's, now proven
@@ -780,8 +818,9 @@ clean under vocabulary v2.
 > **A rule asserts that a branch exists — assert it per rule, or a dead one
 > hides behind its live siblings.**
 
-The last two are offered for CLAUDE.md alongside Session 11's and 12's. The
-founder promotes them.
+The last two were **promoted to CLAUDE.md verbatim** at close-out
+ratification (ruling 2). Session 12's line is proven fixed on the live
+surface by `seed-fidelity.ts` rather than promoted again.
 
 ### 5.6 Deviations from the brief, each recorded when made
 
@@ -805,22 +844,27 @@ founder promotes them.
 
 **Blocking nothing; ordered by evidence strength.**
 
-1. **The container seating swap** — card = container, description = tenant.
+1. **The discretionary gate's first failure** — `max = 1.00`, `day-3-winter`
+   vs `day-4-budget`, identical spine `markets > museums_galleries >
+   nightlife_bars`. Two personas sharing one interest should not receive the
+   same three discretionary choices. This is anchor/contrast/close diversity
+   ACROSS personas; meal-pattern variety (item 3) will not touch it.
+2. **The container seating swap** — card = container, description = tenant.
    Detection exists (`src/shared/containment.ts`); the swap needs the
    container IN the retrieved pool, so it is a RETRIEVAL change. XXX-38's
    composite anchors want the same machinery.
-2. **Meal-pattern variety** (§3.8) — the measured two-thirds of sequence
+3. **Meal-pattern variety** (§3.8) — the measured two-thirds of sequence
    overlap that vocabulary cannot touch.
-3. **Batched or resumable base-layer ingest** (§5.2 item 1).
-4. **XXX-31's real quality signal** — `anchor-calibre` is explicitly interim,
+4. **Batched or resumable base-layer ingest** (§5.2 item 1).
+5. **XXX-31's real quality signal** — `anchor-calibre` is explicitly interim,
    and its known limitation (fame ≠ calibre; Berczy Park clears the bar) is
    pinned as a test that should CHANGE when XXX-31 lands.
-5. **Founder curation of the anchor list** — the worksheet is built and was
+6. **Founder curation of the anchor list** — the worksheet is built and was
    requested at CP2 for museums/galleries, historic sites and parks; the
    founder's ticked names had not arrived by close-out, so
    `FOUNDER_ANCHOR_WORTHY` still holds only verbatim-founder entries. Nothing
    was invented on their behalf.
-6. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
+7. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
 
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
