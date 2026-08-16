@@ -51,7 +51,11 @@ import type {
   TravelTimeProvider,
 } from "@/shared/day-grammar/types";
 import type { HourlyExposure } from "@/shared/scheduling-windows";
-import { categoryAffinity, type Persona } from "@/shared/persona";
+import {
+  categoryAffinity,
+  gravityDominance,
+  type Persona,
+} from "@/shared/persona";
 import { minutesToTime, timeToMinutes } from "@/shared/time";
 import {
   CATEGORY_FAMILY,
@@ -630,6 +634,62 @@ export function buildSkeleton(
     fresh: (c: PlaceCategory) => boolean,
   ): PlaceCategory[] => [...ordered.filter(fresh), ...ordered.filter((c) => !fresh(c))];
 
+  /**
+   * THE FAMILY LICENCE (XXX-40, Session 14 CP1).
+   *
+   * Family-freshness above is right for almost every day, and wrong for one
+   * traveller: the one whose single interest dominates. It demotes any
+   * category whose family the anchor already spent — so a persona's STRONGEST
+   * interest is structurally barred from the day's ENDING.
+   *
+   * Measured at CP0: `persona-shopper`'s die put `shopping` FIRST for the
+   * close (affinity 1.0, exactly as the palette philosophy intends) and
+   * freshness pushed it to third, because the anchor was also `shopping` and
+   * `shopping` shares the MARKET family with `markets`. The founder's own
+   * example of a shopper's day is Yorkville by day and the Eaton Centre class
+   * in the evening — a shape the rule forbade.
+   *
+   * The licence is narrow on purpose, and the texture rules still bind:
+   *
+   *   - it applies to the CLOSE only — the bookend, not the middle;
+   *   - it needs measurable dominance (`gravityDominance`), so it fires for
+   *     the die-hard and not for a traveller with three balanced interests;
+   *   - `rhythm.alternating-texture` still forbids A-B-A-B and
+   *     `pacing.minTextureFamilies` (3) still applies, so a licensed day is
+   *     `anchor(F) … close(F)` with at least three families in between.
+   *     **A bookend, not an alternation.**
+   *
+   * Chiefly for DERIVED days: a requested theme carries an explicit palette
+   * and the caller has already said what the day is for.
+   */
+  const licence = gravityDominance(
+    persona,
+    PLACE_CATEGORIES,
+    (c) => CATEGORY_FAMILY[c],
+    COMPOSE_PARAMS.persona.dominantFamilyPositions,
+  );
+  /**
+   * The licensed family, or null — and the texture floor is checked HERE
+   * rather than left to the validator.
+   *
+   * The first build delegated it: the comment claimed "the texture rules
+   * still bind" because `pacing.minTextureFamilies` exists. The skeleton
+   * invariant caught that as a lie within one run — `persona-scenic` came
+   * back with **two** families, because licensing an outdoor close on an
+   * outdoor-anchored day removed the day's third texture rather than
+   * bookending an existing one.
+   *
+   * A rule that only fails at validation is a day the composer knowingly
+   * built wrong. So the licence applies only when the day ALREADY holds its
+   * three textures without the close — which is precisely the difference
+   * between a bookend and an alternation, stated in code instead of prose.
+   */
+  const licensedFamilyFor = (used: Set<CategoryFamily>): CategoryFamily | null => {
+    if (!licence.dominant || licence.category === null) return null;
+    if (used.size < GRAMMAR_PARAMS.pacing.minTextureFamilies) return null;
+    return CATEGORY_FAMILY[licence.category];
+  };
+
   const intents: SlotIntent[] = [];
   const opens: OpenIntervalPlan[] = [];
   let nextId = 1;
@@ -705,7 +765,13 @@ export function buildSkeleton(
       const at = String(item.window.start);
       categories = demoteRatherThanDrop(
         forEvening(closeCategories(persona, rollFor("close", at)), item.window),
-        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
+        // The family licence: a dominant traveller's own texture counts as
+        // fresh for the CLOSE, so the day may bookend on it — but only once
+        // the day already holds its three textures. Everything else is
+        // demoted exactly as before.
+        (c) =>
+          !usedFamilies.has(CATEGORY_FAMILY[c]) ||
+          CATEGORY_FAMILY[c] === licensedFamilyFor(usedFamilies),
       );
       label = "the day's close";
     }

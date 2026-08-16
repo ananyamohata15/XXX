@@ -21,6 +21,7 @@ import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
 import { isOutdoorCategory, type PlaceCategory } from "@/shared/vocabulary";
 import { weightedOrderBy } from "@/shared/dice";
+import { THEME_ZONES } from "@/shared/theme";
 import { ANCHORS, type Anchor } from "../discovery/plan";
 import { COMPOSE_PARAMS } from "./compose-params";
 import type { Candidate } from "./types";
@@ -69,7 +70,39 @@ export function zonesFor(
   lens: Lens,
   anchorCoords: LatLng[],
   dice?: () => number,
+  /**
+   * Zone slugs the DAY'S THEME asks for (XXX-40, Session 14 CP0 ruling 2).
+   *
+   * **A theme has a geography, and the persona's lens is not it.** An
+   * experience day is defined by the place it goes to; the lens describes how
+   * a traveller likes to see a CITY. Session 14 CP0 measured what that cost:
+   * golden Day 7's persona is `corners`, whose bucket is Kensington / Queen
+   * West / Annex / Leslieville, and the Toronto Islands are not reachable
+   * from any of them at any seed. 94 island identities sat in the pool and
+   * the engine could not retrieve one.
+   *
+   * So a theme uses the same door a USER ANCHOR already uses — the branch
+   * below — and for the same reason: a committed day is a geographic fact
+   * that outranks a stylistic preference.
+   *
+   * Precedence, stated once: **user anchors > theme zones > lens bucket.**
+   * The lens remains the themeless default.
+   */
+  themeZoneSlugs: readonly string[] = [],
 ): Anchor[] {
+  if (themeZoneSlugs.length > 0 && anchorCoords.length === 0) {
+    const zones = THEME_ZONES.filter((z) => themeZoneSlugs.includes(z.slug));
+    // An unknown slug is a typo in a spec, not a reason to silently hand back
+    // the lens's zones and generate a mainland day under an island theme.
+    if (zones.length !== themeZoneSlugs.length) {
+      throw new Error(
+        `unknown theme zone(s): ${themeZoneSlugs
+          .filter((s) => !THEME_ZONES.some((z) => z.slug === s))
+          .join(", ")}`,
+      );
+    }
+    return [...zones];
+  }
   if (anchorCoords.length > 0) {
     // A committed day is a geographic fact: draw from every zone within
     // reach of any user anchor, whatever the lens says.

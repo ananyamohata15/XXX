@@ -106,6 +106,59 @@ export const COMPOSE_PARAMS = {
     minDwellMinutes: 75,
   },
 
+  /**
+   * Persona intensity as a LICENCE (XXX-40, Session 14 CP1).
+   *
+   * One number serving two exceptions — see `gravityDominance`. Tier 3, and
+   * explicitly pending the founder's calibration at CP4: the question they
+   * answer is *does the licence fire only for genuine dominance?*
+   */
+  persona: {
+    /**
+     * How many of a traveller's three stated interests must point into ONE
+     * texture family before that family earns an exception.
+     *
+     * **2, and it is a COUNT rather than an affinity margin — a deviation
+     * from the CP1 ruling, forced by measurement.** The ruled
+     * `dominanceMargin: 0.4` was built and then measured across the eight
+     * exam personas: five of them land on **exactly 0.400**, because
+     * `GRAVITY_WEIGHTS[1]` is 0.6 and an ordinarily-shaped persona's second
+     * interest maps at full strength into another family. At `>=` the licence
+     * fired for seven of eight; at `>` for two. The whole feature turned on
+     * one character — Session 12's `night >= 0.35` defect, rebuilt.
+     *
+     * Session 12's ruling was to DELETE such a comparison rather than retune
+     * it, so the question is asked structurally: one interest in a texture
+     * means the traveller has other textures; two or more means they are
+     * concentrated. That licenses `day-3-winter`, `persona-shopper` and
+     * `persona-scenic` — the three concentrated personas — and nobody else.
+     *
+     * An integer over 0..3 has no knife-edge to sit on. Still Tier 3, and
+     * still the founder's call at CP4: *does the licence fire only for
+     * genuine dominance?*
+     */
+    dominantFamilyPositions: 2,
+  },
+
+  /**
+   * The rest stop (XXX-42, Session 14 CP1). Tier 3, founder's eye at CP4:
+   * *does the rest stop get dealt where the body wants it?*
+   */
+  rest: {
+    /**
+     * Cumulative walking + commute minutes since the day started, above
+     * which the day has earned a hotel reset.
+     *
+     * 150 — two and a half hours on your feet or in transit. Below it a
+     * traveller is having a day; above it they are grinding one out. It
+     * deliberately counts TRAVEL time, not elapsed time: two hours sitting in
+     * a gallery is not load, and the founder's complaint that produced the
+     * exposure rules was about walking specifically ("Winter days with 30+
+     * mins of walking is illogical").
+     */
+    physicalLoadMinutes: 150,
+  },
+
   seating: {
     /**
      * Pull toward the middle of the slot's window. The founder's "lunch at
