@@ -62,6 +62,10 @@ import {
   type Skeleton,
 } from "./compose";
 import { applyFounderGroundtruth } from "./groundtruth";
+import { environmentIsFair, selectTheme } from "./theme-select";
+import { readFerryTimetable } from "../city-facts/repo";
+import { EXPERIENCE_SPECS, themeId, themeZoneSlugs } from "@/shared/theme";
+import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
@@ -285,8 +289,103 @@ export async function generateDay(
   });
 
   try {
+    /**
+     * ENVIRONMENT FIRST (XXX-40, Session 14).
+     *
+     * It used to be fetched just before composition. Theme selection needs
+     * weather — the founder's *"if the weather is good"* is a SELECTION input,
+     * not a post-hoc filter — and the theme is an input to `buildSkeleton`,
+     * which is the first thing the engine does. So the read moves up.
+     *
+     * Cost-neutral: it is a `weather_days` row and a computed ephemeris. No
+     * Google endpoint, no Anthropic call.
+     */
+    const environment =
+      deps.examEnvironmentOverride ??
+      (await fetchEnvironment(deps.supabase, request.city, request.date));
+    if (deps.examEnvironmentOverride !== undefined) {
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "exam",
+        endpoint: "environment_override",
+        metadata: { reason: "exam/test seam — synthetic weather in play" },
+      });
+    }
+    const dusk = timeToMinutes(environment.daylight.civilDuskLocal);
+
+    /**
+     * Which scheduled routes run today. Read ONCE, before selection, because
+     * a route that does not run makes its whole theme infeasible — and the
+     * traveller must be told that rather than handed a day without the boat.
+     */
+    const runningRoutes = new Set<string>();
+    for (const spec of EXPERIENCE_SPECS) {
+      if (spec.legs === undefined) continue;
+      const timetable = await readFerryTimetable(
+        deps.supabase,
+        request.city,
+        spec.legs.routeKey,
+        request.date,
+      );
+      if (timetable !== null) runningRoutes.add(spec.legs.routeKey);
+    }
+
+    // -- theme selection ---------------------------------------------------
+    const themeOutcome = selectTheme({
+      persona: request.persona,
+      requested: request.theme ?? null,
+      feasibility: {
+        persona: request.persona,
+        routeRuns: (routeKey) => runningRoutes.has(routeKey),
+        goodWeather: environmentIsFair(environment),
+        canHold: (theme) =>
+          theme.mode === "venue" ||
+          templatesHolding(
+            request.persona,
+            theme.mode === "thread" ? holdsAThread : holdsAnExperience,
+          ).length > 0,
+      },
+      dice: diceStream({
+        seed,
+        identity: personaIdentity(request.persona),
+        site: "theme",
+        context: request.date,
+      }),
+    });
+    if (themeOutcome.status === "refused") {
+      // A requested theme that cannot be built is not a failed day — the day
+      // was never possible. Said plainly rather than downgraded in silence.
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "theme",
+        endpoint: "requested_infeasible",
+        estCostUsd: 0,
+        metadata: {
+          theme: themeId(themeOutcome.theme),
+          reason: themeOutcome.infeasibility.reason,
+          detail: themeOutcome.infeasibility.detail,
+        },
+      });
+      const stats = finishStats(0, 0, 0);
+      await deps.instrumentation.endTrace(traceId, {
+        totalCostUsd: estCostUsd,
+        fullDayMs: stats.timings.totalMs,
+        metadata: {
+          ...deps.traceMetadata,
+          outcome: "theme_infeasible",
+          theme: themeId(themeOutcome.theme),
+          theme_refusal: themeOutcome.infeasibility.reason,
+        },
+      });
+      return {
+        status: "theme-infeasible",
+        theme: themeOutcome.theme,
+        infeasibility: themeOutcome.infeasibility,
+        stats,
+      };
+    }
+    const theme = themeOutcome.selection.theme;
+
     // -- skeleton + retrieval ---------------------------------------------
-    let skeleton = buildSkeleton(request, { seed });
+    let skeleton = buildSkeleton(request, { seed, theme });
     /**
      * Anchor categories this day has proven it cannot seat. An unseatable
      * centrepiece is a reason to elect a different one — never a reason to
@@ -325,6 +424,7 @@ export async function generateDay(
       failedAnchorCategories.push(degraded.category);
       const reelected = buildSkeleton(request, {
         seed,
+        theme,
         excludeAnchorCategories: failedAnchorCategories,
       });
       await deps.instrumentation.logEvent(traceId, {
@@ -369,6 +469,8 @@ export async function generateDay(
       request.persona.lens,
       (request.anchors ?? []).map((a) => a.coords),
       diceStream({ seed, identity, site: "zone", context: request.date }),
+      // A theme has a geography, and the lens is not it (CP0 ruling 2).
+      themeZoneSlugs(theme),
     );
     const categories = [
       ...new Set(skeleton.intents.flatMap((i) => i.categories)),
@@ -505,19 +607,6 @@ export async function generateDay(
     );
     scored = scoreAll(kept, request.persona, request.budgetBand, seed);
     const candidatesById = new Map(scored.map((c) => [c.place.id, c]));
-
-    // -- environment (weather windows + daylight) --------------------------
-    const environment =
-      deps.examEnvironmentOverride ??
-      (await fetchEnvironment(deps.supabase, request.city, request.date));
-    if (deps.examEnvironmentOverride !== undefined) {
-      await deps.instrumentation.logEvent(traceId, {
-        provider: "exam",
-        endpoint: "environment_override",
-        metadata: { reason: "exam/test seam — synthetic weather in play" },
-      });
-    }
-    const dusk = timeToMinutes(environment.daylight.civilDuskLocal);
 
     // -- selection / composition / grammar loop ----------------------------
     const mealPattern = request.mealPattern ?? defaultMealPattern(request.persona);
@@ -676,6 +765,7 @@ export async function generateDay(
         failedAnchorCategories.push(failedCategory);
         const reelected = buildSkeleton(request, {
           seed,
+          theme,
           excludeAnchorCategories: failedAnchorCategories,
         });
         await deps.instrumentation.logEvent(traceId, {
@@ -776,6 +866,8 @@ export async function generateDay(
             // The arc is auditable after the fact: a later session can ask
             // which shape produced a day the founder rejected.
             arc_template_id: skeleton.templateId,
+            theme: themeId(theme),
+            theme_origin: themeOutcome.selection.origin,
             elected_anchor: skeleton.electedAnchor,
             anchor_degraded: skeleton.anchorDegraded,
             anchor_calibre_unmet: anchorCalibreUnmet,
@@ -792,6 +884,7 @@ export async function generateDay(
           anchorDegraded: skeleton.anchorDegraded,
           anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
+          theme: themeOutcome.selection,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,

@@ -709,7 +709,13 @@ async function main() {
           for (const line of day.verdict) console.log(`   founder: "${line}"`);
         }
         if (outcome.status !== "ok") {
-          console.log(`   OUTCOME: ${outcome.status} — ${outcome.narrated.headline}`);
+          console.log(
+            `   OUTCOME: ${outcome.status} — ${
+              outcome.status === "theme-infeasible"
+                ? `${outcome.infeasibility.reason}: ${outcome.infeasibility.detail}`
+                : outcome.narrated.headline
+            }`,
+          );
           continue;
         }
         const slots = [...outcome.day.slots].sort((a, b) =>
@@ -836,6 +842,10 @@ async function main() {
       console.log(`    note [${line.ruleId}]: ${line.text}`);
     }
     printNarration(outcome);
+  } else if (outcome.status === "theme-infeasible") {
+    console.log(
+      `\n  THEME INFEASIBLE — ${outcome.infeasibility.reason}: ${outcome.infeasibility.detail}`,
+    );
   } else {
     console.log(`\n  HONEST FAILURE — ${outcome.narrated.headline}`);
     for (const line of outcome.narrated.violations) {

@@ -9,6 +9,7 @@
  */
 
 import type { NarratedDay } from "@/shared/day-grammar/describe";
+import type { DayTheme, ThemeInfeasibility, ThemeSelection } from "@/shared/theme";
 import type {
   GrammarDay,
   GrammarPlace,
@@ -58,6 +59,12 @@ export interface GenerationRequest {
   seed?: number;
   dayStart?: string;
   dayEnd?: string;
+  /**
+   * The caller's REQUESTED theme (XXX-40). Absent or null = "concierge's
+   * choice", which is the absence of a request and resolves to a derived
+   * theme — not a fourth mode.
+   */
+  theme?: DayTheme | null;
 }
 
 /** One pool row plus everything learned about it during this request. */
@@ -307,6 +314,8 @@ export type GenerationOutcome =
        */
       anchorCalibreUnmet: { category: PlaceCategory; examined: number } | null;
       arcTemplateId: string;
+      /** How this day's theme was decided, and what it is (XXX-40). */
+      theme: ThemeSelection;
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];
       narrated: NarratedDay;
@@ -319,5 +328,20 @@ export type GenerationOutcome =
       status: "failed";
       violations: Violation[];
       narrated: NarratedDay;
+      stats: GenerationStats;
+    }
+  | {
+      /**
+       * A REQUESTED theme that cannot be built on this date (XXX-40).
+       *
+       * Its own status rather than a `failed` day, because nothing was wrong
+       * with the generation — the day was never possible. Golden Day 7 in
+       * January is the case: the Hanlan's route does not run, so the islands
+       * experience is infeasible and the traveller must be told that, not
+       * handed a mainland day under the same name.
+       */
+      status: "theme-infeasible";
+      theme: DayTheme;
+      infeasibility: ThemeInfeasibility;
       stats: GenerationStats;
     };

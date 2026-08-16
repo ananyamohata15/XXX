@@ -310,30 +310,48 @@ async function main(): Promise<void> {
     return cats.filter((_, i) => !STRUCTURAL_ROLES.has(roles[i]));
   };
 
-  let dSum = 0, dMax = 0, dN = 0, dWorst = "";
   /**
-   * The proposed THRESHOLD, derived rather than asserted.
+   * THE GATED DOMAIN — equal-length pairs only (XXX-40, Session 14 ruling).
    *
-   * "Break-one-shared-position logic": ask what the metric would read if
-   * every comparable pair became exactly ONE discretionary position less
-   * alike. That is the smallest improvement a reader would call real — one
-   * different choice per pair of days — and setting the gate there means it
-   * demands a change you could point at, rather than a number someone liked.
+   * The pre-registered threshold and normalizer are UNTOUCHED. What changed is
+   * the domain, and the Session 11 comparable-pairs precedent is the warrant:
+   * a metric may exclude a comparison it cannot make honestly.
    *
-   * Computed from this same run's data, so the proposal and the baseline
-   * cannot drift apart.
+   * The diagnosis that forced it: `LCS / min(len)` makes a SUBSEQUENCE score
+   * 1.00 by construction. `day-5-wanderer` carries two discretionary
+   * positions — the CP1 ruling gives wanderers three intents and one is a
+   * meal — and its two choices appear in order inside `day-4-budget`'s three,
+   * so the pair reads 1.00 while sharing nothing a concierge chose twice.
+   * Measured across the whole matrix: ONE pair above the gate, zero
+   * equal-length collisions.
+   *
+   * Gating on it would have gated the CP1 wanderer ruling rather than
+   * sameness. Normalizing by the longer sequence instead would have passed
+   * that same pair at exactly 0.67 — a knife-edge pass, refused.
+   *
+   * Unequal-length pairs are still REPORTED, at `byLonger`, with a watched
+   * expectation of <=0.67. Excluded from gating is not excluded from view.
    */
+  let dSum = 0, dMax = 0, dN = 0, dWorst = "";
+  /** Unequal-length pairs: reported at byLonger, never gating. */
+  let uMax = 0, uN = 0, uWorst = "";
   let breakSum = 0, breakMax = 0;
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
       const di = discretionaryOf(keys[i]);
       const dj = discretionaryOf(keys[j]);
       if (Math.abs(di.length - dj.length) > 1) continue;
+      const shared = lcs(di, dj);
+      if (di.length !== dj.length) {
+        const byLonger = shared / Math.max(1, Math.max(di.length, dj.length));
+        uN++;
+        if (byLonger > uMax) { uMax = byLonger; uWorst = `${keys[i]} vs ${keys[j]}`; }
+        continue;
+      }
       const so = overlap(di, dj);
       dSum += so; dN++;
       if (so > dMax) { dMax = so; dWorst = `${keys[i]} vs ${keys[j]}`; }
-      const floor = Math.min(di.length, dj.length);
-      const shared = overlap(di, dj) * floor; // = lcs
+      const floor = di.length;
       const broken = floor === 0 ? 0 : Math.max(0, shared - 1) / floor;
       breakSum += broken;
       breakMax = Math.max(breakMax, broken);
@@ -383,10 +401,34 @@ async function main(): Promise<void> {
    * mean stops being a measure of how short the sequences are.
    */
   const DISCRETIONARY_MAX_GATE = 0.67;
+  /**
+   * THE DENOMINATOR GUARD (Session 14 ruling) — the zero-fire lesson applied
+   * to the gate itself.
+   *
+   * A gate whose domain has emptied out reports PASS while measuring nothing,
+   * which is the same silence as a feature that never fires. Three is the
+   * floor: below it a single pair decides the gate, and "no pair was too
+   * alike" stops being a claim about the matrix.
+   */
+  const GATE_STARVED_BELOW = 3;
+  const totalPairs = (keys.length * (keys.length - 1)) / 2;
+  const starved = dN < GATE_STARVED_BELOW;
   const gatePass = dMax <= DISCRETIONARY_MAX_GATE;
   console.log(
-    `\n  DISCRETIONARY-sequence [non-meal positions, n=${dN}]:` +
-      ` max=${dMax.toFixed(2)} (GATE ≤${DISCRETIONARY_MAX_GATE}) → ${gatePass ? "PASS" : "FAIL"}   worst=${dWorst}`,
+    `\n  DISCRETIONARY-sequence [equal-length pairs, GATED: n=${dN} of ${totalPairs}]:` +
+      ` max=${dMax.toFixed(2)} (GATE ≤${DISCRETIONARY_MAX_GATE}) → ${starved ? "GATE-STARVED" : gatePass ? "PASS" : "FAIL"}   worst=${dWorst || "(none)"}`,
+  );
+  if (starved) {
+    console.log(
+      `      ⚠ only ${dN} equal-length pair(s) in the domain — below the ${GATE_STARVED_BELOW}-pair floor.` +
+        ` A gate this thin reports PASS while measuring almost nothing; treat as UNPROVEN, not green.`,
+    );
+  }
+  console.log(
+    `      unequal-length pairs [REPORTED at byLonger, non-gating, n=${uN}]:` +
+      ` max=${uMax.toFixed(2)} (watched ≤${DISCRETIONARY_MAX_GATE})   worst=${uWorst || "(none)"}` +
+      `\n        a shorter sequence that is a SUBSEQUENCE of a longer one scores 1.00 under min-normalization` +
+      ` by construction, which is why these are reported rather than gated.`,
   );
   console.log(
     `      mean=${dMean.toFixed(3)} (REPORTED ONLY — see the pre-registration note; short sequences make a mean gate measure granularity)`,

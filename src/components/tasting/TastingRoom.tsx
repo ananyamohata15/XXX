@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { InteractiveTimeline } from "@/components/timeline/InteractiveTimeline";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import {
+  EXPERIENCE_SPECS,
+  THREAD_SPECS,
+  type DayTheme,
+} from "@/shared/theme";
 import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
 import type { TastingOutcome, TastingQuota } from "@/shared/tasting";
 import { Meter, StandingMeter } from "./Meter";
@@ -24,6 +29,36 @@ import { VerdictControls } from "./VerdictControls";
  */
 
 const PERSONA_KEYS = Object.keys(GOLDEN_PERSONAS);
+
+/**
+ * The picker's options, built from the shared vocabulary so the room cannot
+ * offer a theme the engine does not have.
+ */
+const THEME_OPTIONS: { key: string; label: string }[] = [
+  { key: "", label: "Concierge's choice" },
+  { key: "venue", label: "A day around one place" },
+  ...THREAD_SPECS.map((t) => ({ key: `thread:${t.id}`, label: t.label })),
+  ...EXPERIENCE_SPECS.map((e) => ({ key: `experience:${e.id}`, label: e.label })),
+];
+
+function themeFor(key: string): DayTheme | null {
+  if (key === "") return null; // concierge's choice = no request
+  if (key === "venue") return { mode: "venue" };
+  const [mode, id] = key.split(":");
+  return mode === "thread"
+    ? { mode: "thread", threadId: id as (typeof THREAD_SPECS)[number]["id"] }
+    : {
+        mode: "experience",
+        experienceId: id as (typeof EXPERIENCE_SPECS)[number]["id"],
+      };
+}
+
+/**
+ * The founder's own downtown preset. A single hand-set point rather than an
+ * address field: the vet needs lodging KNOWN versus UNKNOWN, and a text box
+ * would need geocoding we are not permitted to store (decision 001).
+ */
+const DOWNTOWN_LODGING = { lat: 43.6517, lng: -79.3817 };
 
 /**
  * The pipeline's known sequence with Session 9's measured timings. It is
@@ -220,6 +255,19 @@ export function TastingRoom() {
   const [date, setDate] = useState("");
   const [budget, setBudget] = useState("");
   const [synthetic, setSynthetic] = useState(true);
+  /**
+   * The theme picker (XXX-40). `""` is **concierge's choice** — the ABSENCE
+   * of a request, sent as `theme: null` so the engine derives one. It is
+   * deliberately not a fourth mode: a UI affordance must not become domain
+   * vocabulary.
+   */
+  const [themeKey, setThemeKey] = useState("");
+  /**
+   * Lodging. Off by default, and that default is the honest one — a trip
+   * with no hotel set behaves exactly as it did before this session, and the
+   * page says so rather than quietly assuming downtown.
+   */
+  const [lodgingOn, setLodgingOn] = useState(false);
   const [busyAt, setBusyAt] = useState<number | null>(null);
   const [outcome, setOutcome] = useState<TastingOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +314,8 @@ export function TastingRoom() {
           budgetMax: budget === "" ? null : Number(budget),
           seed: null,
           synthetic,
+          theme: themeFor(themeKey),
+          lodging: lodgingOn ? DOWNTOWN_LODGING : null,
         }),
       });
       const body = await response.json();
@@ -348,6 +398,18 @@ export function TastingRoom() {
             ))}
             <option value="__random">Random persona</option>
           </select>
+          <select
+            value={themeKey}
+            disabled={synthetic}
+            onChange={(e) => setThemeKey(e.target.value)}
+            className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+          >
+            {THEME_OPTIONS.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-2.5">
             <input
               type="date"
@@ -397,6 +459,24 @@ export function TastingRoom() {
           <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
             <input
               type="checkbox"
+              checked={lodgingOn}
+              disabled={synthetic}
+              onChange={(e) => setLodgingOn(e.target.checked)}
+            />
+            Staying downtown (sets lodging)
+          </label>
+          {!lodgingOn && (
+            /* Honest absence, said out loud. Without lodging the day cannot
+               vouch for a long gap and cannot deal a rest stop, and the
+               founder should know that is WHY rather than wonder. */
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              No lodging set — the day will not place a hotel rest stop, and a
+              long gap stays flagged as one it cannot vouch for.
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+            <input
+              type="checkbox"
               checked={synthetic}
               onChange={(e) => setSynthetic(e.target.checked)}
             />
@@ -437,6 +517,25 @@ export function TastingRoom() {
               <code className="font-mono">{outcome.raiseAt}</code>.
             </p>
           </div>
+        </div>
+      )}
+
+      {outcome?.status === "theme-infeasible" && (
+        /* NOT a failure — the day was never possible on this date. The room
+           says which theme and why, because handing back a different KIND of
+           day under the same label is the silent fallback constraint 4
+           forbids. */
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            That day is not possible on this date.
+          </p>
+          <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+            {outcome.detail}
+          </p>
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            Nothing was generated and nothing was spent. Pick another date or
+            another theme.
+          </p>
         </div>
       )}
 
@@ -496,6 +595,14 @@ export function TastingRoom() {
               mins?" — was invisible on the page that produced it. A
               centrepiece seated below calibre now says so here rather than
               only in a trace nobody reads during a tasting. */}
+          {/* What organizing mode built this day — and whether the founder
+              asked for it or the concierge chose it. A derived theme carries
+              its reason; a requested one needs none. */}
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Theme: <span className="font-mono">{outcome.theme.id}</span>{" "}
+            ({outcome.theme.origin})
+            {outcome.theme.reason !== null && ` — ${outcome.theme.reason}`}
+          </p>
           {outcome.anchorDegraded !== null && (
             <div className="mx-auto mt-6 w-full max-w-md px-4">
               <p className="rounded-xl border border-amber-300 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-400">

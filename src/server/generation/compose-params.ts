@@ -64,6 +64,17 @@ export const COMPOSE_PARAMS = {
      * sets WHICH bucket — an icons persona never draws a corners zone.
      */
     zone: 0.3,
+    /**
+     * WHICH THEME a derived day takes (XXX-40, Session 14).
+     *
+     * 0.25 — between the anchor's 0.05 and the contrast's 0.3, and the
+     * position is the argument. A theme is a bigger commitment than a
+     * contrast, so it should follow gravity more firmly; it is a smaller one
+     * than the anchor, which IS the persona's first interest made concrete.
+     * At 0.05 every nature-first persona would draw the islands on every
+     * eligible date, which is monotony wearing a theme.
+     */
+    theme: 0.25,
   },
 
   /**
