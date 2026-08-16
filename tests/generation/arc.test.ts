@@ -34,7 +34,14 @@ import { CATEGORY_FAMILY, TIERS, type PlaceCategory } from "@/shared/vocabulary"
 
 const DATE = "2026-09-19"; // a Saturday
 
-const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
+/**
+ * A request whose seed is KNOWN, not merely optional. `GenerationRequest.seed`
+ * is the caller's request for a seed and may be absent; every fixture here
+ * states one, so the tests can compose at exactly the seed they name.
+ */
+type SeededRequest = GenerationRequest & { seed: number };
+
+const request = (over: Partial<GenerationRequest> = {}): SeededRequest => ({
   city: "toronto",
   date: DATE,
   persona: GOLDEN_PERSONAS["day-2-old-town"],
@@ -43,6 +50,18 @@ const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
   seed: 42,
   ...over,
 });
+
+/**
+ * Compose at the request's own seed — what the engine does for a caller who
+ * supplied one. Since Session 13 the composer takes the day's RESOLVED seed
+ * explicitly, so the fixture has to say which seed it means; it must never
+ * be inferred from the request inside composition again (see
+ * `seed-plumbing.test.ts` for the defect this replaced).
+ */
+const skeletonFor = (
+  req: SeededRequest,
+  options: { excludeAnchorCategories?: readonly PlaceCategory[] } = {},
+) => buildSkeleton(req, { seed: req.seed, ...options });
 
 describe("arc templates are a grammar of shapes", () => {
   it.each(ARC_TEMPLATES.map((t) => [t.id, t] as const))(
@@ -91,10 +110,20 @@ describe("arc templates are a grammar of shapes", () => {
  * named test failure instead of a TypeError three lines later.
  */
 function elect(persona: Persona, exclude: PlaceCategory[] = []): ElectedAnchor {
-  const e = electAnchor(persona, exclude);
+  const e = electAnchor(persona, { exclude, dice: fixedDice() });
   if (e === null) throw new Error("expected an anchor to be elected");
   return e;
 }
+
+/**
+ * A stream that always returns 0 — the FIRST eligible option, every time.
+ *
+ * Not a mock of the dice: it is the draw at its lowest roll, which is what
+ * lets a test assert "gravity still decides" without asserting on a
+ * particular PRNG's output. Tests that care about spread use a real
+ * `diceStream` instead (see "the dice" below).
+ */
+const fixedDice = (): (() => number) => () => 0;
 
 describe("anchor election", () => {
   it("elects the persona's first interest, never a meal", () => {
@@ -113,7 +142,7 @@ describe("anchor election", () => {
   });
 
   it("labels itself Tier 3 and names its elector", () => {
-    const skeleton = buildSkeleton(request());
+    const skeleton = skeletonFor(request());
     expect(skeleton.electedAnchor).not.toBeNull();
     expect(skeleton.electedAnchor!.tier).toBe(TIERS.judgment);
     expect(skeleton.electedAnchor!.source).toBe("arc_elector_v1");
@@ -121,7 +150,7 @@ describe("anchor election", () => {
   });
 
   it("is PRE-EMPTED by a user anchor — the day already has a centre", () => {
-    const skeleton = buildSkeleton(
+    const skeleton = skeletonFor(
       request({
         anchors: [
           {
@@ -140,7 +169,7 @@ describe("anchor election", () => {
   it("every persona and seed still produces exactly one anchor intent", () => {
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
       for (const seed of [0, 1, 7, 42, 1234]) {
-        const skeleton = buildSkeleton(
+        const skeleton = skeletonFor(
           request({ persona: GOLDEN_PERSONAS[key], seed }),
         );
         const anchors = skeleton.intents.filter((i) => i.role === "anchor");
@@ -159,7 +188,7 @@ describe("anchor election", () => {
     // founder rejected, delivered silently.
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
       for (const seed of [0, 3, 11, 42, 99, 512]) {
-        const skeleton = buildSkeleton(
+        const skeleton = skeletonFor(
           request({ persona: GOLDEN_PERSONAS[key], seed }),
         );
         expect(
@@ -180,25 +209,41 @@ describe("texture: contrast never repeats the anchor's family", () => {
         persona,
         anchor,
         new Set([CATEGORY_FAMILY[anchor]]),
+        { dice: fixedDice() },
       );
-      if (contrast === null) continue;
-      expect(CATEGORY_FAMILY[contrast]).not.toBe(CATEGORY_FAMILY[anchor]);
+      // Every entry of the diced ORDER must clear the family rule, not just
+      // its head — the whole list is carried into the intent now, so a bad
+      // tail member would be seated whenever the head fails to seat.
+      for (const c of contrast) {
+        expect(CATEGORY_FAMILY[c]).not.toBe(CATEGORY_FAMILY[anchor]);
+      }
     }
   });
 
   it("does not hand a daytime slot to a bar on an affinity tie", () => {
     // day-2's persona has zero affinity for both parks and nightlife, and
-    // alphabetical order used to give 14:20 to `nightlife_bars`.
+    // alphabetical order used to give 14:20 to `nightlife_bars`. Now `night`
+    // is FILTERED from daytime contrast rather than merely ranked last — it
+    // is a fact about what a 14:20 stop can be, not a preference the dice
+    // may trade away — so no roll of any temperature can surface it.
     const persona = GOLDEN_PERSONAS["day-2-old-town"];
-    const pick = pickContrast(persona, "historic_sites", new Set(["culture", "market"]));
-    expect(pick).toBe("parks");
+    for (const roll of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const picks = pickContrast(
+        persona,
+        "historic_sites",
+        new Set(["culture", "market"]),
+        { dice: () => roll },
+      );
+      expect(picks).toContain("parks");
+      expect(picks).not.toContain("nightlife_bars");
+    }
   });
 
   it("skeletons keep at least three texture families where the day allows", () => {
     // The rule that rejects A-B-A-B only fires below three families, so the
     // arc must actually reach three or the rule is doing nothing.
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
-      const skeleton = buildSkeleton(request({ persona: GOLDEN_PERSONAS[key] }));
+      const skeleton = skeletonFor(request({ persona: GOLDEN_PERSONAS[key] }));
       const families = new Set(
         skeleton.intents.map((i) => CATEGORY_FAMILY[i.categories[0]]),
       );
@@ -209,7 +254,7 @@ describe("texture: contrast never repeats the anchor's family", () => {
 
 describe("free time is placed, not residue", () => {
   it("reserves its minutes so the next stop is pushed later on purpose", () => {
-    const skeleton = buildSkeleton(
+    const skeleton = skeletonFor(
       request({ persona: GOLDEN_PERSONAS["day-3-winter"], seed: 5 }),
     );
     // Not every template carries an open step; the ones that do must place
@@ -349,7 +394,7 @@ describe("seating moves meals off the window edge (the A/B, on fixtures)", () =>
 
   function compose(legacy: boolean) {
     const req = request();
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const used = new Set<string>();
     const selections: Selection[] = [];
     for (const intent of skeleton.intents) {
@@ -475,7 +520,7 @@ describe("the elected anchor survives composition", () => {
     "%s composes a day that contains its elected anchor",
     (key) => {
       const req = request({ persona: GOLDEN_PERSONAS[key] });
-      const skeleton = buildSkeleton(req);
+      const skeleton = skeletonFor(req);
       expect(skeleton.electedAnchor).not.toBeNull();
 
       const used = new Set<string>();
@@ -532,7 +577,9 @@ describe("the elected anchor survives composition", () => {
     const nonFood = (Object.keys(GRAMMAR_PARAMS.dwellMinutes) as PlaceCategory[]).filter(
       (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
     );
-    expect(electAnchor(persona, nonFood)).toBeNull();
+    expect(
+      electAnchor(persona, { exclude: nonFood, dice: fixedDice() }),
+    ).toBeNull();
   });
 });
 
@@ -587,7 +634,7 @@ describe("an unseatable anchor is REPORTED, never silently absent", () => {
 
   it("puts the anchor's intent id in composed.unfilled when it cannot sit", () => {
     const req = request({ persona: GOLDEN_PERSONAS["day-3-winter"] });
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const anchorIntent = skeleton.intents.find((i) => i.role === "anchor")!;
     const anchorCategory = skeleton.electedAnchor!.category;
 
@@ -650,7 +697,7 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
   it.each(Object.keys(GOLDEN_PERSONAS))(
     "%s lays out every step after the meal that precedes it",
     (key) => {
-      const skeleton = buildSkeleton(
+      const skeleton = skeletonFor(
         request({ persona: GOLDEN_PERSONAS[key] }),
       );
       const ordered = [...skeleton.intents].sort(
@@ -677,7 +724,7 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
 
   it("keeps the day's ending: no persona drops its close to slicing", () => {
     for (const key of Object.keys(GOLDEN_PERSONAS)) {
-      const skeleton = buildSkeleton(
+      const skeleton = skeletonFor(
         request({ persona: GOLDEN_PERSONAS[key] }),
       );
       expect(

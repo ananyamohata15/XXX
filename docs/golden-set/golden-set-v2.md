@@ -100,8 +100,42 @@ this leg.
 
 **Variant to spec later**: Torrance Barrens dark-sky night — car + new-moon + clear-sky gates, depart after dinner, return ~02:00.
 
+
+# Golden Day 7 — The Islands Day (v1.0, founder-verified 2026-08-15)
+
+The XXX-38 acceptance target: composite anchor, provisioning, travel-as-experience, conditional ending. Sources: founder red-line + City of Toronto ferry schedule (fetched 2026-08-15, summer schedule May 13–Sep 15) + Hanlan's geography (west-facing beach).
+
+## Day 7 — Toronto Islands excursion (COMPOSITE ANCHOR + PROVISIONING)
+**Persona**: pace=relaxed / interests=nature>food>local-life / food=adventurous / structure=scheduler-loose / corners
+**Circumstances**: mid-July Sat, sunny 27°C, budget ~$140 for two, walk+transit+FERRY, party of 2–4
+**Prep note (activity-derived bring-list)**: sunscreen, water, bluetooth speaker, frisbee/volleyball, camera, blanket.
+
+- 09:00–10:15 — brunch: **Mildred's Temple Kitchen, Liberty Village** (VERIFIED hours: Sat 09:00–14:00, Sun 09:00–15:00, Mon–Thu 10:00–15:00, Fri 10:00–14:00; weekend LINE — arrive at open, "earlier you get the better")
+- 10:20–10:50 — **PROVISIONING (new role)**: picnic supplies — No Frills / Metro / Longo's, all near Liberty Village (founder-verified) + **LCBO** for wine/beer. Alcohol on the islands: **permitted** (founder-verified; official-source citation owed to the civic KB — see traps)
+- (streetcar/walk to Jack Layton Ferry Terminal, ~20–25 min)
+- 11:45 dep — **TRAVEL-AS-EXPERIENCE**: ferry to **Hanlan's Point** (VERIFIED summer schedule: city departures 11:15/11:45/12:15...; ~15-min crossing; skyline views). Water-taxi alternative: Tiki Taxi / Pirate Taxi / Toronto Harbour Water Taxi (premium, flexible)
+- **12:00–20:00 — THE ANCHOR (COMPOSITE, ~8h with the sunset): Toronto Islands**
+  - Hanlan's Point Beach: claim a spot, picnic, music, frisbee. **Concierge note: Hanlan's Beach is clothing-optional — one beach, not the whole island** (founder ruling on framing); historic queer space, firepits and picnic sites nearby
+  - optional drift: boardwalk toward Gibraltar Point lighthouse; bike rental at Centre Island
+  - late-afternoon: wander toward Centre/Ward's skyline lawns, or hold the beach
+  - **~20:45 — SUNSET FROM THE ISLAND (the anchor's closing beat)**: Hanlan's beach is west-facing — the best sunset spot on the islands (founder ruling: caught from the island)
+- 21:30 dep — return ferry (VERIFIED: Hanlan's departures 21:30 / 22:00 / 22:30 / 23:00 — last boat 11pm; comfortable margin after sunset)
+- Evening — **CONDITIONAL ENDING (founder-ratified concept)**: late dinner downtown — King West late-kitchen spot [founder pick TBD] — **or if you're tired, straight back to the hotel**. The concierge offers both, framed by the energy of an 8-hour sun day.
+
+**Traps for a naive generator**:
+- Capping the island at parks' 150-min dwell (composite anchor must express 6–8h)
+- Skipping provisioning (the grocery stop exists BECAUSE of the picnic — causality)
+- Ferry as dead time (it's an experience leg with skyline views)
+- Last-ferry ignorance (Hanlan's 23:00 final; and WINTER = Ward's route ONLY — Hanlan's runs mid-Apr–mid-Oct, so this day is SEASONALLY INVALID Nov–Mar on the ferry itself, not just the beach)
+- Mildred's on a Friday at 09:00 (opens 10:00 Fri — per-weekday hours trap again)
+- Weather-blind generation (rain kills this day; needs the weather gate)
+- No bring-list; alcohol advice without the bylaw fact; clothing-optional unmentioned OR overstated (one beach, not the island)
+**Civic-KB facts this day consumes** (quarterly-refresh class): ferry schedule + seasonal routes (toronto.ca, fetched 2026-08-15), island alcohol rule (citation owed), beach designations
+**Pool checks owed**: Toronto Islands / Hanlan's Point as identities; No Frills/Metro/Longo's/LCBO (grocery category — XXX-37); Mildred's present + categorized; ferry mode (XXX-38)
+
 ---
 ## Open items
 - [OPEN] Day 1 lunch replacement pick (Rasta Pasta proposed)
 - [OPEN] PRESTO day-pass current price
 - Pool checks owed: St. Lawrence Market, MOCA, Rogers Centre, Distillery entities present + categorized in FSQ pool
+- [Open]: [founder pick] late-dinner default on King West

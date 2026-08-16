@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { InteractiveTimeline } from "@/components/timeline/InteractiveTimeline";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
-import type { TastingOutcome } from "@/shared/tasting";
-import { Meter } from "./Meter";
+import type { TastingOutcome, TastingQuota } from "@/shared/tasting";
+import { Meter, StandingMeter } from "./Meter";
 import { VerdictControls } from "./VerdictControls";
 
 /**
@@ -226,7 +226,28 @@ export function TastingRoom() {
   const [dayNote, setDayNote] = useState("");
   const [dayNoteSent, setDayNoteSent] = useState<string | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
-
+  /**
+   * The spend gauge, read independently of any generation.
+   *
+   * It used to arrive only on a generation's response, so the number on
+   * screen described the last day THIS page paid for — not the month. That
+   * is Session 12's 66-event drift exactly: a reading that was correct when
+   * made and four days stale when read, blind to 36 CLI-harness events the
+   * page could never have known about. A fence that only moves when you push
+   * it is not a fence.
+   */
+  const [quota, setQuota] = useState<TastingQuota | null>(null);
+  const refreshQuota = async () => {
+    try {
+      const response = await fetch("/api/tasting/quota", { cache: "no-store" });
+      if (!response.ok) return; // the gauge is never worth breaking the room
+      const body = await response.json();
+      setQuota(body.quota as TastingQuota);
+    } catch {
+      // Same reasoning: a failed gauge read leaves the last known figure,
+      // and the generation path still reports its own.
+    }
+  };
   const generate = async () => {
     setBusyAt(Date.now());
     setError(null);
@@ -260,6 +281,10 @@ export function TastingRoom() {
       setError((err as Error).message);
     } finally {
       setBusyAt(null);
+      // Whatever the outcome. A generation that failed or was capped may
+      // still have spent Details events before it stopped, and those are
+      // exactly the ones a success-only refresh would hide.
+      void refreshQuota();
     }
   };
 
@@ -292,6 +317,11 @@ export function TastingRoom() {
         onOpen={() => {
           setDate(randomNearFutureDate());
           setOpen(true);
+          // Read on ENTRY, for the same reason the date is randomised here
+          // rather than in an effect: entering the room is an event, and an
+          // effect that fetches on mount is a cascading render the room does
+          // not need. The gauge is also refreshed after every generation.
+          void refreshQuota();
         }}
       />
     );
@@ -385,6 +415,11 @@ export function TastingRoom() {
         {error && (
           <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>
         )}
+
+        {/* Before the first generation there is no meter to read the gauge
+            off, which is exactly when a founder is deciding whether to
+            spend. Read live on entry. */}
+        {outcome === null && quota !== null && <StandingMeter quota={quota} />}
       </div>
 
       {busyAt !== null && <Skeleton startedAt={busyAt} />}
@@ -419,7 +454,7 @@ export function TastingRoom() {
               [{v.ruleId}] {v.text}
             </p>
           ))}
-          <Meter meter={outcome.meter} synthetic={false} />
+          <Meter meter={outcome.meter} synthetic={false} quota={quota} />
         </div>
       )}
 
@@ -453,6 +488,23 @@ export function TastingRoom() {
                 days out and the forecast reaches{" "}
                 {outcome.weatherBlind.horizonDays}. Hours, pacing and travel
                 were checked; weather and walking exposure were not.
+              </p>
+            </div>
+          )}
+
+          {/* The founder's own finding — "An anchor that lasts only 20
+              mins?" — was invisible on the page that produced it. A
+              centrepiece seated below calibre now says so here rather than
+              only in a trace nobody reads during a tasting. */}
+          {outcome.anchorDegraded !== null && (
+            <div className="mx-auto mt-6 w-full max-w-md px-4">
+              <p className="rounded-xl border border-amber-300 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-400">
+                <strong>Small centre.</strong> The day&apos;s anchor
+                ({outcome.anchorDegraded.category}) could only be seated for{" "}
+                {outcome.anchorDegraded.fittedMinutes} minutes — a centrepiece
+                wants {outcome.anchorDegraded.floorMinutes}. Every other
+                category was tried and none did better, so the day kept this
+                one rather than swapping it for an equally cramped substitute.
               </p>
             </div>
           )}
@@ -545,7 +597,7 @@ export function TastingRoom() {
               </div>
             </section>
 
-            <Meter meter={outcome.meter} synthetic={outcome.synthetic} />
+            <Meter meter={outcome.meter} synthetic={outcome.synthetic} quota={quota} />
 
             <button
               type="button"

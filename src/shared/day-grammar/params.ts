@@ -61,7 +61,7 @@ export const GRAMMAR_PARAMS = {
    * rather than a slot). `grazing` left the meal patterns in the same
    * change — see SESSION_NOTES §1.3.
    */
-  version: "v2",
+  version: "v3",
 
   /**
    * Plausible time in a place, by category. Applied ONLY to
@@ -85,6 +85,38 @@ export const GRAMMAR_PARAMS = {
     markets: { min: 30, typical: 75, max: 150 },
     parks: { min: 20, typical: 60, max: 150 },
     nightlife_bars: { min: 45, typical: 90, max: 180 },
+    /**
+     * Vocabulary v2 dwells (XXX-37) — all TIER 3 judgment, all new, and all
+     * owed the founder's eye. Each is argued rather than assumed.
+     *
+     * `shopping` 30/75/180. A mall or a shopping district is a browse, and
+     * the browse IS the stop — Eaton Centre in half an hour is a transit
+     * connection, not a visit. 180 lets a genuine shopping afternoon exist;
+     * 30 is the floor below which you did not really go.
+     */
+    shopping: { min: 30, typical: 75, max: 180 },
+    /**
+     * `scenic_viewpoints` 15/40/90. You arrive, you look, you photograph,
+     * you leave — a lookout is the shortest honest stop in the vocabulary,
+     * and 15 minutes at one is a real visit rather than a degradation.
+     *
+     * The MAX is the load-bearing number here, not the typical. It is 90 so
+     * that `anchorDwellFor` can clamp a scenic anchor up to the 75-minute
+     * calibre floor: a scenic-leaning persona must be able to have a day
+     * centred on a view. CN Tower is a 75-minute centrepiece; a roadside
+     * lookout is not, and telling those apart is `anchor-calibre`'s job, not
+     * this range's. Had the max been 60 — the number a lookout suggests —
+     * every scenic-first day would have degraded its own centre, which is
+     * precisely the trap `parks.typical` = 60 set for nature-first days.
+     */
+    scenic_viewpoints: { min: 15, typical: 40, max: 90 },
+    /**
+     * `grocery` 10/25/45. A provisioning stop is an errand with a purpose:
+     * long enough to pick up a picnic and a bottle of wine, short enough
+     * that it never reads as an activity. Never an anchor
+     * (`NON_ANCHOR_CATEGORIES`), so no calibre floor applies to it.
+     */
+    grocery: { min: 10, typical: 25, max: 45 },
   } satisfies Record<PlaceCategory, DwellRange>,
 
   /**

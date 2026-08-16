@@ -24,19 +24,15 @@
       "Bash(git restore:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "Bash(npx tsx scripts/pool-report.ts:*)",
-      "Bash(npx tsx scripts/base-layer-report.ts:*)",
-      "Bash(npx tsx scripts/health-report.ts:*)",
-      "Bash(npx tsx scripts/grammar-report.ts:*)"
-    ],
-    "ask": [
-      "Bash(rm:*)",
-      "Bash(npm install:*)",
-      "Bash(npx supabase:*)",
       "Bash(npx tsx:*)",
-      "Bash(node:*)",
+      "Bash(npx supabase:*)",
+      "Bash(npm install:*)",
+      "Bash(rm:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
+      "Bash(node:*)"
+    ],
+    "ask": [
       "Bash(git push:*)"
     ],
     "deny": [

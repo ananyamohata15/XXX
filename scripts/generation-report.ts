@@ -16,6 +16,7 @@ import { timeToMinutes } from "@/shared/time";
 import { CATEGORY_FAMILY } from "@/shared/vocabulary";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { computeDaylight } from "@/server/weather/ephemeris";
+import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
 
@@ -42,6 +43,10 @@ import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
  *                       and prints the seat-centering A/B histograms — the
  *                       A/B costs nothing, because composeDay is pure and
  *                       both seatings run on one generation's inputs.
+ *   --personas a,b,c    with --matrix: run only these golden personas. For
+ *                       re-reading the structural gates on a subset of days
+ *                       without repaying for the ones already read. Pairwise
+ *                       metrics are then printed as SUBSET and gate nothing.
  *   --session10-ab      the two days the founder red-penned, re-run at their
  *                       exact persona/date/seed and read against their own
  *                       recorded verdicts (XXX-35 CP2)
@@ -386,8 +391,37 @@ async function main() {
 
   // ---- 6-persona distinctiveness matrix (CP3 proof b) ------------------
   if (has("--matrix")) {
+    // A subset re-run exists to re-read the STRUCTURAL gates (anchors,
+    // closes-restated) on days whose per-day blocks were lost, without paying
+    // for the personas already read. Everything pairwise — venue overlap,
+    // both sequence metrics — is computed over a different pair domain when
+    // the subset is partial, so it is printed as SUBSET and carries no
+    // verdict. The full-run numbers stay banked in SESSION_NOTES.md; a
+    // cheaper run must never be able to overwrite them by looking similar.
+    const allKeys = Object.keys(GOLDEN_PERSONAS);
+    const requested = arg("--personas");
+    const keys =
+      requested === null || requested === undefined
+        ? allKeys
+        : requested.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
+    const unknown = keys.filter((k) => GOLDEN_PERSONAS[k] === undefined);
+    if (unknown.length > 0) {
+      console.error(
+        `Unknown persona(s) in --personas: ${unknown.join(", ")}. Known: ${allKeys.join(", ")}`,
+      );
+      process.exit(1);
+    }
+    const isSubset = keys.length < allKeys.length;
     console.log(`generation-report MATRIX: date=${date} seed=${seed} [llm]`);
-    const keys = Object.keys(GOLDEN_PERSONAS);
+    if (isSubset) {
+      console.log(
+        `  SUBSET RUN: ${keys.length}/${allKeys.length} personas (${keys.join(", ")}).\n` +
+          `  Structural gates (anchors, closes-restated) are read over these personas only.\n` +
+          `  Pairwise metrics below cover ${(keys.length * (keys.length - 1)) / 2} of ` +
+          `${(allKeys.length * (allKeys.length - 1)) / 2} pairs and are NOT the gate — ` +
+          `use the banked full-run numbers.`,
+      );
+    }
     const outcomes = new Map<string, GenerationOutcome>();
     // The A/B costs nothing: composeDay is pure given these inputs, so the
     // last ones the engine used get recomposed the OLD way for comparison.
@@ -485,12 +519,51 @@ async function main() {
       }
       console.log(`  ${keys[i].padEnd(18)} ${row.join("  ")}`);
     }
+    // The two structural gates, summarised rather than left scattered across
+    // six per-day blocks. Session 12 ran a $2.28 live matrix and could not
+    // read its own anchors gate afterwards, because this summary did not
+    // exist and the per-day lines had scrolled — a gate you must reassemble
+    // by eye is a gate you will eventually get wrong.
+    const anchorsSeated = keys.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("anchor"),
+    ).length;
+    console.log(
+      `\n  anchors seated: ${anchorsSeated}/${keys.length} → ${anchorsSeated === keys.length ? "PASS" : "FAIL"}` +
+        (isSubset ? `   (over the ${keys.length} personas run)` : ""),
+    );
+    // Closes, RESTATED (Session 12 CP2 ruling 1): seated closes over the
+    // templates that HAVE a close step. `moderate-d`, `packed-c` and
+    // `relaxed-d` end on a meal BY DESIGN — Session 11 §7.3's own fix for the
+    // unrecorded `lastStep = "close"` invariant — so counting them as missing
+    // closes measured the template table, not the composer.
+    const wantsClose = keys.filter((k) => {
+      const outcome = outcomes.get(k)!;
+      if (outcome.status !== "ok") return false;
+      return (
+        ARC_TEMPLATES.find((t) => t.id === outcome.arcTemplateId)?.steps ?? []
+      ).includes("close");
+    });
+    const closesSeated = wantsClose.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("close"),
+    ).length;
+    const rawCloses = keys.filter((k) =>
+      roleSequence(outcomes.get(k)!).includes("close"),
+    ).length;
+    console.log(
+      `  closes [seated / templates WITH a close step]: ${closesSeated}/${wantsClose.length} → ${closesSeated === wantsClose.length ? "PASS" : "FAIL"}` +
+        `   (raw, for the record: ${rawCloses}/${keys.length})`,
+    );
+
     const mean = sum / pairs;
     const venuePass =
       mean <= VENUE_OVERLAP_GATE.mean && max <= VENUE_OVERLAP_GATE.max;
     console.log(
       `\n  venue overlap: mean=${mean.toFixed(3)} (AC ≤${VENUE_OVERLAP_GATE.mean}) max=${max.toFixed(2)} (AC ≤${VENUE_OVERLAP_GATE.max}) → ${
-        venuePass ? "PASS" : "FAIL"
+        isSubset
+          ? `SUBSET (${pairs} of ${(allKeys.length * (allKeys.length - 1)) / 2} pairs) — NOT THE GATE`
+          : venuePass
+            ? "PASS"
+            : "FAIL"
       }`,
     );
     const seqMean = seqSum / pairs;
@@ -499,10 +572,16 @@ async function main() {
       cmpMean <= CATEGORY_SEQUENCE_GATE.mean &&
       cmpMax <= CATEGORY_SEQUENCE_GATE.max;
     console.log(
-      `  category-sequence overlap [GATED, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} (GATE ≤${CATEGORY_SEQUENCE_GATE.mean}) max=${cmpMax.toFixed(2)} (GATE ≤${CATEGORY_SEQUENCE_GATE.max}) → ${
-        seqPass ? "PASS" : "FAIL"
-      }`,
+      `  category-sequence overlap [REPORTED, NON-GATING since Session 12, comparable shapes, |Δstops|≤1, n=${cmpPairs}]: mean=${cmpMean.toFixed(3)} max=${cmpMax.toFixed(2)}` +
+        `  (would-have-been ≤${CATEGORY_SEQUENCE_GATE.mean}/${CATEGORY_SEQUENCE_GATE.max}: ${seqPass ? "PASS" : "FAIL"})`,
     );
+    // Demoted by deliberate adjudication at Session 12 CP2, with the numbers
+    // on the record: the dice are proven honest (six-bar day dead, twins
+    // diverge, non-inversion structural) and the residual is vocabulary-bound
+    // — the meal pattern alone floors this metric at ~0.40 of the ~0.61
+    // measured, and five non-meal categories cannot distinguish six
+    // travellers. Re-registered as XXX-37's acceptance criterion at ≤0.55 on
+    // the EXPANDED vocabulary. It is reported here, never silently dropped.
     if (cmpMax > 0) {
       console.log(`      worst comparable pair: ${cmpWorst[0] ?? "n/a"}`);
     }
@@ -510,7 +589,10 @@ async function main() {
       `  category-sequence overlap [cross-shape, |Δstops|≥2, n=${crossPairs}]: mean=${(crossPairs > 0 ? crossSum / crossPairs : 0).toFixed(3)} max=${crossMax.toFixed(2)} (reported, NON-GATING — a short day is a subsequence of a long one by arithmetic)`,
     );
     console.log(
-      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   [Session 9 baseline 0.693; Session 11 pre-fix 0.711]`,
+      `  category-sequence overlap [all pairs, n=${pairs}]: mean=${seqMean.toFixed(3)} max=${seqMax.toFixed(2)}   ` +
+        (isSubset
+          ? "[SUBSET — not comparable to the 15-pair baselines]"
+          : "[Session 9 baseline 0.693; Session 11 pre-fix 0.711]"),
     );
     console.log(
       `  role-sequence overlap:     mean=${(roleSum / pairs).toFixed(3)} (observed, non-gating — the leading indicator of template homogenization)`,
@@ -594,9 +676,23 @@ async function main() {
       },
     ];
     const inHorizon = arg("--in-horizon");
+    // The banner used to hardcode "[llm]" while --session10-ab was absent from
+    // useLlm, so an A/B run without --llm claimed a selector it never used.
+    // The audited traces were produced by the tasting room, i.e. the LLM path;
+    // comparing a deterministic re-run against them measures a different
+    // pipeline and quietly answers a question nobody asked.
     console.log(
-      "generation-report SESSION-10 A/B: the founder's own two days, re-run [llm]",
+      `generation-report SESSION-10 A/B: the founder's own two days, re-run [${
+        useLlm ? "llm" : "deterministic"
+      }]`,
     );
+    if (!useLlm) {
+      console.log(
+        "  WARNING: running the DETERMINISTIC selector. The audited traces\n" +
+          "  (a825417a, d9935541) came from the tasting room's LLM path, so this\n" +
+          "  is NOT a like-for-like A/B against the founder's verdicts. Add --llm.",
+      );
+    }
     for (const day of audited) {
       const dates = [day.date, ...(inHorizon === null ? [] : [inHorizon])];
       for (const date of dates) {

@@ -126,14 +126,19 @@ async function auditTrace(client: SupabaseClient, traceId: string) {
   line(`    windows: ${spec.windows.map((w) => `${w.label} ${w.open}–${w.close}`).join(" · ")}`);
   line(`    maxFoodStops (rule pacing.food-stops-exceeded): ${spec.maxFoodStops}`);
 
-  const skeleton = buildSkeleton({
-    city: "toronto",
-    date: meta.date,
-    persona,
-    budgetBand: null,
-    transport: ["walk", "transit"],
-    seed: meta.seed,
-  });
+  const skeleton = buildSkeleton(
+    {
+      city: "toronto",
+      date: meta.date,
+      persona,
+      budgetBand: null,
+      transport: ["walk", "transit"],
+      seed: meta.seed,
+    },
+    // The trace's recorded seed, replayed as the resolved seed — which is
+    // exactly the reproducibility law this audit exists to check.
+    { seed: meta.seed },
+  );
   const hhmm = (m: number) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   line(`    skeleton intents (${skeleton.intents.length}):`);

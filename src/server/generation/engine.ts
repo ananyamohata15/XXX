@@ -22,8 +22,17 @@ import {
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { Violation } from "@/shared/day-grammar/types";
+import {
+  ANCHOR_MIN_RATING_COUNT,
+  partitionByCalibre,
+} from "@/shared/anchor-calibre";
+import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
-import { CITY_GEO, type PlaceCategory } from "@/shared/vocabulary";
+import {
+  CATEGORY_FAMILY,
+  CITY_GEO,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
 import { assembleTravelProvider, type TransitLeg } from "../travel/assemble";
 import { GOOGLE_TRANSIT_EST_COST_USD } from "../travel/google-transit";
@@ -52,10 +61,10 @@ import {
   type Skeleton,
 } from "./compose";
 import { applyFounderGroundtruth } from "./groundtruth";
-import { retrieveCandidates, zonesFor } from "./retrieve";
+import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
-import { scoreAll } from "./score";
+import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE } from "./select";
 import type {
   Candidate,
@@ -74,6 +83,9 @@ import type {
  * of a bound is that an unseatable pool must not loop.
  */
 const MAX_ANCHOR_REELECTIONS = 2;
+
+/** How many stable orderings a category's pool page may be taken in. */
+const POOL_WINDOW_COUNT = POOL_WINDOWS.length;
 
 export const SHORTLIST_NOMINAL = 24;
 export const DETAILS_CAP = 30;
@@ -100,6 +112,8 @@ export interface EngineDeps {
   /** Shared with the LLM stages; the engine drains it into the trace. */
   llmUsage?: UsageRecorder;
   now?: () => Date;
+  /** Seam for `resolveSeed`; production leaves it and gets `Math.random`. */
+  random?: () => number;
   /**
    * Exam/test seam ONLY: overrides the fetched weather/daylight
    * environment so repair-loop behavior is demonstrable and testable on
@@ -152,12 +166,39 @@ export function localToUtcIso(
   return new Date(guess.getTime() - (shown - guess.getTime())).toISOString();
 }
 
+/**
+ * THE seed — minted here when the caller sends none, and the only place a
+ * day's seed comes into existence.
+ *
+ * `request.seed` is the CALLER'S REQUEST for a seed. The return value is the
+ * day's RESOLVED seed. Session 12 proved how expensive it is to let one name
+ * mean both: the engine minted a seed, used it for scoring and retrieval and
+ * recorded it in the trace, while `buildSkeleton` re-read `request.seed` —
+ * still null, because the tasting room sends `seed: null` on every
+ * generation — and diced the entire arc at **0**. Every room day ever
+ * generated was composed at seed 0, six selection points never varied, and
+ * each trace recorded a seed beside an arc that seed did not build.
+ *
+ * So the rule this function exists to make checkable:
+ *
+ *   **Reproducibility law — the seed recorded IS the seed that built the
+ *   day.** Nothing downstream of this line reads `request.seed` again.
+ *
+ * `random` is injected so the property is testable without the engine's I/O.
+ */
+export function resolveSeed(
+  request: GenerationRequest,
+  random: () => number = Math.random,
+): number {
+  return request.seed ?? Math.floor(random() * 2 ** 31);
+}
+
 export async function generateDay(
   deps: EngineDeps,
   request: GenerationRequest,
 ): Promise<GenerationOutcome> {
   const now = deps.now ?? (() => new Date());
-  const seed = request.seed ?? Math.floor(Math.random() * 2 ** 31);
+  const seed = resolveSeed(request, deps.random);
   const t0 = now().getTime();
   const timings: StageTimings = {
     retrieveMs: 0,
@@ -243,7 +284,7 @@ export async function generateDay(
 
   try {
     // -- skeleton + retrieval ---------------------------------------------
-    let skeleton = buildSkeleton(request);
+    let skeleton = buildSkeleton(request, { seed });
     /**
      * Anchor categories this day has proven it cannot seat. An unseatable
      * centrepiece is a reason to elect a different one — never a reason to
@@ -251,9 +292,81 @@ export async function generateDay(
      * (XXX-35 CP2 ruling 1).
      */
     const failedAnchorCategories: PlaceCategory[] = [];
+
+    /**
+     * Re-elect around an anchor that can only be seated BELOW calibre —
+     * CP2 ruling 1's path extended from *unseatable* to *seated but
+     * degenerate* (XXX-35, Session 13 Step 2).
+     *
+     * Here rather than in the validation loop on purpose: the degradation is
+     * a property of the day's SHAPE, known before a single candidate is
+     * retrieved, so re-electing costs nothing. Waiting until after Details
+     * would spend real money to discover something the skeleton already knew.
+     *
+     * If nothing better exists, the FIRST election stands. Re-electing away
+     * from the persona's first interest to another equally-cramped category
+     * gains the traveller nothing and breaks the product's promise; the day
+     * keeps its centre and says out loud that the centre is small.
+     */
+    /**
+     * Set when the anchor's menu held nothing fit to be a centrepiece.
+     * Reported, never silently accepted (XXX-35, Session 13 Step 2).
+     */
+    let anchorCalibreUnmet: { category: PlaceCategory; examined: number } | null =
+      null;
+    const firstSkeleton = skeleton;
+    while (
+      skeleton.anchorDegraded !== null &&
+      failedAnchorCategories.length < MAX_ANCHOR_REELECTIONS
+    ) {
+      const degraded = skeleton.anchorDegraded;
+      failedAnchorCategories.push(degraded.category);
+      const reelected = buildSkeleton(request, {
+        seed,
+        excludeAnchorCategories: failedAnchorCategories,
+      });
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "arc",
+        endpoint: "anchor_reelected",
+        estCostUsd: 0,
+        metadata: {
+          cause: "below_calibre",
+          failed_category: degraded.category,
+          fitted_minutes: degraded.fittedMinutes,
+          floor_minutes: degraded.floorMinutes,
+          next_category: reelected.electedAnchor?.category ?? null,
+          attempt: failedAnchorCategories.length,
+        },
+      });
+      if (reelected.electedAnchor === null) break;
+      skeleton = reelected;
+    }
+    if (skeleton.anchorDegraded !== null) {
+      // Every category tried is still cramped. Keep the persona's own first
+      // interest rather than an arbitrary equally-small substitute.
+      skeleton = firstSkeleton;
+      failedAnchorCategories.length = 0;
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "arc",
+        endpoint: "anchor_degraded_seated",
+        estCostUsd: 0,
+        metadata: {
+          category: skeleton.anchorDegraded?.category ?? null,
+          fitted_minutes: skeleton.anchorDegraded?.fittedMinutes ?? null,
+          floor_minutes: skeleton.anchorDegraded?.floorMinutes ?? null,
+        },
+      });
+    }
+    // Retrieval's two dice (XXX-35, Session 12): which zones inside the
+    // lens's bucket this day emphasises, and which of the eight stable
+    // orderings each category's 400-row page is taken in. Both are pure
+    // functions of (seed, persona, …), so a trace replays exactly; neither
+    // changes the query count.
+    const identity = personaIdentity(request.persona);
     const zones = zonesFor(
       request.persona.lens,
       (request.anchors ?? []).map((a) => a.coords),
+      diceStream({ seed, identity, site: "zone", context: request.date }),
     );
     const categories = [
       ...new Set(skeleton.intents.flatMap((i) => i.categories)),
@@ -264,6 +377,11 @@ export async function generateDay(
       request.city,
       categories,
       zones,
+      (category) =>
+        diceIndex(
+          { seed, identity, site: "pool-window", context: category },
+          POOL_WINDOW_COUNT,
+        ),
     );
     timings.retrieveMs = now().getTime() - tRetrieve;
 
@@ -273,7 +391,13 @@ export async function generateDay(
 
     // -- link-on-demand + request-time facts (in-memory only) --------------
     const tDetails = now().getTime();
-    const byId = new Map(scored.map((c) => [c.place.id, c]));
+    // One Candidate per place, its best-fitting category winning. See
+    // `collapseByPlace` — this line was `new Map(scored.map(...))`, which
+    // over a score-descending list handed every multi-category place to its
+    // WORST-fitting category (XXX-35, Session 12 CP2 ruling 3).
+    const byId = new Map(
+      collapseByPlace(scored).map((c) => [c.place.id, c] as const),
+    );
     await inBatches(shortlist, DETAILS_CONCURRENCY, async (candidate) => {
       let googlePlaceId = candidate.googlePlaceId;
       let minted = false;
@@ -413,6 +537,42 @@ export async function generateDay(
     while (passes < MAX_VALIDATION_PASSES) {
       passes++;
       const menus = buildMenus(skeleton, scored, request.date, dusk, repair);
+
+      /**
+       * Did the anchor's menu contain anything fit to BE an anchor?
+       *
+       * `buildMenus` leaves the menu whole when nothing clears the bar —
+       * an anchorless day is worse than a small-centred one. That choice is
+       * only honest if the shortfall is then said out loud, which is here.
+       */
+      const anchorMenu = menus.find((m) => m.intent.role === "anchor");
+      if (anchorMenu !== undefined && anchorMenu.options.length > 0) {
+        const { worthy } = partitionByCalibre(anchorMenu.options, (c) => ({
+          name: c.place.name,
+          category: c.category,
+          userRatingCount: c.userRatingCount,
+        }));
+        anchorCalibreUnmet =
+          worthy.length === 0
+            ? {
+                category: anchorMenu.intent.categories[0],
+                examined: anchorMenu.options.length,
+              }
+            : null;
+        if (anchorCalibreUnmet !== null) {
+          await deps.instrumentation.logEvent(traceId, {
+            provider: "arc",
+            endpoint: "anchor_calibre_unmet",
+            estCostUsd: 0,
+            metadata: {
+              category: anchorCalibreUnmet.category,
+              examined: anchorCalibreUnmet.examined,
+              bar: ANCHOR_MIN_RATING_COUNT,
+            },
+          });
+        }
+      }
+
       const tSelect = now().getTime();
       const selections = await deps.selector.select(
         menus,
@@ -513,6 +673,7 @@ export async function generateDay(
         const failedCategory = skeleton.electedAnchor.category;
         failedAnchorCategories.push(failedCategory);
         const reelected = buildSkeleton(request, {
+          seed,
           excludeAnchorCategories: failedAnchorCategories,
         });
         await deps.instrumentation.logEvent(traceId, {
@@ -614,6 +775,8 @@ export async function generateDay(
             // which shape produced a day the founder rejected.
             arc_template_id: skeleton.templateId,
             elected_anchor: skeleton.electedAnchor,
+            anchor_degraded: skeleton.anchorDegraded,
+            anchor_calibre_unmet: anchorCalibreUnmet,
             open_periods: composed.openPeriods.length,
             exposure_swaps: legs.filter((l) => l.exposureSwap !== null).length,
           },
@@ -624,6 +787,8 @@ export async function generateDay(
           travel: legs,
           openPeriods: composed.openPeriods,
           electedAnchor: skeleton.electedAnchor,
+          anchorDegraded: skeleton.anchorDegraded,
+          anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
           findings: advisories,
           narrated: describeViolations(findings),
@@ -697,7 +862,7 @@ export async function generateDay(
  * emptying when it does.
  */
 const SHORTLIST_DEPTH = MENU_SIZE + 2;
-function pickShortlist(
+export function pickShortlist(
   scored: Candidate[],
   skeleton: Skeleton,
 ): Candidate[] {
@@ -719,7 +884,7 @@ function pickShortlist(
   return [...picked.values()];
 }
 
-function buildMenus(
+export function buildMenus(
   skeleton: Skeleton,
   scored: Candidate[],
   date: string,
@@ -728,7 +893,20 @@ function buildMenus(
 ): Menu[] {
   return skeleton.intents.map((intent) => {
     const struck = repair?.strikes.get(`s-${intent.id}`) ?? new Set<string>();
-    const window = intent.categories.some((c) => c === "parks")
+    /**
+     * Outdoor stops are clamped to dusk — keyed on the texture FAMILY, not
+     * on the literal `"parks"` it used to test (XXX-37, Session 13).
+     *
+     * `scenic_viewpoints` is an outdoor category and was not clamped, so a
+     * viewpoint could be seated after dark: an outdoor stop with nothing to
+     * see, which is the exact failure the daylight rules exist to prevent.
+     * The literal was correct when `parks` was the only outdoor category and
+     * became wrong the moment it was not — so it now asks the question it
+     * means ("is this outdoor?") instead of naming the one member it had.
+     */
+    const window = intent.categories.some(
+      (c) => CATEGORY_FAMILY[c] === "outdoor",
+    )
       ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
       : intent.window;
     const { kept } = hardFilter(
@@ -748,6 +926,32 @@ function buildMenus(
         intent.categories.indexOf(a.category) -
           intent.categories.indexOf(b.category) || b.score - a.score,
     );
+
+    /**
+     * The ANCHOR's menu is filtered by calibre (XXX-35, Session 13 Step 2).
+     *
+     * Everywhere else the score decides, and that is right — an ordinary
+     * stop's job is to fit the persona. The centre's job is different, and
+     * `scoreCandidate` cannot see the difference: it ranked a pocket park
+     * first inside `parks` for a nature-first persona and was working
+     * correctly when it did.
+     *
+     * Filter rather than re-rank, because a selector handed a sub-calibre
+     * option will sometimes take it, and "sometimes seats a 20-minute
+     * anchor" is the defect. If NOTHING clears the bar the menu is left
+     * whole — an anchorless day is worse than a small one — and the
+     * shortfall is reported instead of hidden.
+     */
+    if (intent.role === "anchor") {
+      const { worthy } = partitionByCalibre(preferenceRanked, (c) => ({
+        name: c.place.name,
+        category: c.category,
+        userRatingCount: c.userRatingCount,
+      }));
+      if (worthy.length > 0) {
+        return { intent, options: worthy.slice(0, MENU_SIZE) };
+      }
+    }
     return { intent, options: preferenceRanked.slice(0, MENU_SIZE) };
   });
 }
@@ -794,6 +998,16 @@ function traceSummary(
     city: request.city,
     date: request.date,
     persona_structure: request.persona.structure,
+    /**
+     * What the arc draw depends on, so ANY trace can be replayed — not just
+     * the tasting room's, which alone recorded a persona key. Session 12's
+     * seed defect survived a whole session partly because the harness traces
+     * that spent most of the month's Details budget could not be checked
+     * against their own recorded seed. An identity hash and a pace are
+     * enough to re-pick the template; neither is the persona itself.
+     */
+    persona_identity: personaIdentity(request.persona),
+    persona_pace: request.persona.pace,
     pool_candidates: stats.poolCandidates,
     shortlisted: stats.shortlisted,
     details_calls: stats.detailsCalls, // the 87% canary, first-class

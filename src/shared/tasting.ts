@@ -72,6 +72,18 @@ export type TastingOutcome =
       advisories: NarratedLineView[];
       dayNotes: string[];
       unfilled: { label: string; cause: string }[];
+      /**
+       * Non-null = the day's centre could only be seated below anchor
+       * calibre, and no re-election did better (XXX-35, Session 13). The
+       * founder's own finding — "An anchor that lasts only 20 mins?" — was
+       * invisible on the page that produced it. This is what makes it
+       * visible without waiting for anyone to read a trace.
+       */
+      anchorDegraded: {
+        category: string;
+        fittedMinutes: number;
+        floorMinutes: number;
+      } | null;
       /** True = a fabricated day. The page must say so, loudly. */
       synthetic: boolean;
       /** Distinct fact/travel sources on this day — attribution keys off it. */

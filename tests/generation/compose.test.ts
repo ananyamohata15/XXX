@@ -75,7 +75,10 @@ function candidate(
   };
 }
 
-const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
+/** See arc.test.ts — a fixture request always states the seed it composes at. */
+type SeededRequest = GenerationRequest & { seed: number };
+
+const request = (over: Partial<GenerationRequest> = {}): SeededRequest => ({
   city: "toronto",
   date: SAT,
   persona: GOLDEN_PERSONAS["day-2-old-town"],
@@ -85,9 +88,13 @@ const request = (over: Partial<GenerationRequest> = {}): GenerationRequest => ({
   ...over,
 });
 
+/** Compose at the request's own seed (Session 13: the composer is told). */
+const skeletonFor = (req: SeededRequest) =>
+  buildSkeleton(req, { seed: req.seed });
+
 describe("buildSkeleton", () => {
   it("scheduler personas get pattern meals plus pace-driven activities", () => {
-    const skeleton = buildSkeleton(request());
+    const skeleton = skeletonFor(request());
     const meals = skeleton.intents.filter((i) => i.kind === "meal");
     const activities = skeleton.intents.filter((i) => i.kind === "activity");
     expect(meals.map((m) => m.label)).toContain("lunch");
@@ -96,7 +103,7 @@ describe("buildSkeleton", () => {
   });
 
   it("wanderer personas get three anchors, not a timeline (XXX-6 shape)", () => {
-    const skeleton = buildSkeleton(
+    const skeleton = skeletonFor(
       request({ persona: GOLDEN_PERSONAS["day-5-wanderer"] }),
     );
     expect(skeleton.intents.length).toBe(3);
@@ -108,7 +115,7 @@ describe("buildSkeleton", () => {
   });
 
   it("no category appears more than twice among activities (10294 variety)", () => {
-    const skeleton = buildSkeleton(request());
+    const skeleton = skeletonFor(request());
     const counts = new Map<string, number>();
     for (const i of skeleton.intents.filter((x) => x.kind === "activity")) {
       counts.set(i.categories[0], (counts.get(i.categories[0]) ?? 0) + 1);
@@ -117,7 +124,12 @@ describe("buildSkeleton", () => {
   });
 
   it("activity categories follow persona gravity", () => {
-    const ranked = rankedActivityCategories(GOLDEN_PERSONAS["day-3-winter"]);
+    // The lowest roll takes the first eligible option, so this asserts that
+    // gravity — not the dice — still decides when the dice does not push.
+    const ranked = rankedActivityCategories(
+      GOLDEN_PERSONAS["day-3-winter"],
+      () => 0,
+    );
     expect(ranked[0]).toBe("museums_galleries"); // art-first persona
   });
 });
@@ -141,11 +153,11 @@ describe("composeDay", () => {
   // Mirrors the engine's menu legality: a candidate is only offered for
   // an intent whose window its hours can hold (buildMenus does the same
   // via hardFilter — a dinner menu never contains a 15:00 closer).
-  function selectionsFor(req: GenerationRequest): {
+  function selectionsFor(req: SeededRequest): {
     selections: Selection[];
     skeleton: ReturnType<typeof buildSkeleton>;
   } {
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const used = new Set<string>();
     const selections: Selection[] = [];
     for (const intent of skeleton.intents) {
@@ -248,7 +260,7 @@ describe("composeDay", () => {
     });
     const poolWithPark = new Map(byId);
     poolWithPark.set(park.place.id, park);
-    const skeleton = buildSkeleton(req);
+    const skeleton = skeletonFor(req);
     const parkIntent = skeleton.intents.find((i) =>
       i.categories.includes("parks"),
     );

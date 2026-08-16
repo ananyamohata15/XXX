@@ -9,9 +9,15 @@
  * (seed, placeId), reproducible from the trace's logged seed.
  */
 
+import { fnv1a, mulberry32, personaIdentity } from "@/shared/dice";
 import { categoryAffinity, type Persona } from "@/shared/persona";
 import type { PriceRange } from "@/shared/timeline";
 import type { Candidate } from "./types";
+
+// Re-exported so this module's many existing importers keep working after the
+// primitives moved to `@/shared/dice` on their third occurrence (CLAUDE.md:
+// extract on the third, not the first).
+export { fnv1a, mulberry32 };
 
 export const SCORE_WEIGHTS = {
   /** Slightly under lens+affinity: rating volume partly double-counts
@@ -37,27 +43,6 @@ export const JITTER_BOUND = 0.04;
 const PRIOR_COUNT = 25;
 const PRIOR_MEAN = 4.0;
 
-/** mulberry32 — tiny, seedable, good enough for jitter. Deterministic. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a += 0x6d2b79f5;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** FNV-1a over a string — stable placeId → int for per-candidate seeds. */
-export function fnv1a(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
 
 function ratingQuality(candidate: Candidate): number {
   if (candidate.rating === null) return 0.35; // unrated: below-average prior
@@ -111,12 +96,16 @@ const freshness = (c: Candidate): number =>
  * their long-tail ties differently instead of in lockstep. Found the
  * hard way — the first CP3 matrix ran a fixed exam seed and two
  * corners personas collapsed to 0.67 venue overlap.
+ *
+ * Now `personaIdentity` (Session 12 CP1): this file and `arc.ts` each
+ * maintained their own identity hash over overlapping-but-unequal field sets,
+ * so "the same persona" meant two different things depending on which
+ * selector you were standing in. One hash, all five interview dimensions.
+ * Re-baselines every seeded outcome — ruled acceptable at CP1, because this
+ * session's matrix stands on the standing gates rather than on deltas against
+ * prior matrices.
  */
-export function personaFingerprint(persona: Persona): number {
-  return fnv1a(
-    `${persona.pace}|${persona.gravity.join(",")}|${persona.foodCourage}|${persona.structure}|${persona.lens}`,
-  );
-}
+export const personaFingerprint = personaIdentity;
 
 export function scoreCandidate(
   candidate: Candidate,
@@ -137,6 +126,37 @@ export function scoreCandidate(
       1) *
     JITTER_BOUND;
   return base + jitter;
+}
+
+/**
+ * One Candidate per place — the highest-scoring of its categories wins.
+ *
+ * `retrieveCandidates` emits one Candidate per (place, CATEGORY), because a
+ * place legitimately maps to several: Brazen Head Irish Pub is a real
+ * `restaurants` row AND a real `nightlife_bars` row. 79 Toronto places carry
+ * more than one, 45 of them straddling the food boundary. Composition needs
+ * exactly one answer to "what is this place", so the duplicates collapse —
+ * and WHICH one survives decides what role the place can ever play in a day.
+ *
+ * This used to be `new Map(scored.map(...))` at `engine.ts:292`. Because
+ * `scored` is score-DESCENDING, last-wins handed every multi-category place
+ * to its **worst**-fitting category: for a food-first persona, Brazen Head
+ * entered composition as a bar and was unreachable by any meal. Nothing was
+ * wrong with the facts — Session 11 filed this as the pool's facts
+ * disagreeing, and they do not. It was a collision rule nobody chose on
+ * purpose (Session 12 CP2 ruling 3).
+ *
+ * Highest-score-wins is the rule that means something: a place competes in
+ * the category it best fits THIS persona, which is what the score already
+ * encodes.
+ */
+export function collapseByPlace(scored: Candidate[]): Candidate[] {
+  const best = new Map<string, Candidate>();
+  for (const c of scored) {
+    const held = best.get(c.place.id);
+    if (held === undefined || c.score > held.score) best.set(c.place.id, c);
+  }
+  return [...best.values()];
 }
 
 export function scoreAll(

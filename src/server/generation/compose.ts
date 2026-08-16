@@ -34,6 +34,7 @@ import {
   type Span,
 } from "@/shared/day-grammar/predicates";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
+import { diceStream, personaIdentity, weightedOrderBy } from "@/shared/dice";
 import {
   SHELTERED_MODES,
   exposureAt,
@@ -154,14 +155,25 @@ export function defaultMealPattern(persona: Persona): MealPatternId {
   return persona.structure === "wanderer" ? "coffee_then_brunch" : "classic";
 }
 
-/** Activity categories in persona-gravity order, food categories excluded. */
-export function rankedActivityCategories(persona: Persona): PlaceCategory[] {
-  return PLACE_CATEGORIES.filter(
-    (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
-  ).sort(
-    (a, b) =>
-      categoryAffinity(persona, b) - categoryAffinity(persona, a) ||
-      a.localeCompare(b),
+/**
+ * Activity categories in persona-gravity order, food categories excluded.
+ *
+ * Diced (Session 12): its head is taken at the `contrast` step as the anchor
+ * proxy, and as the fallback list when contrast finds nothing — so an
+ * un-diced ranking here reintroduced the very determinism the contrast draw
+ * had just removed.
+ */
+export function rankedActivityCategories(
+  persona: Persona,
+  dice: () => number,
+): PlaceCategory[] {
+  return weightedOrderBy(
+    PLACE_CATEGORIES.filter(
+      (c) => !GRAMMAR_PARAMS.pacing.foodCategories.includes(c),
+    ),
+    (c) => categoryAffinity(persona, c),
+    dice,
+    COMPOSE_PARAMS.dice.activity,
   );
 }
 
@@ -181,6 +193,25 @@ export interface Skeleton {
    * engine's `unfilled` cannot report a step that never became an intent.
    */
   droppedSteps: { step: ArcStep; reason: string }[];
+  /**
+   * Set when the anchor could only be seated BELOW anchor calibre
+   * (`COMPOSE_PARAMS.anchor.minDwellMinutes`) — the day has a centre, but a
+   * diminished one.
+   *
+   * It is not a drop: dropping the anchor would ship the un-anchored day the
+   * founder rejected in those exact words. It is not silence either, which is
+   * what shipped before — a 20-minute pocket park seated as a centrepiece
+   * while the trace reported a 60-minute elected anchor. The engine re-elects
+   * around it (CP2 ruling 1's path, extended from *unseatable* to *seated but
+   * degenerate*), and if no category can do better the day says so out loud.
+   */
+  anchorDegraded: {
+    category: PlaceCategory;
+    /** What the window actually allowed. */
+    fittedMinutes: number;
+    /** What a centrepiece needed. */
+    floorMinutes: number;
+  } | null;
 }
 
 const spanMinutes = (s: Span): number => Math.max(0, s.end - s.start);
@@ -257,12 +288,29 @@ export function buildSkeleton(
   request: GenerationRequest,
   options: {
     /**
+     * The day's RESOLVED seed — the one the engine minted and records in
+     * the trace. Required, and deliberately not defaulted.
+     *
+     * This parameter exists because of the Session 12 defect: composition
+     * used to re-read `request.seed`, which is the CALLER'S REQUEST for a
+     * seed (null from the tasting room) and not the seed the day was built
+     * with. It fell to 0, so every room day diced its entire arc at 0 while
+     * the trace recorded the minted seed beside it — six selection points
+     * inert and a trace that could not reproduce its own day.
+     *
+     * Two different things had one name. They now have two: `request.seed`
+     * is an input preference the engine reads once, `options.seed` is the
+     * resolved value everything downstream is built from. A required
+     * parameter means the compiler asks every caller which one it means.
+     */
+    seed: number;
+    /**
      * Anchor categories this day has already proven it cannot seat. The
      * engine re-elects around them rather than shipping an anchorless day
      * (XXX-35 CP2 ruling 1).
      */
     excludeAnchorCategories?: readonly PlaceCategory[];
-  } = {},
+  },
 ): Skeleton {
   const persona = request.persona;
   const defaults = DEFAULT_DAY[persona.pace];
@@ -278,13 +326,35 @@ export function buildSkeleton(
   }
   const mealPattern = request.mealPattern ?? defaultMealPattern(persona);
   const pattern = GRAMMAR_PARAMS.mealPatterns[mealPattern];
-  const seed = request.seed ?? 0;
+  const seed = options.seed;
   const template = pickTemplate(persona, seed);
+
+  /**
+   * One dice key per (site, context) — the funnel rule's machinery.
+   *
+   * `identity` is the persona's content hash, so two similar personas draw
+   * different streams; `site` keeps two selectors at one seed from drawing
+   * the same number; `context` carries the date and, where a day has several
+   * of a step, that step's window — so two closes in one day, or one persona
+   * on two dates, draw independently.
+   */
+  const identity = personaIdentity(persona);
+  const rollFor = (site: string, context: string): (() => number) =>
+    diceStream({ seed, identity, site, context: `${request.date}|${context}` });
 
   const hasUserAnchor = (request.anchors ?? []).length > 0;
   const elected: ElectedAnchor | null = hasUserAnchor
     ? null
-    : electAnchor(persona, options.excludeAnchorCategories ?? []);
+    : electAnchor(persona, {
+        exclude: options.excludeAnchorCategories ?? [],
+        // Re-election must not redraw the same order it just drew, or the
+        // engine retries its way through an identical list. The exclusions
+        // are part of the context, so each re-election is a fresh draw.
+        dice: rollFor(
+          "anchor",
+          (options.excludeAnchorCategories ?? []).join(","),
+        ),
+      });
   const electedRecord: ElectedAnchorRecord | null =
     elected === null
       ? null
@@ -369,6 +439,7 @@ export function buildSkeleton(
   // Meal steps own their pattern window; every other step is sliced into
   // the segment between the meal windows that bracket it.
   const dropped: { step: ArcStep; reason: string }[] = [];
+  let anchorDegraded: Skeleton["anchorDegraded"] = null;
 
   const segments: Step[][] = [[]];
   const mealAt: Step[] = [];
@@ -505,6 +576,29 @@ export function buildSkeleton(
     "nightlife_bars",
     "historic_sites",
     "restaurants",
+    /**
+     * `scenic_viewpoints` (XXX-37, Session 13 CP3 diagnostic).
+     *
+     * Session 13 added scenic to `closeCategories` and then measured 6 of 8
+     * days still ending on a bar. The cause was here: this list is a
+     * hardcoded three, written when the vocabulary had seven categories, and
+     * it silently deleted the new one from every close seated at or after
+     * 19:00 — which is most closes. The category was ranked ahead of
+     * `nightlife_bars` and never survived to be chosen.
+     *
+     * The same shape as the dead `Retail > Farmers Market` rule and
+     * `TEMPLATE_INVARIANTS.lastStep`: a constant whose correctness depended
+     * on a vocabulary that has since changed. CLAUDE.md's standard, hit for
+     * the fourth time in two sessions.
+     *
+     * A viewpoint IS an evening category — golden hour is the entire point,
+     * and golden Day 7 is built on it. What it must never be is an outdoor
+     * stop after dark, and that is not this list's job: `buildMenus` clamps
+     * outdoor windows to dusk, so a scenic close can only seat while there
+     * is still something to see. Adding it here WITHOUT that clamp would be
+     * the outdoor-after-dark failure; the two changes are one change.
+     */
+    "scenic_viewpoints",
   ];
   const isEvening = (window: Span) => window.start >= timeToMinutes("19:00");
   /**
@@ -522,6 +616,27 @@ export function buildSkeleton(
     isEvening(window)
       ? categories.filter((c) => eveningOk.includes(c))
       : categories;
+
+  /**
+   * Family-freshness is a PREFERENCE, so it reorders — it must never
+   * truncate.
+   *
+   * Filtering it as a hard cut cost two closes on the first Session-12
+   * matrix (6/6 → 3/6). By the time a `close` is reached, the anchor's
+   * family, the contrast's family and `table` (the meals) are all spent, so
+   * `!usedFamilies` can leave exactly ONE survivor — and if that one cannot
+   * seat, the step dies with nothing in reserve. The old either/or fallback
+   * did not help: it only fired when the filter emptied the list completely,
+   * never when it left a single unseatable entry.
+   *
+   * Demoting instead keeps the whole diced order available, fresh families
+   * first, so the funnel's last filter (seatability) picks up the next thing
+   * the dice wanted rather than dropping the step.
+   */
+  const demoteRatherThanDrop = (
+    ordered: PlaceCategory[],
+    fresh: (c: PlaceCategory) => boolean,
+  ): PlaceCategory[] => [...ordered.filter(fresh), ...ordered.filter((c) => !fresh(c))];
 
   const intents: SlotIntent[] = [];
   const opens: OpenIntervalPlan[] = [];
@@ -555,33 +670,51 @@ export function buildSkeleton(
       // the intent goes unfilled honestly, which is a visible thin day
       // rather than a silently different one.
       categories =
-        elected !== null ? [elected.category] : rankedActivityCategories(persona);
+        elected !== null
+          ? [elected.category]
+          : rankedActivityCategories(persona, rollFor("activity", "anchor"));
       label = "the day's anchor";
     } else if (item.step === "warmup") {
-      const preferred = forEvening(
-        warmupCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
-        item.window,
+      // THE FUNNEL RULE. The die is rolled here, at the point of use, over
+      // the options that have already survived both narrowings — never
+      // inside `warmupCategories`, which sits above them. Session 11 blamed
+      // `closeCategories` for the six-bar day and queued "make it a seeded
+      // choice"; measured, that would not have worked, because the collapse
+      // happens in the filters BELOW the ranking. A die rolled upstream of a
+      // funnel is still a funnel.
+      const at = String(item.window.start);
+      categories = demoteRatherThanDrop(
+        forEvening(warmupCategories(persona, rollFor("warmup", at)), item.window),
+        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
-      categories =
-        preferred.length > 0 ? preferred : forEvening(warmupCategories(persona), item.window);
       label = "warm-up";
     } else if (item.step === "contrast") {
-      const anchorCategory = elected?.category ?? rankedActivityCategories(persona)[0];
-      const pick = pickContrast(persona, anchorCategory, usedFamilies, {
+      const at = String(item.window.start);
+      const anchorCategory =
+        elected?.category ??
+        rankedActivityCategories(persona, rollFor("activity", at))[0];
+      const picks = pickContrast(persona, anchorCategory, usedFamilies, {
         eveningOnly: isEvening(item.window),
+        dice: rollFor("contrast", at),
       });
+      // The whole diced ORDER is carried, not its head: `buildMenus` filters
+      // across every category in this list, so when the drawn first choice
+      // has nothing open at this hour the DICED second choice is used —
+      // rather than falling back to whatever the alphabet offered.
       categories =
-        pick === null
-          ? forEvening(rankedActivityCategories(persona), item.window)
-          : [pick];
+        picks.length === 0
+          ? forEvening(
+              rankedActivityCategories(persona, rollFor("activity", at)),
+              item.window,
+            )
+          : picks;
       label = "contrast";
     } else {
-      const preferred = forEvening(
-        closeCategories(persona).filter((c) => !usedFamilies.has(CATEGORY_FAMILY[c])),
-        item.window,
+      const at = String(item.window.start);
+      categories = demoteRatherThanDrop(
+        forEvening(closeCategories(persona, rollFor("close", at)), item.window),
+        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
-      categories =
-        preferred.length > 0 ? preferred : forEvening(closeCategories(persona), item.window);
       label = "the day's close";
     }
 
@@ -608,6 +741,19 @@ export function buildSkeleton(
         reason: `${primary} needs ${GRAMMAR_PARAMS.dwellMinutes[primary].min}min and the window holds ${spanMinutes(item.window)}min`,
       });
       continue;
+    }
+    // The grammar floor above says whether this is a STOP. This says whether
+    // it is still the day's CENTRE — the two were one number until Session 13,
+    // and that is how a 20-minute park became an anchor in silence.
+    if (
+      item.step === "anchor" &&
+      fitted < COMPOSE_PARAMS.anchor.minDwellMinutes
+    ) {
+      anchorDegraded = {
+        category: primary,
+        fittedMinutes: fitted,
+        floorMinutes: COMPOSE_PARAMS.anchor.minDwellMinutes,
+      };
     }
 
     const id = `i${nextId++}`;
@@ -661,6 +807,7 @@ export function buildSkeleton(
     templateId: template.id,
     electedAnchor: electedRecord,
     droppedSteps: dropped,
+    anchorDegraded,
   };
 }
 
