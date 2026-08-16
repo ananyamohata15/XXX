@@ -1,6 +1,6 @@
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
-Branch: `session-13-seed-and-vocabulary`. Status: **CHECKPOINT 1 reached.**
+Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
 
 **Branch base — a decision, not a default.** This branch is cut from
 `session-12-variety-audit`, NOT from `main`. Session 12 is unmerged (PR #14,
@@ -601,6 +601,226 @@ at CP2. The offline result FAILS, so ~$3 of live matrix would buy a
 confirmation of a failure rather than a decision — and the offline harness
 already exercises the composition path this gate measures.
 
+
+### 3.7 CP3 adjudications (PO rulings, recorded of record)
+
+**Ruling 1 — `Roof Deck` stays: keep and curate.** Pool-vs-rank doctrine
+applies. The pool's job is coverage; deciding what is fit to be a centrepiece
+is the RANKER's job, and `anchor-calibre` plus founder curation are that
+filter. Recorded as **known noise** with an explicit **revisit trigger: a
+scenic day seating a contractor or a private balcony**. If that reaches a
+generated day, the label comes out.
+
+**Ruling 2 — the distinctiveness AC is re-aimed, and the re-baseline is
+loud.** Gated metric becomes **discretionary-sequence overlap** (non-meal
+positions). Reasoning of record: *meals are structural, not discretionary —
+the old gate measured grammar compliance as dullness.* Every scheduler day
+carries restaurants at lunch and dinner because the grammar requires it, and
+counting those shared positions as sameness punished the day for obeying a
+rule the product wants obeyed.
+
+- **New baseline (from existing matrix data, $0): mean 0.452 · max 1.00,
+  n=21.**
+- **Proposed threshold: mean ≤0.15 · max ≤0.67**, derived by the
+  break-one-shared-position logic against that baseline — the harness
+  computes what the metric reads if every comparable pair becomes exactly one
+  discretionary position less alike, so the proposal cannot drift from the
+  measurement.
+- **Honest caveat on the mean.** Discretionary sequences are SHORT (2–4
+  positions), so one position is worth 0.25–0.50 and the mean-side of
+  break-one collapses hard. **The max (≤0.67) is the meaningful binding
+  gate**; ≤0.15 on the mean is defensible arithmetic but demands nearly
+  disjoint sequences. Flagged rather than quietly softened — the founder
+  pre-registers before the next live matrix.
+- Raw category-sequence stays **reported, not gated**. Prior readings (S9
+  0.693, S11 0.711, S13 CP1 0.614 live, S13 CP3 0.579) are retained as
+  **old-instrument history and are not comparable** to the discretionary
+  number.
+
+**XXX-37's AC, as recorded:** vocabulary **delivered** — 8/8 anchors seated
+including Sky Pod (scenic) and a shopping anchor for `day-7-shopper`. The
+original AC is **falsified as-to-mechanism** on the 0.396 structural-floor
+evidence, and **superseded** by the discretionary metric.
+
+**Ruling 3 — the bars-close diagnostic.** Mechanism found and fixed within
+ruled machinery; see the commit. The suspected cause (unknown-hours
+honest-absence) was **false** — `hardFilter` keeps null hours by design. The
+real cause was `eveningOk`, a hardcoded three-category list that vocabulary
+v2 never updated, deleting scenic from every close at or after 19:00.
+
+**Ruling 4 — the pin's zero-match guard goes per-rule.** Done, and it earned
+itself immediately: four more dead rules, all pre-existing since Session 5.
+Removing them left the generated ID map **byte-identical**, which is both the
+proof they were no-ops and the proof no re-ingest is owed.
+
+### 3.8 The rider: real levers, recorded as work rather than metric-tuning
+
+1. **The 6/8 bars-close** — mechanism found, fixed, measured. Closed.
+2. **Meal-pattern uniformity is composer work, not vocabulary work.** Every
+   scheduler day draws the same `classic` pattern, so two restaurant slots
+   are common to all of them and no vocabulary change can touch it. Ticketed
+   as pattern variety (E6-chronotype-adjacent — and the `grazing` deletion's
+   foreseen return path: Session 11 removed grazing as unreachable dead code
+   and recorded that wiring it to a persona input was the alternative). This
+   is **explicitly not solvable by vocabulary**, which is the whole finding.
+
+### 3.9 A standing line this step earned
+
+> **A sampler that shows one corner of the alphabet is not a spot-check.**
+
+The first founder spot-check sorted by name and presented `shopping` as "1
+Stop Electric / 100 The East Mall / 14 woodlot cres". It read as a mapping
+catastrophe and was numerals sorting before letters. The source-label
+histogram is what settled it — the rules had matched exactly what they were
+written to match. An instrument that always looks at the same part of its
+data will eventually indict the data.
+
+
+## Step 4 — Founder quick-vet (CHECKPOINT 4, phone, ~$4)
+
+**Not run in this session.** It needs the founder in the app, and the room is
+where it happens. Everything it depends on is in place and stated here so the
+evening is a vet rather than a setup.
+
+**Ready:**
+
+- `day-7-shopper` and `day-8-scenic` appear in the room's persona dropdown
+  automatically — `PERSONA_KEYS` is derived from `GOLDEN_PERSONAS`, and the
+  generate route's Zod enum is built from the same object. No wiring owed.
+- The spend gauge now reads live on entry and after every generation, so the
+  evening's meter is the month's, not the last day's.
+- A centre seated below calibre shows an amber line on the page.
+
+**What to look for, in the founder's own terms:**
+
+| what | the verdict it answers |
+|---|---|
+| rooms vary in shape | the seed fix, visible. Three unseeded runs already drew three different templates offline; the room is the surface that never varied before |
+| anchors have calibre | *"the anchor should be a highlight"*. Watch whether the centre is a place you'd plan a day around |
+| no stall-dwell absurdities | *"a shop in st lawerence, not worth 1hr 30 mins"*. NOTE: only detection landed this session — the seating swap did not, so a tenant can still be seated. If one appears, that is the known gap, not a new one |
+| shopping/scenic days feel like their person | the XXX-37 acceptance question |
+
+**Budget**: ~8–10 generations at ~$0.40 = ~$3.20–4.00. Against **$11.35**
+remaining at the start of Step 3, and Step 3 spent **$0.00** (every
+instrument is DB- or taxonomy-only).
+
+**Verdicts go IN THE APP**, not in chat — Session 12's process note: findings
+that live only in chat are findings the miners never see.
+
+## Step 5 — Close-out
+
+### 5.1 Merge commands for the founder
+
+**PR #14 (Session 12) merges FIRST.** This branch is cut from it, so a
+`main`-based diff would show Session 12's commits until #14 lands.
+
+```
+git switch session-13-seed-and-vocabulary && git log --oneline main..HEAD
+git push -u origin session-13-seed-and-vocabulary
+gh pr create --base main --title "Session 13: seed fix + anchor calibre + vocabulary v2 (XXX-35/37)" --body "See SESSION_NOTES.md"
+gh pr checks --watch && gh pr merge --merge --delete-branch && git switch main && git pull
+```
+
+### 5.2 Instrument debt found this session
+
+1. **The base-layer ingest cannot finish in a bounded window.** It loads the
+   whole extract into memory, then writes **sequentially with two awaits per
+   place** (`upsertBaseLayerPlace`, then `upsertCategoriesFact`). At ~38k
+   Toronto identities that is ~76,000 sequential round trips. The first
+   re-ingest attempt was killed by a 50-minute bound mid-write, leaving the
+   pool half re-mapped — the exact half-state that makes any reported count
+   confidently wrong. Idempotent upserts made recovery safe, and that is
+   luck rather than design. **An ingest nobody can finish is an ingest
+   nobody re-runs when the taxonomy drifts** — and taxonomy drift is what
+   just cost three sessions of a dead `Farmers Market` rule. Batched upserts
+   or a resumable cursor is the fix.
+2. **The pin's zero-match guard is one level too coarse** (§3.1). It fires
+   when a CATEGORY matches no labels, so a dead RULE beside two live
+   siblings passes silently. Per-rule assertion is a small change and would
+   have caught `"Retail > Farmers Market"` in Session 5.
+3. **Seated times still are not recorded** (carried from Session 12 §5.8
+   item 3, unaddressed). Both of that session's card-level verdicts were
+   about duration and neither could be adjudicated from the record.
+
+
+### 5.3 Spend
+
+Read from `traces.total_cost_usd`, never estimated.
+
+| step | what | spend |
+|---|---|---|
+| CP1 | live 6-persona matrix (6 generations) | **$2.4732** |
+| CP1 | unseeded room proof, `--variety 3` | **$1.1813** |
+| CP2 | anchor calibre, dwell split, containment — all offline | **$0.00** |
+| CP3 | taxonomy read, re-pin, re-ingest, offline matrix ×3 | **$0.00** |
+| | **Session 13 to date** | **$3.6545** |
+| | against the $15 gate | **$11.35 remaining** |
+
+Step 3 cost nothing: the FSQ taxonomy and places extract are open data, and
+every instrument this session added is a DB or pure-function reader. The
+~$3 live confirm was NOT spent — the offline result failed, so it would have
+bought a confirmation rather than a decision.
+
+### 5.4 Gates — run, not remembered
+
+`tsc --noEmit` **clean** · `eslint` **clean** · `npm run build` **exit 0**,
+full route table including the new `/api/tasting/quota` · **523 passed**,
+3 skipped, 27 files (+62 tests since Session 12's 461).
+
+Golden set: **49 passed, unchanged** — the six founder-authored days stay
+clean under vocabulary v2.
+
+### 5.5 Standing lines this session earned
+
+> **A die nobody plumbed is a die nobody rolled** (Session 12's, now proven
+> fixed on the live surface).
+>
+> **A sampler that shows one corner of the alphabet is not a spot-check.**
+>
+> **A rule asserts that a branch exists — assert it per rule, or a dead one
+> hides behind its live siblings.**
+
+The last two are offered for CLAUDE.md alongside Session 11's and 12's. The
+founder promotes them.
+
+### 5.6 Deviations from the brief, each recorded when made
+
+1. **Branch base.** Cut from `session-12-variety-audit`, not `main` — S12 is
+   unmerged and every item in Steps 1–3 edits code that exists only there.
+   PR #14 merges first.
+2. **The seed fix is not the one-liner Session 12 proposed.** `{...request,
+   seed}` threads the right value and leaves the trap; a required parameter
+   removes it. Argued in §1.1.
+3. **Step 2's container/tenant detector was not built as briefed.** The
+   proposed signals fail measurement (§2.4). A curated container registry was
+   built instead, and the seating swap is deferred with its obstacle named.
+4. **A gauge fix was added** that the brief did not ask for (§1.6), on the
+   founder's CP1 ruling.
+5. **`Roof Deck` noise was left in** on the founder's CP3 ruling, with a
+   revisit trigger.
+6. **The distinctiveness AC was superseded**, not re-tuned, on the founder's
+   CP3 adjudication (§3.7).
+
+### 5.7 What Session 14 inherits
+
+**Blocking nothing; ordered by evidence strength.**
+
+1. **The container seating swap** — card = container, description = tenant.
+   Detection exists (`src/shared/containment.ts`); the swap needs the
+   container IN the retrieved pool, so it is a RETRIEVAL change. XXX-38's
+   composite anchors want the same machinery.
+2. **Meal-pattern variety** (§3.8) — the measured two-thirds of sequence
+   overlap that vocabulary cannot touch.
+3. **Batched or resumable base-layer ingest** (§5.2 item 1).
+4. **XXX-31's real quality signal** — `anchor-calibre` is explicitly interim,
+   and its known limitation (fame ≠ calibre; Berczy Park clears the bar) is
+   pinned as a test that should CHANGE when XXX-31 lands.
+5. **Founder curation of the anchor list** — the worksheet is built and was
+   requested at CP2 for museums/galleries, historic sites and parks; the
+   founder's ticked names had not arrived by close-out, so
+   `FOUNDER_ANCHOR_WORTHY` still holds only verbatim-founder entries. Nothing
+   was invented on their behalf.
+6. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
 
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 
