@@ -13,10 +13,12 @@
 import { describe, expect, it } from "vitest";
 import {
   ANCHOR_MIN_RATING_COUNT,
+  FOUNDER_ANCHOR_WORTHY,
   anchorCalibre,
   matchesCuratedName,
   normalizeName,
   partitionByCalibre,
+  prefilterToken,
 } from "@/shared/anchor-calibre";
 import type { PlaceCategory } from "@/shared/vocabulary";
 
@@ -144,5 +146,120 @@ describe("curated names match the way a founder would expect", () => {
   it("respects category — a curated park does not admit a market", () => {
     expect(judge("High Park", 5, "parks").basis).toBe("founder-curated");
     expect(judge("High Park", 5, "markets").basis).toBe("below-bar");
+  });
+});
+
+/**
+ * The prefilter that decides whether `matchesCuratedName` is ever CONSULTED
+ * (XXX-40, Session 14 CP0).
+ *
+ * `curation-resolve.ts` normalized the search term and then queried raw pool
+ * names, so every possessive identity read as absent — and Session 13's
+ * close-out recorded `Hanlan's Point` as a pool gap on the strength of it.
+ * It is in the pool. `Mildred's Temple Kitchen` was reported absent the same
+ * way and is also in the pool.
+ *
+ * Hanlan's is the fixture on purpose: it is the identity the defect actually
+ * lied about, and golden Day 7 is built on it.
+ */
+describe("the prefilter cannot disagree with the pool's own spelling", () => {
+  it("picks a token that survives every apostrophe form", () => {
+    // The three spellings a source might use for one name. All must share
+    // the token, or the search finds nothing and calls it absence.
+    expect(prefilterToken("Hanlan's Point")).toBe("hanlan");
+    expect(prefilterToken("Hanlan’s Point")).toBe("hanlan");
+    expect(prefilterToken("Hanlans Point")).toBe("hanlans");
+
+    // The regression, stated as the query it produces: the OLD token was
+    // "Hanlans", which is not a substring of the pool's "Hanlan's Point
+    // Beach". The new one is.
+    const poolName = "Hanlan's Point Beach";
+    expect(poolName.toLowerCase()).toContain(prefilterToken("Hanlan's Point"));
+    expect(poolName.toLowerCase()).not.toContain("hanlans");
+  });
+
+  it("survives the other identity the defect hid", () => {
+    const poolName = "Mildred's Temple Kitchen";
+    expect(poolName.toLowerCase()).toContain(
+      prefilterToken("Mildred's Temple Kitchen"),
+    );
+  });
+
+  it("is a substring of the normalized form too, not just the raw name", () => {
+    // Both sides of the comparison must contain it — that is the whole
+    // property. A token drawn from one spelling of one side is the defect.
+    for (const name of [
+      "Hanlan's Point",
+      "St. Lawrence Market",
+      "El Catrin Destileria",
+      "Sneaky Dee's",
+      "Longo’s",
+    ]) {
+      const token = prefilterToken(name);
+      expect(token.length).toBeGreaterThan(0);
+      expect(name.toLowerCase()).toContain(token);
+      expect(normalizeName(name)).toContain(token);
+    }
+  });
+
+  it("stays selective — it takes the longest run, not the first", () => {
+    expect(prefilterToken("St. Lawrence Market")).toBe("lawrence");
+    expect(prefilterToken("The Porch")).toBe("porch");
+  });
+});
+
+describe("the curated list is wired the way the lookup reads it", () => {
+  /**
+   * `anchorCalibre` looks a candidate up under the CANDIDATE'S OWN category.
+   * An entry filed under a key the pool does not agree with never fires and
+   * fails silently — which looks identical to a list nobody is consulting.
+   * Session 13's curation hit this immediately: the founder ticked Casa Loma
+   * under museums, and the pool maps it to historic_sites.
+   *
+   * These are the properties that keep such a mistake loud.
+   */
+  it("admits each curated venue under the category it is filed against", () => {
+    for (const [category, names] of Object.entries(FOUNDER_ANCHOR_WORTHY)) {
+      for (const name of names ?? []) {
+        const verdict = anchorCalibre({
+          name,
+          category: category as PlaceCategory,
+          userRatingCount: 0, // far below the bar: only tier 1 can admit it
+        });
+        expect(verdict.worthy, `${category} / ${name}`).toBe(true);
+        expect(verdict.basis, `${category} / ${name}`).toBe("founder-curated");
+        expect(verdict.tier).toBe(1);
+      }
+    }
+  });
+
+  it("does NOT leak a curated venue into a category it was not filed under", () => {
+    // Casa Loma is curated under historic_sites AND museums_galleries (the
+    // founder ruled it is both). It must not thereby become anchor-worthy as
+    // a park or a market.
+    expect(anchorCalibre({ name: "Casa Loma", category: "parks", userRatingCount: 0 }).worthy).toBe(false);
+    expect(anchorCalibre({ name: "Art Gallery of Ontario", category: "markets", userRatingCount: 0 }).worthy).toBe(false);
+  });
+
+  it("stores every entry in a form the exact matcher can actually match", () => {
+    // A curated name that normalizes to empty, or that carries stray
+    // whitespace, is an entry that silently never fires.
+    for (const names of Object.values(FOUNDER_ANCHOR_WORTHY)) {
+      for (const name of names ?? []) {
+        expect(normalizeName(name).length, name).toBeGreaterThan(0);
+        expect(name, name).toBe(name.trim());
+        expect(matchesCuratedName(name, name)).toBe(true);
+      }
+    }
+  });
+
+  it("still refuses Berczy Park, which the founder declined to tick", () => {
+    // The list ADMITS; it does not deny. Berczy Park clears the rating bar
+    // on fame and would still be seated — the founder ticking none of the
+    // twelve offered parks makes that a live gap, not a hypothetical one.
+    // Pinned so the day a deny-list lands, this expectation changes on
+    // purpose rather than by accident.
+    expect(anchorCalibre({ name: "Berczy Park", category: "parks", userRatingCount: 4000 }).worthy).toBe(true);
+    expect((FOUNDER_ANCHOR_WORTHY.parks ?? []).includes("Berczy Park")).toBe(false);
   });
 });

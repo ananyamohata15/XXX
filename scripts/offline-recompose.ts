@@ -62,6 +62,13 @@ async function main(): Promise<void> {
   let seated = 0;
   const rows: string[] = [];
   const roleSeq = new Map<string, string[]>();
+  /**
+   * REST FIRE-RATE (XXX-42, Session 14 ruling): reported so drift in either
+   * direction is visible. A rare intervention that silently becomes common
+   * is as wrong as one that silently stops firing — and the second is what
+   * this session's first build did, undetected by five green tests.
+   */
+  const restFired = new Map<string, string | null>();
   const catSeq = new Map<string, string[]>();
   const venues = new Map<string, Set<string>>();
   const templateHasClose = new Map<string, boolean>();
@@ -143,15 +150,49 @@ async function main(): Promise<void> {
       seed,
     );
 
+    /**
+     * ALTERNATES — the fidelity gap that made this harness blind to menu
+     * allocation (XXX-40, Session 14 Step 2).
+     *
+     * `generateDay` passes `alternates` on every `composeDay` call
+     * (`engine.ts`, the ComposeInput literal). This harness did not, so the
+     * scheduler's whole fallback path — try the selected venue, then the rest
+     * of its menu in order — was never exercised offline.
+     *
+     * That matters more than it sounds. `DeterministicSelector` takes
+     * `options[0]`, so the SELECTED venue is unaffected by how positions 2..n
+     * are allocated; allocation only shows up when the head fails to seat and
+     * the alternates are consulted. Measuring menu allocation on a harness
+     * with no alternates therefore reads null BY CONSTRUCTION — which is
+     * exactly what the first run after the change reported.
+     *
+     * Session 12 ruled the doctrine this repairs: the harness calls the
+     * engine's path and MIRRORS ITS SEQUENCE. An instrument that omits an
+     * input the engine always supplies is measuring a different engine.
+     */
+    const composedRequest: GenerationRequest = {
+      ...request,
+      // The rest stop needs lodging to have anywhere to be. The harness
+      // measures the fire-rate WITH lodging known, which is the condition
+      // the metric is about; the lodging-unknown path is asserted in tests.
+      lodging: { lat: 43.6517, lng: -79.3817 },
+    };
     const composed = composeDay({
-      request,
+      request: composedRequest,
       skeleton,
       selections,
       candidatesById: byId,
       travel: new HaversineStubProvider(),
       outdoorLatestEnd: timeToMinutes("20:30"),
+      alternates: new Map(
+        menus.map((m) => [m.intent.id, m.options.map((o) => o.place.id)]),
+      ),
     });
 
+    restFired.set(
+      key,
+      composed.restReason === null ? null : composed.restReason.trigger,
+    );
     roleSeq.set(
       key,
       composed.day.slots.map((sl) => sl.role ?? "?"),
@@ -163,9 +204,7 @@ async function main(): Promise<void> {
     // the thing this metric is about.
     catSeq.set(
       key,
-      composed.day.slots.map(
-        (sl) => byId.get(sl.placeId)?.category ?? "?",
-      ),
+      composed.day.slots.map((sl) => byId.get(sl.placeId)?.category ?? "?"),
     );
     venues.set(key, new Set(composed.day.slots.map((sl) => sl.placeId)));
     templateHasClose.set(
@@ -247,36 +286,72 @@ async function main(): Promise<void> {
    * 0.693, Session 11 0.711, Session 13 CP1 0.614) are retained as
    * old-instrument history and are NOT comparable to this number.
    */
+  /**
+   * STRUCTURAL roles, excluded from the discretionary sequence.
+   *
+   * `meal` was the original exclusion and the reasoning generalises: a
+   * discretionary position is one where a CONCIERGE CHOSE A CATEGORY. Session
+   * 14 added two roles that are not choices of that kind, and both would
+   * corrupt the metric if counted:
+   *
+   *   `rest`      — the venue is the hotel. It is not in the candidate pool,
+   *                 so its category reads "?" and two days that both rest
+   *                 would score as sharing a discretionary choice they never
+   *                 made. Caught the moment the fire-rate metric landed: the
+   *                 comparable-pair count moved 21 -> 16 on a change that
+   *                 altered no category decision anywhere.
+   *   `provision` — the category comes from the ExperienceSpec, not a draw.
+   *                 Counting a determined value as a choice measures the spec.
+   */
+  const STRUCTURAL_ROLES = new Set(["meal", "rest", "provision"]);
   const discretionaryOf = (key: string): string[] => {
     const roles = roleSeq.get(key)!;
     const cats = catSeq.get(key)!;
-    return cats.filter((_, i) => roles[i] !== "meal");
+    return cats.filter((_, i) => !STRUCTURAL_ROLES.has(roles[i]));
   };
 
-  let dSum = 0, dMax = 0, dN = 0, dWorst = "";
   /**
-   * The proposed THRESHOLD, derived rather than asserted.
+   * THE GATED DOMAIN — equal-length pairs only (XXX-40, Session 14 ruling).
    *
-   * "Break-one-shared-position logic": ask what the metric would read if
-   * every comparable pair became exactly ONE discretionary position less
-   * alike. That is the smallest improvement a reader would call real — one
-   * different choice per pair of days — and setting the gate there means it
-   * demands a change you could point at, rather than a number someone liked.
+   * The pre-registered threshold and normalizer are UNTOUCHED. What changed is
+   * the domain, and the Session 11 comparable-pairs precedent is the warrant:
+   * a metric may exclude a comparison it cannot make honestly.
    *
-   * Computed from this same run's data, so the proposal and the baseline
-   * cannot drift apart.
+   * The diagnosis that forced it: `LCS / min(len)` makes a SUBSEQUENCE score
+   * 1.00 by construction. `day-5-wanderer` carries two discretionary
+   * positions — the CP1 ruling gives wanderers three intents and one is a
+   * meal — and its two choices appear in order inside `day-4-budget`'s three,
+   * so the pair reads 1.00 while sharing nothing a concierge chose twice.
+   * Measured across the whole matrix: ONE pair above the gate, zero
+   * equal-length collisions.
+   *
+   * Gating on it would have gated the CP1 wanderer ruling rather than
+   * sameness. Normalizing by the longer sequence instead would have passed
+   * that same pair at exactly 0.67 — a knife-edge pass, refused.
+   *
+   * Unequal-length pairs are still REPORTED, at `byLonger`, with a watched
+   * expectation of <=0.67. Excluded from gating is not excluded from view.
    */
+  let dSum = 0, dMax = 0, dN = 0, dWorst = "";
+  /** Unequal-length pairs: reported at byLonger, never gating. */
+  let uMax = 0, uN = 0, uWorst = "";
   let breakSum = 0, breakMax = 0;
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
       const di = discretionaryOf(keys[i]);
       const dj = discretionaryOf(keys[j]);
       if (Math.abs(di.length - dj.length) > 1) continue;
+      const shared = lcs(di, dj);
+      if (di.length !== dj.length) {
+        const byLonger = shared / Math.max(1, Math.max(di.length, dj.length));
+        uN++;
+        if (byLonger > uMax) { uMax = byLonger; uWorst = `${keys[i]} vs ${keys[j]}`; }
+        continue;
+      }
       const so = overlap(di, dj);
       dSum += so; dN++;
       if (so > dMax) { dMax = so; dWorst = `${keys[i]} vs ${keys[j]}`; }
-      const floor = Math.min(di.length, dj.length);
-      const shared = overlap(di, dj) * floor; // = lcs
+      const floor = di.length;
       const broken = floor === 0 ? 0 : Math.max(0, shared - 1) / floor;
       breakSum += broken;
       breakMax = Math.max(breakMax, broken);
@@ -326,10 +401,34 @@ async function main(): Promise<void> {
    * mean stops being a measure of how short the sequences are.
    */
   const DISCRETIONARY_MAX_GATE = 0.67;
+  /**
+   * THE DENOMINATOR GUARD (Session 14 ruling) — the zero-fire lesson applied
+   * to the gate itself.
+   *
+   * A gate whose domain has emptied out reports PASS while measuring nothing,
+   * which is the same silence as a feature that never fires. Three is the
+   * floor: below it a single pair decides the gate, and "no pair was too
+   * alike" stops being a claim about the matrix.
+   */
+  const GATE_STARVED_BELOW = 3;
+  const totalPairs = (keys.length * (keys.length - 1)) / 2;
+  const starved = dN < GATE_STARVED_BELOW;
   const gatePass = dMax <= DISCRETIONARY_MAX_GATE;
   console.log(
-    `\n  DISCRETIONARY-sequence [non-meal positions, n=${dN}]:` +
-      ` max=${dMax.toFixed(2)} (GATE ≤${DISCRETIONARY_MAX_GATE}) → ${gatePass ? "PASS" : "FAIL"}   worst=${dWorst}`,
+    `\n  DISCRETIONARY-sequence [equal-length pairs, GATED: n=${dN} of ${totalPairs}]:` +
+      ` max=${dMax.toFixed(2)} (GATE ≤${DISCRETIONARY_MAX_GATE}) → ${starved ? "GATE-STARVED" : gatePass ? "PASS" : "FAIL"}   worst=${dWorst || "(none)"}`,
+  );
+  if (starved) {
+    console.log(
+      `      ⚠ only ${dN} equal-length pair(s) in the domain — below the ${GATE_STARVED_BELOW}-pair floor.` +
+        ` A gate this thin reports PASS while measuring almost nothing; treat as UNPROVEN, not green.`,
+    );
+  }
+  console.log(
+    `      unequal-length pairs [REPORTED at byLonger, non-gating, n=${uN}]:` +
+      ` max=${uMax.toFixed(2)} (watched ≤${DISCRETIONARY_MAX_GATE})   worst=${uWorst || "(none)"}` +
+      `\n        a shorter sequence that is a SUBSEQUENCE of a longer one scores 1.00 under min-normalization` +
+      ` by construction, which is why these are reported rather than gated.`,
   );
   console.log(
     `      mean=${dMean.toFixed(3)} (REPORTED ONLY — see the pre-registration note; short sequences make a mean gate measure granularity)`,
@@ -354,6 +453,11 @@ async function main(): Promise<void> {
   console.log(
     `  closes [restated: seated / templates WITH a close step]: ${closes}/${wanted.length}` +
       ` → ${closes === wanted.length ? "PASS" : "MISS"}   (raw, for the record: ${raw}/${keys.length})`,
+  );
+  const restCount = [...restFired.values()].filter((t) => t !== null).length;
+  console.log(
+    `  rest fire-rate [lodging known]: ${restCount}/${keys.length}` +
+      `   ${[...restFired.entries()].filter(([, t]) => t !== null).map(([k, t]) => `${k}:${t}`).join(" ") || "(none)"}`,
   );
   console.log(`  role sequences:`);
   for (const k of keys) console.log(`    ${k.padEnd(17)}${roleSeq.get(k)!.join(">")}`);

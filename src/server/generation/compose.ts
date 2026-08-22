@@ -51,7 +51,17 @@ import type {
   TravelTimeProvider,
 } from "@/shared/day-grammar/types";
 import type { HourlyExposure } from "@/shared/scheduling-windows";
-import { categoryAffinity, type Persona } from "@/shared/persona";
+import {
+  categoryAffinity,
+  gravityDominance,
+  type Persona,
+} from "@/shared/persona";
+import {
+  VENUE_THEME,
+  experienceSpec,
+  threadSpec,
+  type DayTheme,
+} from "@/shared/theme";
 import { minutesToTime, timeToMinutes } from "@/shared/time";
 import {
   CATEGORY_FAMILY,
@@ -63,8 +73,11 @@ import {
 } from "@/shared/vocabulary";
 import {
   ANCHOR_ELECTOR_SOURCE,
+  EXPERIENCE_TEMPLATES,
   closeCategories,
   electAnchor,
+  holdsAThread,
+  isEveningViable,
   pickContrast,
   pickTemplate,
   warmupCategories,
@@ -109,6 +122,16 @@ const OPEN_PERIOD_NOTICEABLE_MINUTES = 45;
  * for the objective to centre it, not enough to swallow the next meal.
  */
 const ANCHOR_WINDOW_SLACK_MINUTES = 60;
+
+/**
+ * The minimum inbound leg every stop's window must leave room for.
+ *
+ * 30 minutes, and the number is the islands day's own: a walk to the ferry
+ * terminal plus the verified 15-minute crossing. Below this a window is
+ * asserting that the traveller arrives without travelling — which is what a
+ * 240-for-240 window asserted, and what cost the first live generation.
+ */
+const STEP_TRAVEL_HEADROOM_MINUTES = 30;
 
 /**
  * The default day, with a tail that can actually hold an ending
@@ -310,9 +333,29 @@ export function buildSkeleton(
      * (XXX-35 CP2 ruling 1).
      */
     excludeAnchorCategories?: readonly PlaceCategory[];
+    /**
+     * The day's THEME — the organizing mode above the arc (XXX-40).
+     *
+     * Ratified at Session 14 CP0 as belonging HERE: `buildSkeleton` is the
+     * single owner of the three things a theme must be able to change —
+     * template family, palette, and anchor mode — and nothing downstream can
+     * widen any of them. `buildMenus` filters within `intent.categories`, the
+     * selector picks within the menu, and `composeDay` seats what it is
+     * given.
+     *
+     * Defaults to `venue`, which is today's arc unchanged. That default is an
+     * ACCEPTANCE CRITERION, not a convenience: a venue day must be
+     * byte-identical to the pre-theme output for the same (persona, date,
+     * seed), so the theme layer cannot have broken themeless days.
+     */
+    theme?: DayTheme;
   },
 ): Skeleton {
   const persona = request.persona;
+  const theme = options.theme ?? VENUE_THEME;
+  const experience =
+    theme.mode === "experience" ? experienceSpec(theme.experienceId) : null;
+  const thread = theme.mode === "thread" ? threadSpec(theme.threadId) : null;
   const defaults = DEFAULT_DAY[persona.pace];
   const daySpan: Span = {
     start: timeToMinutes(request.dayStart ?? defaults.start),
@@ -327,7 +370,25 @@ export function buildSkeleton(
   const mealPattern = request.mealPattern ?? defaultMealPattern(persona);
   const pattern = GRAMMAR_PARAMS.mealPatterns[mealPattern];
   const seed = options.seed;
-  const template = pickTemplate(persona, seed);
+  /**
+   * THE TEMPLATE FAMILY IS A THEME'S FIRST LEVER (XXX-40, CP1 §1.1). A
+   * thread needs two discretionary positions for its spine; an experience
+   * needs a template that does not fight a multi-hour block.
+   */
+  /**
+   * An EXPERIENCE draws from its own template family, not from a filtered
+   * city-day list (XXX-38, Session 14 Step 3 ruling 1). Filtering the
+   * ordinary templates gave the composite block a 240-minute window between
+   * lunch and dinner — a four-hour island day with no room to reach the
+   * ferry. A thread still filters, because a thread IS a city day.
+   */
+  const template =
+    experience !== null
+      ? EXPERIENCE_TEMPLATES[
+          (personaIdentity(persona) ^ (Math.abs(seed) >>> 0)) >>>
+            0 % EXPERIENCE_TEMPLATES.length
+        ] ?? EXPERIENCE_TEMPLATES[0]
+      : pickTemplate(persona, seed, thread !== null ? holdsAThread : undefined);
 
   /**
    * One dice key per (site, context) — the funnel rule's machinery.
@@ -343,7 +404,20 @@ export function buildSkeleton(
     diceStream({ seed, identity, site, context: `${request.date}|${context}` });
 
   const hasUserAnchor = (request.anchors ?? []).length > 0;
-  const elected: ElectedAnchor | null = hasUserAnchor
+  /**
+   * A THEME pre-empts election exactly as a user anchor does, and for the
+   * same reason (XXX-40).
+   *
+   * `electAnchor` answers "which category is this traveller's day centred
+   * on". A thread has already answered it — the narrative IS the anchor — and
+   * an experience has answered it with a composite block. Electing a second
+   * centre would be the duplicate ownership XXX-27 exists to prevent, and the
+   * founder's own ruling is the reason the question is malformed for these
+   * days: *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE MUSEUM ... BUT A
+   * HISTORY TOUR OF TORONTO WOULD BE AN ANCHOR"*.
+   */
+  const themeOwnsAnchor = experience !== null || thread !== null;
+  const elected: ElectedAnchor | null = hasUserAnchor || themeOwnsAnchor
     ? null
     : electAnchor(persona, {
         exclude: options.excludeAnchorCategories ?? [],
@@ -375,7 +449,19 @@ export function buildSkeleton(
   // override the family logic AND overwrite the elected anchor's own
   // category with a bar.
   const mealStepCount = template.steps.filter((s) => s === "meal").length;
-  const windows = mealWindowsFor(pattern, mealStepCount);
+  /**
+   * An ABSORBED meal drops the MIDDLE window (XXX-38, Session 14 Step 3).
+   *
+   * `mealWindowsFor` takes the LAST k windows, which is right for a city day
+   * — travelling, breakfast is the meal that goes. It is wrong for an
+   * experience: the block absorbs the middle meal (the picnic), so what
+   * remains is the meal BEFORE it and the meal AFTER it. Golden Day 7's own
+   * shape is brunch, then eight hours, then a conditional late dinner.
+   */
+  const windows =
+    experience?.absorbsMeals !== undefined && mealStepCount >= 2
+      ? [pattern.windows[0], pattern.windows[pattern.windows.length - 1]]
+      : mealWindowsFor(pattern, mealStepCount);
 
   interface Step {
     step: ArcStep;
@@ -387,10 +473,27 @@ export function buildSkeleton(
 
   /** Nominal needs. Deliberately coarse: layout only needs a shape. */
   const NOMINAL: Record<Exclude<ArcStep, "meal">, number> = {
-    anchor: elected?.dwellMinutes ?? 120,
+    /**
+     * A composite block asks for its curated minimum, not a category's
+     * typical (XXX-38). Asking for the MIN rather than the max is deliberate:
+     * layout has to fit inside a real day, and golden Day 7's own eight hours
+     * come from the seating below widening to the block's max where the
+     * window allows. Asking for 480 up front would drop the anchor from every
+     * template whose slice is shorter.
+     */
+    anchor: experience?.anchor.dwell.min ?? elected?.dwellMinutes ?? 120,
     warmup: 45,
     contrast: 90,
     close: 90,
+    /**
+     * A provisioning stop is an errand with a purpose (XXX-38): long enough
+     * to pick up a picnic and a bottle, short enough that it never reads as
+     * an activity. `grocery.typical` is 25 and that is the right number —
+     * this step is the one place the category table and the role agree.
+     */
+    provision: 25,
+    /** A hotel reset that is worth going back for (XXX-42). */
+    rest: 60,
     open: OPEN_PERIOD_MINUTES,
   };
 
@@ -411,16 +514,42 @@ export function buildSkeleton(
    * grammar itself already enforces.
    */
   const NOMINAL_MIN: Record<Exclude<ArcStep, "meal">, number> = {
-    anchor: Math.min(elected?.dwellMinutes ?? 120, 60),
+    anchor: experience
+      ? experience.anchor.dwell.min
+      : Math.min(elected?.dwellMinutes ?? 120, 60),
     warmup: 20,
     contrast: 30,
     close: 45,
+    provision: 10,
+    /**
+     * Below three quarters of an hour a "reset" is a detour to drop bags.
+     * That may be worth doing, but it is not the rest the load trigger is
+     * answering, and calling it one would make the reason a lie.
+     */
+    rest: 45,
     open: OPEN_PERIOD_MINUTES,
   };
 
   let mealCursor = 0;
   const steps: Step[] = [];
+  /**
+   * PROVISIONING is inserted ahead of the anchor, never appended (XXX-38).
+   *
+   * Golden Day 7's trap list names the failure directly: *"Skipping
+   * provisioning (the grocery stop exists BECAUSE of the picnic —
+   * causality)"*. Causality has a direction, and a supplies stop placed after
+   * the picnic is not a late stop — it is a different, incoherent day. So the
+   * step is dealt into the template stream immediately before `anchor` rather
+   * than left to the layout to place.
+   */
+  const withProvisioning: ArcStep[] = [];
   for (const step of template.steps) {
+    if (step === "anchor" && experience?.provisioning !== undefined) {
+      withProvisioning.push("provision");
+    }
+    withProvisioning.push(step);
+  }
+  for (const step of withProvisioning) {
     if (step === "meal") {
       const window = windows[mealCursor];
       if (window === undefined) continue; // fewer windows than steps: honest drop
@@ -528,14 +657,50 @@ export function buildSkeleton(
       // the trace still claimed an anchor was elected. So the anchor's
       // window is widened past its slice instead; the cursor and the
       // meal's own (wide) window sort out the ordering from there.
-      if (step.step === "anchor" && spanMinutes(window) < step.need) {
-        window = spanClip(
-          {
-            start: window.start,
-            end: window.start + step.need + ANCHOR_WINDOW_SLACK_MINUTES,
-          },
-          daySpan,
-        );
+      /**
+       * THE ANCHOR'S WINDOW CARRIES TRAVEL HEADROOM (XXX-38, Session 14
+       * Step 3 ruling 3 — the run-1 finding generalized).
+       *
+       * A 240-minute window for a 240-minute dwell is a zero-walk fiction.
+       * The first live islands day got exactly that: the block's only legal
+       * start was 13:54 and the provisioning stop before it ended at 13:55,
+       * so a single minute of walking made the day's centre unschedulable.
+       *
+       * A stop must be REACHED. The window is therefore sized as the dwell
+       * plus a minimum inbound leg, and a composite block — which is reached
+       * across a harbour — gets the wider slack it already had.
+       */
+      if (step.step === "anchor") {
+        if (experience !== null) {
+          /**
+           * A COMPOSITE BLOCK RUNS THROUGH THE MEAL WINDOWS (ruling 1).
+           *
+           * An experience day is not a city day with a long stop in it. The
+           * block owns the middle of the day and the trailing meal seats
+           * AFTER it — golden Day 7 is on the island from noon until the
+           * sunset and offers a conditional late dinner off the 21:30 ferry.
+           *
+           * So the window runs from here to the day's end, less what the
+           * trailing meal and its own approach need. Slicing it against the
+           * dinner window instead is what produced a four-hour island day.
+           */
+          const trailingMeal = mealAt[mealAt.length - 1];
+          const reserved =
+            (trailingMeal?.need ?? 0) + STEP_TRAVEL_HEADROOM_MINUTES;
+          window = spanClip(
+            { start: window.start, end: daySpan.end - reserved },
+            daySpan,
+          );
+        } else if (spanMinutes(window) < step.need + STEP_TRAVEL_HEADROOM_MINUTES) {
+          window = spanClip(
+            {
+              start: window.start,
+              end:
+                window.start + step.need + ANCHOR_WINDOW_SLACK_MINUTES,
+            },
+            daySpan,
+          );
+        }
       }
       const floor = NOMINAL_MIN[step.step as Exclude<ArcStep, "meal">];
       if (spanMinutes(window) < floor) {
@@ -572,34 +737,27 @@ export function buildSkeleton(
   // --- 3. choose categories, in time order --------------------------------
   const usedFamilies = new Set<CategoryFamily>();
   if (elected !== null) usedFamilies.add(CATEGORY_FAMILY[elected.category]);
-  const eveningOk: readonly PlaceCategory[] = [
-    "nightlife_bars",
-    "historic_sites",
-    "restaurants",
-    /**
-     * `scenic_viewpoints` (XXX-37, Session 13 CP3 diagnostic).
-     *
-     * Session 13 added scenic to `closeCategories` and then measured 6 of 8
-     * days still ending on a bar. The cause was here: this list is a
-     * hardcoded three, written when the vocabulary had seven categories, and
-     * it silently deleted the new one from every close seated at or after
-     * 19:00 — which is most closes. The category was ranked ahead of
-     * `nightlife_bars` and never survived to be chosen.
-     *
-     * The same shape as the dead `Retail > Farmers Market` rule and
-     * `TEMPLATE_INVARIANTS.lastStep`: a constant whose correctness depended
-     * on a vocabulary that has since changed. CLAUDE.md's standard, hit for
-     * the fourth time in two sessions.
-     *
-     * A viewpoint IS an evening category — golden hour is the entire point,
-     * and golden Day 7 is built on it. What it must never be is an outdoor
-     * stop after dark, and that is not this list's job: `buildMenus` clamps
-     * outdoor windows to dusk, so a scenic close can only seat while there
-     * is still something to see. Adding it here WITHOUT that clamp would be
-     * the outdoor-after-dark failure; the two changes are one change.
-     */
-    "scenic_viewpoints",
-  ];
+  /**
+   * Evening viability now lives in ONE place — `arc.ts:EVENING_VIABLE`
+   * (XXX-40, Session 14 CP0 census).
+   *
+   * This was a local list of three, which Session 13 found silently deleting
+   * `scenic_viewpoints` from every close seated at or after 19:00 (it was
+   * ranked ahead of `nightlife_bars` and never survived to be chosen), fixed
+   * to four, and recorded in CLAUDE.md as the fourth load-bearing constant.
+   *
+   * The census this session ran found the rest of that defect: `pickContrast`
+   * held a SECOND copy, still at the original three, which Session 13's fix
+   * never reached. One owner now, and — the durable half — an exhaustive
+   * `Record<PlaceCategory, boolean>` there, so the next category added to the
+   * vocabulary cannot default to "not evening" in silence.
+   *
+   * Session 13's own pairing note still holds and is why the clamp is not
+   * this list's job: a viewpoint IS an evening category — golden hour is the
+   * entire point, and golden Day 7 is built on it — but it must never be an
+   * outdoor stop after dark. `buildMenus` clamps outdoor windows to dusk, so
+   * a scenic close can only seat while there is still something to see.
+   */
   const isEvening = (window: Span) => window.start >= timeToMinutes("19:00");
   /**
    * Evening stops draw only from categories plausibly open at night —
@@ -613,9 +771,7 @@ export function buildSkeleton(
     categories: PlaceCategory[],
     window: Span,
   ): PlaceCategory[] =>
-    isEvening(window)
-      ? categories.filter((c) => eveningOk.includes(c))
-      : categories;
+    isEvening(window) ? categories.filter(isEveningViable) : categories;
 
   /**
    * Family-freshness is a PREFERENCE, so it reorders — it must never
@@ -638,6 +794,62 @@ export function buildSkeleton(
     fresh: (c: PlaceCategory) => boolean,
   ): PlaceCategory[] => [...ordered.filter(fresh), ...ordered.filter((c) => !fresh(c))];
 
+  /**
+   * THE FAMILY LICENCE (XXX-40, Session 14 CP1).
+   *
+   * Family-freshness above is right for almost every day, and wrong for one
+   * traveller: the one whose single interest dominates. It demotes any
+   * category whose family the anchor already spent — so a persona's STRONGEST
+   * interest is structurally barred from the day's ENDING.
+   *
+   * Measured at CP0: `persona-shopper`'s die put `shopping` FIRST for the
+   * close (affinity 1.0, exactly as the palette philosophy intends) and
+   * freshness pushed it to third, because the anchor was also `shopping` and
+   * `shopping` shares the MARKET family with `markets`. The founder's own
+   * example of a shopper's day is Yorkville by day and the Eaton Centre class
+   * in the evening — a shape the rule forbade.
+   *
+   * The licence is narrow on purpose, and the texture rules still bind:
+   *
+   *   - it applies to the CLOSE only — the bookend, not the middle;
+   *   - it needs measurable dominance (`gravityDominance`), so it fires for
+   *     the die-hard and not for a traveller with three balanced interests;
+   *   - `rhythm.alternating-texture` still forbids A-B-A-B and
+   *     `pacing.minTextureFamilies` (3) still applies, so a licensed day is
+   *     `anchor(F) … close(F)` with at least three families in between.
+   *     **A bookend, not an alternation.**
+   *
+   * Chiefly for DERIVED days: a requested theme carries an explicit palette
+   * and the caller has already said what the day is for.
+   */
+  const licence = gravityDominance(
+    persona,
+    PLACE_CATEGORIES,
+    (c) => CATEGORY_FAMILY[c],
+    COMPOSE_PARAMS.persona.dominantFamilyPositions,
+  );
+  /**
+   * The licensed family, or null — and the texture floor is checked HERE
+   * rather than left to the validator.
+   *
+   * The first build delegated it: the comment claimed "the texture rules
+   * still bind" because `pacing.minTextureFamilies` exists. The skeleton
+   * invariant caught that as a lie within one run — `persona-scenic` came
+   * back with **two** families, because licensing an outdoor close on an
+   * outdoor-anchored day removed the day's third texture rather than
+   * bookending an existing one.
+   *
+   * A rule that only fails at validation is a day the composer knowingly
+   * built wrong. So the licence applies only when the day ALREADY holds its
+   * three textures without the close — which is precisely the difference
+   * between a bookend and an alternation, stated in code instead of prose.
+   */
+  const licensedFamilyFor = (used: Set<CategoryFamily>): CategoryFamily | null => {
+    if (!licence.dominant || licence.category === null) return null;
+    if (used.size < GRAMMAR_PARAMS.pacing.minTextureFamilies) return null;
+    return CATEGORY_FAMILY[licence.category];
+  };
+
   const intents: SlotIntent[] = [];
   const opens: OpenIntervalPlan[] = [];
   let nextId = 1;
@@ -656,6 +868,8 @@ export function buildSkeleton(
     let categories: PlaceCategory[];
     let label: string;
     let kind: SlotIntent["kind"] = "activity";
+    /** Set by the close branch only; read when the intent is pushed. */
+    let licensedFamily: CategoryFamily | null = null;
 
     if (item.step === "meal") {
       label = item.label ?? "meal";
@@ -664,16 +878,41 @@ export function buildSkeleton(
       // A meal's window comes from the pattern, so it is already legal at
       // its hour; the evening filter would only ever narrow dinner to
       // restaurants, which it already is.
+    } else if (item.step === "provision") {
+      /**
+       * The stop that exists BECAUSE of the anchor (XXX-38). Its category is
+       * the spec's, not a draw: a picnic needs a grocer, and offering the die
+       * a choice here would be pretending there is one.
+       */
+      categories = [experience!.provisioning!.category];
+      label = "provisioning";
     } else if (item.step === "anchor") {
+      /**
+       * A THEME owns the anchor when it has one (XXX-40).
+       *
+       * An experience's composite block draws from its curated categories; a
+       * thread's spine takes the anchor position and the contrast beside it.
+       * Neither consults `electAnchor`, because both have already answered
+       * the question it asks.
+       */
       // The elected category is not negotiable — it is the day's centre.
       // If it cannot be open at this hour the hard filters will say so and
       // the intent goes unfilled honestly, which is a visible thin day
       // rather than a silently different one.
       categories =
-        elected !== null
-          ? [elected.category]
-          : rankedActivityCategories(persona, rollFor("activity", "anchor"));
-      label = "the day's anchor";
+        experience !== null
+          ? [...experience.anchor.categories]
+          : thread !== null
+            ? [...thread.spine.categories]
+            : elected !== null
+              ? [elected.category]
+              : rankedActivityCategories(persona, rollFor("activity", "anchor"));
+      label =
+        experience !== null
+          ? experience.label
+          : thread !== null
+            ? thread.label
+            : "the day's anchor";
     } else if (item.step === "warmup") {
       // THE FUNNEL RULE. The die is rolled here, at the point of use, over
       // the options that have already survived both narrowings — never
@@ -688,6 +927,24 @@ export function buildSkeleton(
         (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
       );
       label = "warm-up";
+    } else if (item.step === "contrast" && thread !== null) {
+      /**
+       * A THREAD's spine occupies the contrast position too — roles adapt.
+       *
+       * This is the one place a theme deliberately BREAKS the arc's own
+       * anti-alternation rule, and it is the reason threads need machinery
+       * rather than a cleverer `pickContrast`: a spine is same-family by
+       * construction, and `pickContrast` structurally forbids a second stop
+       * in the anchor's family. The founder ruled that a history TOUR is an
+       * anchor where a single historic site is not, and a tour is exactly
+       * two or three culture stops in a row.
+       *
+       * The texture floor is not abandoned — the meals and the close still
+       * bring their own families, and `pacing.minTextureFamilies` still
+       * governs the finished day.
+       */
+      categories = [...thread.spine.categories];
+      label = thread.label;
     } else if (item.step === "contrast") {
       const at = String(item.window.start);
       const anchorCategory =
@@ -711,9 +968,23 @@ export function buildSkeleton(
       label = "contrast";
     } else {
       const at = String(item.window.start);
+      /**
+       * Captured HERE, before `usedFamilies` gains this step's own primary a
+       * few lines below. Reading it afterwards would ask the licence question
+       * against a set that already contains the answer — the close's own
+       * family would make `size >= 3` true for a two-texture day, which is
+       * exactly the precondition the licence must not be able to fake.
+       */
+      licensedFamily = licensedFamilyFor(usedFamilies);
       categories = demoteRatherThanDrop(
         forEvening(closeCategories(persona, rollFor("close", at)), item.window),
-        (c) => !usedFamilies.has(CATEGORY_FAMILY[c]),
+        // The family licence: a dominant traveller's own texture counts as
+        // fresh for the CLOSE, so the day may bookend on it — but only once
+        // the day already holds its three textures. Everything else is
+        // demoted exactly as before.
+        (c) =>
+          !usedFamilies.has(CATEGORY_FAMILY[c]) ||
+          CATEGORY_FAMILY[c] === licensedFamily,
       );
       label = "the day's close";
     }
@@ -728,17 +999,51 @@ export function buildSkeleton(
 
     const primary = categories[0];
     usedFamilies.add(CATEGORY_FAMILY[primary]);
+    /**
+     * A COMPOSITE BLOCK is sized by its own curated range (XXX-38, the ruled
+     * owner-swap) and takes as much of its window as the day allows, up to
+     * that range's max. An ordinary anchor takes its elected dwell.
+     */
+    const composite = item.step === "anchor" ? experience?.anchor.dwell : undefined;
+    /**
+     * The block's dwell leaves its own arrival room (ruling 3). Taking the
+     * whole window is the zero-walk fiction that cost the first live run:
+     * the only legal start was the window's first minute, so any travel at
+     * all made the day's centre unschedulable.
+     */
     const dwell =
-      item.step === "anchor" && elected !== null
-        ? elected.dwellMinutes
-        : item.step === "meal"
-          ? item.need
-          : GRAMMAR_PARAMS.dwellMinutes[primary].typical;
+      composite !== undefined
+        ? Math.max(
+            composite.min,
+            Math.min(
+              composite.max,
+              spanMinutes(item.window) - STEP_TRAVEL_HEADROOM_MINUTES,
+            ),
+          )
+        : item.step === "anchor" && elected !== null
+          ? elected.dwellMinutes
+          : item.step === "meal"
+            ? item.need
+            : GRAMMAR_PARAMS.dwellMinutes[primary].typical;
     const fitted = Math.min(dwell, spanMinutes(item.window));
-    if (fitted < GRAMMAR_PARAMS.dwellMinutes[primary].min) {
+    /**
+     * The floor a composite block must clear is ITS OWN, not the category's.
+     * `parks.min` is 20 minutes, which an eight-hour island block would clear
+     * trivially — and clearing it would let a 30-minute "composite" ship as
+     * one. The spec's min is the number that says whether this is still the
+     * experience it claims to be.
+     */
+    const floorMinutes =
+      composite !== undefined
+        ? composite.min
+        : GRAMMAR_PARAMS.dwellMinutes[primary].min;
+    if (fitted < floorMinutes) {
       dropped.push({
         step: item.step,
-        reason: `${primary} needs ${GRAMMAR_PARAMS.dwellMinutes[primary].min}min and the window holds ${spanMinutes(item.window)}min`,
+        reason:
+          composite !== undefined
+            ? `the composite block needs ${floorMinutes}min and the window holds ${spanMinutes(item.window)}min`
+            : `${primary} needs ${floorMinutes}min and the window holds ${spanMinutes(item.window)}min`,
       });
       continue;
     }
@@ -747,6 +1052,7 @@ export function buildSkeleton(
     // and that is how a 20-minute park became an anchor in silence.
     if (
       item.step === "anchor" &&
+      composite === undefined &&
       fitted < COMPOSE_PARAMS.anchor.minDwellMinutes
     ) {
       anchorDegraded = {
@@ -757,6 +1063,17 @@ export function buildSkeleton(
     }
 
     const id = `i${nextId++}`;
+    /**
+     * The licensed category rides on the CLOSE intent so `buildMenus` can
+     * give it menu depth. Promoting it to the head of `categories` was
+     * measurably not enough — see `SlotIntent.licensedCategory`.
+     */
+    const licensed =
+      licensedFamily !== null &&
+      licence.category !== null &&
+      categories.includes(licence.category)
+        ? licence.category
+        : undefined;
     intents.push({
       id,
       kind,
@@ -765,6 +1082,8 @@ export function buildSkeleton(
       categories,
       dwellMinutes: fitted,
       role: item.step,
+      ...(licensed === undefined ? {} : { licensedCategory: licensed }),
+      ...(composite === undefined ? {} : { composite }),
     });
     lastIntentId = id;
   }
@@ -876,6 +1195,18 @@ export interface ComposedDay {
    * it one would mean a migration to represent something that isn't.
    */
   openPeriods: OpenPeriod[];
+  /**
+   * Why the day returns to lodging mid-afternoon, or null (XXX-42).
+   *
+   * A rest stop without its reason is the unexplained gap the founder
+   * complained about, wearing a label. The trigger travels with the day so
+   * the narration can say "you will have walked two and a half hours by
+   * then" rather than inventing a motive.
+   */
+  restReason:
+    | { trigger: "physical-load"; loadMinutes: number; thresholdMinutes: number }
+    | { trigger: "event-prep"; beforeSlotId: string }
+    | null;
 }
 
 /**
@@ -1057,8 +1388,37 @@ export function composeDay(input: ComposeInput): ComposedDay {
     priceLeg(from, to)?.mode ??
     modeFor(from && to ? haversineKm(from, to) : 0, request.transport);
 
+  /**
+   * LODGING IS A PLACE (XXX-42, Session 14 CP1 §1.6).
+   *
+   * One mechanism serving four requirements that would otherwise need four:
+   *
+   *   - the first leg `lodging → stop 1` becomes a REAL recorded leg. It was
+   *     priced and thrown away, because `recordLeg` needs a `prevPlaceId` and
+   *     lodging had none — so the day's first movement, often its longest,
+   *     was invisible on the timeline;
+   *   - the return leg is priced against `dayEnd`;
+   *   - a REST STOP has somewhere to be: `slots.place_id` is NOT NULL, and a
+   *     rest at the hotel is a slot at a place;
+   *   - honest absence stays honest — no lodging, no pseudo-place, and every
+   *     behaviour below is exactly what it was.
+   */
+  const lodging = request.lodging ?? null;
+  const LODGING_PLACE_ID = "lodging";
+  if (lodging !== null) {
+    places[LODGING_PLACE_ID] = {
+      id: LODGING_PLACE_ID,
+      name: "your hotel",
+      neighborhood: "",
+      coords: lodging,
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+    };
+  }
+
   const legs: ComposedLeg[] = [];
-  let prevPlaceId: string | null = null;
+  let prevPlaceId: string | null = lodging === null ? null : LODGING_PLACE_ID;
+  /** Why a rest stop was dealt, or null. Never silent — it has a reason. */
+  let restReason: ComposedDay["restReason"] = null;
   const recordLeg = (toCoords: LatLng | null, toPlaceId: string): void => {
     const leg = prevPlaceId === null ? null : priceLeg(prevCoords, toCoords);
     if (leg !== null && prevPlaceId !== null) {
@@ -1162,14 +1522,30 @@ export function composeDay(input: ComposeInput): ComposedDay {
       if (place.tags.outdoor && input.outdoorLatestEnd !== null) {
         window = { ...window, end: Math.min(window.end, input.outdoorLatestEnd) };
       }
+      /**
+       * A COMPOSITE BLOCK is clamped to ITS OWN range, not the category's
+       * (XXX-38, Session 14 Step 3 — the owner-swap's THIRD reader).
+       *
+       * This line was found by the first live islands generation, which
+       * failed honestly with `dwell.understay`: the block seated for 150
+       * minutes against a 240-minute floor. `clampDwell(480, parks{20,150})`
+       * is 150 — `parks.max` governing the day's centre from a third place
+       * nobody had looked, after the skeleton and the validator had both
+       * been taught otherwise.
+       *
+       * Exactly the shape this session keeps meeting: one question with
+       * several readers, and a fix that reaches some of them.
+       */
+      const dwellRange =
+        intent.composite ??
+        (place.category?.status === "present"
+          ? params.dwellMinutes[place.category.value]
+          : null);
       const wanted =
-        place.category?.status === "present"
-          ? clampDwell(intent.dwellMinutes, params.dwellMinutes[place.category.value])
+        dwellRange !== null
+          ? clampDwell(intent.dwellMinutes, dwellRange)
           : intent.dwellMinutes;
-      const minDwell =
-        place.category?.status === "present"
-          ? params.dwellMinutes[place.category.value].min
-          : 30;
+      const minDwell = dwellRange !== null ? dwellRange.min : 30;
       const earliest = snap5(Math.max(arrival, window.start));
       const latestEnd = Math.min(window.end, skeleton.daySpan.end);
       // Hours unknown covers BOTH never-fetched and fetched-but-absent
@@ -1273,6 +1649,11 @@ export function composeDay(input: ComposeInput): ComposedDay {
         placeId: place.id,
         arriveBy,
         ...(intent.role === undefined ? {} : { role: intent.role }),
+        // The composite bound travels with the SLOT, because the validator
+        // reads slots and must know which owner bounded this dwell.
+        ...(intent.composite === undefined
+          ? {}
+          : { compositeDwell: intent.composite }),
       });
       cursor = seat.start + seat.dwell;
       prevCoords = place.coords;
@@ -1343,6 +1724,127 @@ export function composeDay(input: ComposeInput): ComposedDay {
   }
   openPeriods.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
+  /**
+   * THE REST STOP (XXX-42, Session 14 CP1 §1.6).
+   *
+   * Dealt as a POST-PASS rather than as a skeleton step, and that is forced
+   * by what the trigger reads: physical load is accumulated TRAVEL time, which
+   * does not exist until the day has been seated. A skeleton-time rest stop
+   * would have to guess at the thing it is reacting to.
+   *
+   * Two triggers, either sufficient:
+   *
+   *   (a) PHYSICAL LOAD — walking plus commute minutes since the day began
+   *       crosses `physicalLoadMinutes`. Travel time, not elapsed time: two
+   *       hours in a gallery is not load.
+   *   (b) EVENT PREP — the next stop is the fancy-dinner class, defined as
+   *       three facts rather than a vibe (restaurants · at or after 19:00 ·
+   *       priced in the top band the budget admits).
+   *
+   * It needs a real gap to sit in, so it never displaces a stop — a rest that
+   * pushes dinner later is not a rest. And it needs LODGING: without it there
+   * is nowhere to rest and `structure.reset-gap-without-lodging` keeps saying
+   * so, which is the Session 11 advisory this upgrades rather than replaces.
+   */
+  if (lodging !== null) {
+    const restParams = COMPOSE_PARAMS.rest;
+    const ordered2 = [...slots].sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime),
+    );
+    /**
+     * Load is measured over the WHOLE DAY, not accumulated to the gap.
+     *
+     * The first build accumulated leg by leg and asked "has this traveller
+     * walked enough YET". Measured across all eight exam personas with real
+     * pool venues, that fired **zero** times — and the reason is structural
+     * rather than a threshold being wrong. Load accumulates through the day
+     * while the big gaps sit EARLY: `day-2-old-town` totals 175 travel
+     * minutes with a 100-minute gap, but the gap is before the anchor when
+     * only one leg has been walked, and by the time the threshold is crossed
+     * the remaining gaps are 35 minutes.
+     *
+     * A concierge planning a day is not reacting to fatigue as it arrives; it
+     * is looking at a day that totals three and a half hours of moving and
+     * putting a reset before the evening. So the day's total decides WHETHER,
+     * and the afternoon decides WHERE — which is also the shape of the
+     * founder's own example, golden Day 2's 17:00–19:00 hotel reset.
+     */
+    const dayLoad = legs.reduce((total, leg) => total + leg.minutes, 0);
+    const loaded = dayLoad >= restParams.physicalLoadMinutes;
+    let restPlaced = false;
+    // Latest suitable gap first: a reset belongs next to the evening it is
+    // preparing for, not at the first hole of the afternoon.
+    for (let i = ordered2.length - 2; i >= 0 && !restPlaced; i -= 1) {
+      const gapStart = timeToMinutes(ordered2[i].endTime);
+      const gapEnd = timeToMinutes(ordered2[i + 1].startTime);
+      if (gapEnd - gapStart < restParams.dwellMinutes) continue;
+
+      const next = ordered2[i + 1];
+      // The day's LAST meal — structurally the evening one. See
+      // COMPOSE_PARAMS.rest for why this is not a clock comparison.
+      const lastMealId = ordered2
+        .filter((sl) => sl.kind === "meal")
+        .at(-1)?.id;
+      const nextPlace = places[next.placeId];
+      const nextCategory =
+        nextPlace?.category?.status === "present"
+          ? nextPlace.category.value
+          : null;
+      const nextPrice =
+        nextPlace?.priceRange?.status === "present"
+          ? nextPlace.priceRange.value
+          : null;
+      const budgetCeiling = request.budgetBand?.max ?? null;
+      const eventPrep =
+        nextCategory === "restaurants" &&
+        next.id === lastMealId &&
+        budgetCeiling !== null &&
+        nextPrice !== null &&
+        (nextPrice.min + nextPrice.max) / 2 >=
+          budgetCeiling * restParams.eventPrepBudgetShare;
+
+      // Physical load also needs the gap to be in the afternoon; event-prep
+      // does not, because it is anchored to the dinner it precedes.
+      const loadFits =
+        loaded && ordered2[i].endTime >= restParams.fromHour;
+      if (!loadFits && !eventPrep) continue;
+
+      const start = gapStart;
+      const end = Math.min(gapEnd, start + restParams.dwellMinutes);
+      slots.push({
+        id: "s-rest",
+        origin: "concierge",
+        kind: "activity",
+        startTime: minutesToTime(start),
+        endTime: minutesToTime(end),
+        placeId: LODGING_PLACE_ID,
+        arriveBy: arriveByFor(
+          places[ordered2[i].placeId]?.coords ?? null,
+          lodging,
+        ),
+        role: "rest",
+      });
+      restReason = loadFits
+        ? {
+            trigger: "physical-load",
+            loadMinutes: dayLoad,
+            thresholdMinutes: restParams.physicalLoadMinutes,
+          }
+        : { trigger: "event-prep", beforeSlotId: next.id };
+      restPlaced = true;
+      // The gap is now a stop, so it must stop being narrated as free time.
+      for (let p = openPeriods.length - 1; p >= 0; p -= 1) {
+        const period = openPeriods[p];
+        if (
+          timeToMinutes(period.startTime) < end &&
+          start < timeToMinutes(period.endTime)
+        ) {
+          openPeriods.splice(p, 1);
+        }
+      }
+    }
+  }
+
   const day: GrammarDay = {
     id: `gen-${request.date}`,
     city: request.city,
@@ -1360,6 +1862,7 @@ export function composeDay(input: ComposeInput): ComposedDay {
     unfilled,
     legs,
     openPeriods,
+    restReason,
   };
 }
 

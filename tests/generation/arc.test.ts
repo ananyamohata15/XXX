@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ARC_TEMPLATES,
+  EVENING_VIABLE,
   TEMPLATE_INVARIANTS,
   electAnchor,
   pickContrast,
@@ -23,6 +24,8 @@ import {
   seatCost,
   type ComposeInput,
 } from "@/server/generation/compose";
+import { allocateMenu, menuSizeFor } from "@/server/generation/engine";
+import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "@/server/generation/select";
 import { COMPOSE_PARAMS } from "@/server/generation/compose-params";
 import type { Candidate, GenerationRequest, Selection } from "@/server/generation/types";
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
@@ -30,7 +33,13 @@ import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { present } from "@/shared/fixtures/golden/support";
 import { GOLDEN_PERSONAS, type Persona } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
-import { CATEGORY_FAMILY, TIERS, type PlaceCategory } from "@/shared/vocabulary";
+import { mulberry32 } from "@/shared/dice";
+import {
+  CATEGORY_FAMILY,
+  PLACE_CATEGORIES,
+  TIERS,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 const DATE = "2026-09-19"; // a Saturday
 
@@ -732,5 +741,115 @@ describe("no step is sliced into a window its own meal is still sitting in", () 
         `${key} dropped arc steps`,
       ).toEqual([]);
     }
+  });
+});
+
+/**
+ * Evening viability has ONE owner, and it is exhaustive (XXX-40, Session 14
+ * CP0 census).
+ *
+ * Session 13 fixed a hardcoded three-category evening list in `compose.ts`
+ * that was silently deleting `scenic_viewpoints` from every close, and
+ * recorded it in CLAUDE.md as the fourth load-bearing constant. The census
+ * this session ran found the other half: `pickContrast` held a SECOND copy,
+ * still at the original three, which the fix never reached.
+ */
+describe("evening viability is owned once and ruled on per category", () => {
+  it("classifies EVERY category — a new one cannot default to 'no'", () => {
+    // The type already enforces this at compile time; the test states the
+    // property in the place a reader looks for it. An admit-list would let a
+    // new category fall through to false in silence, which is the exact
+    // mechanism that deleted `scenic_viewpoints` from every close.
+    for (const category of PLACE_CATEGORIES) {
+      expect(typeof EVENING_VIABLE[category]).toBe("boolean");
+    }
+  });
+
+  it("an evening CONTRAST can be a viewpoint — the drifted copy's defect", () => {
+    // Before the dedup, `pickContrast`'s own list was
+    // ["nightlife_bars", "historic_sites"], so this returned nothing scenic
+    // no matter what the persona wanted or the dice drew.
+    const scenicPersona = GOLDEN_PERSONAS["persona-scenic"];
+    const picks = pickContrast(
+      scenicPersona,
+      "museums_galleries",
+      new Set(),
+      { eveningOnly: true, dice: mulberry32(7) },
+    );
+    expect(picks).toContain("scenic_viewpoints");
+  });
+
+  it("still refuses the categories the evening filter exists to refuse", () => {
+    const picks = pickContrast(
+      GOLDEN_PERSONAS["day-3-winter"],
+      "parks",
+      new Set(),
+      { eveningOnly: true, dice: mulberry32(7) },
+    );
+    expect(picks).not.toContain("museums_galleries");
+    expect(picks).not.toContain("markets");
+    expect(picks).not.toContain("cafes");
+  });
+});
+
+/**
+ * Menu allocation — the die's last mile (XXX-40, Session 14 CP1 ruling 1).
+ *
+ * `intent.categories` is a DICED ORDER. `buildMenus` used to sort by category
+ * index and then `slice(0, MENU_SIZE)`, so whenever the head category had
+ * enough survivors the menu was single-category and the rest of the diced
+ * order was unreachable — 338 legal bars behind four viewpoints, measured.
+ */
+describe("menu allocation preserves the diced order across categories", () => {
+  const cand = (id: string, category: PlaceCategory, score: number): Candidate => ({
+    place: {
+      id,
+      name: id,
+      neighborhood: "Test",
+      coords: { lat: 43.65, lng: -79.38 },
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+    },
+    category,
+    googlePlaceId: null,
+    rating: null,
+    userRatingCount: null,
+    detailsFetched: false,
+    score,
+  });
+
+  it("round-robins the categories instead of slicing the head", () => {
+    const kept = [
+      ...Array.from({ length: 10 }, (_, i) => cand(`view${i}`, "scenic_viewpoints", 0.9 - i * 0.01)),
+      ...Array.from({ length: 10 }, (_, i) => cand(`bar${i}`, "nightlife_bars", 0.5 - i * 0.01)),
+    ];
+    const options = allocateMenu(kept, ["scenic_viewpoints", "nightlife_bars"], 4);
+    expect(options.map((o) => o.category)).toEqual([
+      "scenic_viewpoints",
+      "nightlife_bars",
+      "scenic_viewpoints",
+      "nightlife_bars",
+    ]);
+    // The HEAD still leads, so DeterministicSelector's options[0] keeps
+    // honouring the die's first choice.
+    expect(options[0].place.id).toBe("view0");
+    // Within a category, score still decides.
+    expect(options[2].place.id).toBe("view1");
+  });
+
+  it("skips an empty category rather than reserving its slot", () => {
+    const kept = Array.from({ length: 3 }, (_, i) => cand(`bar${i}`, "nightlife_bars", 0.5 - i * 0.01));
+    const options = allocateMenu(kept, ["scenic_viewpoints", "nightlife_bars"], 4);
+    // A thin or absent category must not shrink the menu — that would be the
+    // old defect wearing different clothes.
+    expect(options).toHaveLength(3);
+    expect(options.every((o) => o.category === "nightlife_bars")).toBe(true);
+  });
+
+  it("gives discretionary intents more depth than meals", () => {
+    const meal = { id: "m", kind: "meal" as const, label: "lunch", window: { start: 0, end: 1 }, categories: [], dwellMinutes: 60 };
+    const close = { id: "c", kind: "activity" as const, label: "close", window: { start: 0, end: 1 }, categories: [], dwellMinutes: 60, role: "close" as const };
+    expect(menuSizeFor(meal)).toBe(MENU_SIZE);
+    expect(menuSizeFor(close)).toBe(MENU_SIZE_DISCRETIONARY);
+    expect(MENU_SIZE_DISCRETIONARY).toBeGreaterThan(MENU_SIZE);
   });
 });

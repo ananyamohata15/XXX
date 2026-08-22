@@ -24,6 +24,7 @@ import type { Violation } from "@/shared/day-grammar/types";
 import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
 import type { WeatherBlindNotice } from "@/shared/tasting";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { themeId, type DayTheme } from "@/shared/theme";
 import {
   capReached,
   readQuota,
@@ -37,6 +38,13 @@ export interface TastingRequest {
   date: string;
   budgetMax: number | null;
   seed: number | null;
+  /**
+   * The picker's choice. `null` = "concierge's choice", which is the ABSENCE
+   * of a request rather than a fourth mode — the engine derives one.
+   */
+  theme?: DayTheme | null;
+  /** Trip circumstance. `null` = unknown, and the page says so. */
+  lodging?: { lat: number; lng: number } | null;
   /**
    * A canned day through the real view-model path, for feeling the page
    * while Google Details quota is unavailable. Costs nothing, spends no
@@ -117,6 +125,9 @@ async function runSyntheticDay(
     // The synthetic day is a fixed fabrication with a full-length centre;
     // it has no election to degrade.
     anchorDegraded: null,
+    // A fabrication is not a themed day either. Labelled `venue` because
+    // that is what it looks like, and `requested` because nothing derived it.
+    theme: { id: "venue", origin: "requested", reason: null },
     sources: [...sources].sort(),
     meter: {
       traceId,
@@ -242,6 +253,12 @@ export async function runTastingGeneration(
         : { min: 0, max: input.budgetMax, currency: "CAD" },
     transport: ["walk", "transit"],
     ...(input.seed === null ? {} : { seed: input.seed }),
+    ...(input.theme === undefined || input.theme === null
+      ? {}
+      : { theme: input.theme }),
+    ...(input.lodging === undefined || input.lodging === null
+      ? {}
+      : { lodging: input.lodging }),
   };
 
   const outcome = await generateDay(deps, request);
@@ -264,6 +281,22 @@ export async function runTastingGeneration(
     // Re-read so the gauge includes the generation just paid for.
     quota: await readQuota(supabase, new Date().toISOString()),
   };
+
+  /**
+   * A REQUESTED theme that could not be built (XXX-40). Its own arm, because
+   * nothing went wrong with the generation — the day was never possible on
+   * this date. The room must say which theme and why, not show a mainland
+   * day under an island name.
+   */
+  if (outcome.status === "theme-infeasible") {
+    return {
+      status: "theme-infeasible",
+      theme: themeId(outcome.theme),
+      reason: outcome.infeasibility.reason,
+      detail: outcome.infeasibility.detail,
+      meter,
+    };
+  }
 
   if (outcome.status === "failed") {
     return {
@@ -342,6 +375,12 @@ export async function runTastingGeneration(
       cause: u.cause,
     })),
     anchorDegraded: outcome.anchorDegraded,
+    theme: {
+      id: themeId(outcome.theme.theme),
+      origin: outcome.theme.origin,
+      reason:
+        outcome.theme.origin === "derived" ? outcome.theme.reason : null,
+    },
     sources: [...sources].sort(),
     meter,
   };

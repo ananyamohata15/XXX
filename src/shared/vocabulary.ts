@@ -120,6 +120,27 @@ export const SLOT_ROLES = [
   "contrast",
   "close",
   "meal",
+  /**
+   * The stop that exists BECAUSE of another stop (XXX-38, Session 14).
+   *
+   * Golden Day 7's own trap list: *"Skipping provisioning (the grocery stop
+   * exists BECAUSE of the picnic — causality)"*. A provision stop is not a
+   * warmup and not a contrast — it has no interest in being either, and
+   * calling it one would lose exactly the causal relationship that makes it
+   * narratable. It is always upstream of the experience it serves.
+   */
+  "provision",
+  /**
+   * A deliberate return to lodging (XXX-42, Session 14).
+   *
+   * Distinct from free time, which is `OpenPeriod` and is not a stop. A rest
+   * stop IS a stop: it has a place (the hotel), a duration, and a reason —
+   * either accumulated physical load or preparation for the evening ahead.
+   * Session 11's `structure.reset-gap-without-lodging` advisory exists
+   * because we could not vouch for a gap; with lodging known, this is the
+   * gap being vouched for.
+   */
+  "rest",
 ] as const;
 export type SlotRole = (typeof SLOT_ROLES)[number];
 
@@ -178,6 +199,37 @@ export const CATEGORY_FAMILY: Record<PlaceCategory, CategoryFamily> = {
    */
   grocery: "market",
 };
+
+/**
+ * Is a stop of this category spent OUTSIDE? — the single owner of the
+ * question (XXX-40, Session 14 CP0; the fifth load-bearing constant).
+ *
+ * Four places need this answer and they used to derive it two different
+ * ways. `buildMenus` clamps an outdoor intent's window to dusk and asks the
+ * FAMILY (Session 13 fixed it to, having found it asking `c === "parks"`).
+ * `retrieveCandidates` sets `PlaceTags.outdoor`, which is what `composeDay`'s
+ * own dusk clamp and every daylight and weather rule read — and it was still
+ * asking `category === "parks"`.
+ *
+ * So `scenic_viewpoints`, added to the outdoor FAMILY in Session 13 on the
+ * stated grounds that *"the exposure and dusk rules already treat them
+ * alike"*, arrived in every retrieved day with `outdoor: false`. It was
+ * invisible to `daylight.outdoor-after-dark`, to
+ * `daylight.outdoor-in-twilight`, and to every `weather.*` rule. A lookout
+ * could be seated in the dark and the validator had nothing to say about it.
+ *
+ * The Session 13 fix was written as *"the two changes are one change"* — the
+ * menu clamp and the evening list. There was a third half: a family a
+ * category BELONGS to, and a tag a retrieved place CARRIES, must not be able
+ * to disagree. One function, so they cannot.
+ *
+ * Golden Day 7 is why this is not a rider. Its closing beat is a sunset from
+ * a west-facing beach — the one day in the set whose entire point is an
+ * outdoor slot timed against the ephemeris.
+ */
+export function isOutdoorCategory(category: PlaceCategory): boolean {
+  return CATEGORY_FAMILY[category] === "outdoor";
+}
 
 export const TRANSPORT_MODES = ["walk", "cycle", "drive", "transit"] as const;
 export type TransportMode = (typeof TRANSPORT_MODES)[number];

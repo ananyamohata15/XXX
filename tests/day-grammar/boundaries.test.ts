@@ -601,3 +601,59 @@ describe("honest absence is reported, never assumed away", () => {
     );
   });
 });
+
+/**
+ * The daylight and weather rules read `PlaceTags.outdoor`, and until
+ * Session 14 the RETRIEVAL that produces that tag decided it with
+ * `category === "parks"` (XXX-40, CP0 — the fifth load-bearing constant).
+ *
+ * So `scenic_viewpoints`, which joined the outdoor FAMILY in Session 13,
+ * arrived with `outdoor: false` and every rule below simply did not see it.
+ * Nothing failed; the venue was just absent from the checks that exist to
+ * protect it. These tests pin the rules from the tag's side — the producer
+ * is pinned in `tests/generation/compose.test.ts`.
+ *
+ * Golden Day 7's closing beat is a sunset from a west-facing beach, which is
+ * why this is checked rather than assumed.
+ */
+describe("an outdoor viewpoint is subject to the daylight rules", () => {
+  const lookout = (over: Partial<GrammarPlace> = {}): GrammarPlace =>
+    place({
+      id: "lookout",
+      category: present("scenic_viewpoints", CONCIERGE, TIERS.observed),
+      hours: present(hours({ default: [["00:00", "24:00"]] }), PLACES_API, TIERS.verified),
+      tags: tags({ outdoor: true }),
+      ...over,
+    });
+
+  it("flags a viewpoint seated after civil dusk", () => {
+    // Civil dusk is 21:10 on this date; 21:30–22:00 is an outdoor stop with
+    // nothing to look at, which is the failure the rule exists for.
+    const day = dayOf(
+      [lookout()],
+      [slot({ id: "s1", place: "lookout", from: "21:30", to: "22:00" })],
+    );
+    expect(ruleIds(day, ctxOf())).toContain("daylight.outdoor-after-dark");
+  });
+
+  it("passes the same viewpoint in daylight", () => {
+    const day = dayOf(
+      [lookout()],
+      [slot({ id: "s1", place: "lookout", from: "18:30", to: "19:30" })],
+    );
+    const found = ruleIds(day, ctxOf());
+    expect(found).not.toContain("daylight.outdoor-after-dark");
+    expect(found).not.toContain("daylight.outdoor-in-twilight");
+  });
+
+  it("would MISS both if the tag were false — the defect, pinned", () => {
+    // The regression itself: same slot, same hour, tag as retrieval used to
+    // produce it. Nothing is reported, which is exactly why it survived a
+    // session — a silent false is indistinguishable from a good day.
+    const day = dayOf(
+      [lookout({ tags: tags() })],
+      [slot({ id: "s1", place: "lookout", from: "21:30", to: "22:00" })],
+    );
+    expect(ruleIds(day, ctxOf())).not.toContain("daylight.outdoor-after-dark");
+  });
+});

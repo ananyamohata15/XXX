@@ -2,6 +2,7 @@ import { z } from "zod";
 import { checkGate, gateResponse } from "@/server/tasting/gate";
 import { runTastingGeneration } from "@/server/tasting/generate";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { EXPERIENCE_IDS, THREAD_IDS } from "@/shared/theme";
 
 /**
  * Generate a fresh Toronto day for the founder (XXX-32).
@@ -25,6 +26,30 @@ const bodySchema = z.strictObject({
   budgetMax: z.number().positive().nullable().default(null),
   seed: z.number().int().nullable().default(null),
   synthetic: z.boolean().default(false),
+  /**
+   * The picker's theme (XXX-40). `null` is "concierge's choice" — the
+   * ABSENCE of a request, which the engine derives from. The union is built
+   * from the shared vocabulary so the route cannot drift from the engine.
+   */
+  theme: z
+    .discriminatedUnion("mode", [
+      z.strictObject({ mode: z.literal("venue") }),
+      z.strictObject({
+        mode: z.literal("thread"),
+        threadId: z.enum(THREAD_IDS),
+      }),
+      z.strictObject({
+        mode: z.literal("experience"),
+        experienceId: z.enum(EXPERIENCE_IDS),
+      }),
+    ])
+    .nullable()
+    .default(null),
+  /** Trip circumstance. `null` = unknown, and the room says so. */
+  lodging: z
+    .strictObject({ lat: z.number(), lng: z.number() })
+    .nullable()
+    .default(null),
 });
 
 export async function POST(request: Request) {

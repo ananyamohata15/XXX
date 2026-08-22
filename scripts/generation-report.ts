@@ -18,6 +18,12 @@ import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { computeDaylight } from "@/server/weather/ephemeris";
 import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import {
+  EXPERIENCE_IDS,
+  THREAD_IDS,
+  themeId,
+  type DayTheme,
+} from "@/shared/theme";
 import type { GrammarDay, GrammarFact } from "@/shared/day-grammar/types";
 
 /**
@@ -332,6 +338,42 @@ async function main() {
   const seed = Number(arg("--seed") ?? 42);
   const budgetMax = arg("--budget");
 
+  /**
+   * `--theme` (XXX-40): `venue`, `thread:<id>`, `experience:<id>`, or absent
+   * for concierge's choice — which is the ABSENCE of a request, so it is
+   * sent as null and the engine derives one.
+   */
+  const themeArg = arg("--theme");
+  const themeFromArg = (): DayTheme | null => {
+    if (themeArg === null) return null;
+    if (themeArg === "venue") return { mode: "venue" };
+    const [mode, id] = themeArg.split(":");
+    if (mode === "thread" && (THREAD_IDS as readonly string[]).includes(id)) {
+      return { mode: "thread", threadId: id as (typeof THREAD_IDS)[number] };
+    }
+    if (mode === "experience" && (EXPERIENCE_IDS as readonly string[]).includes(id)) {
+      return {
+        mode: "experience",
+        experienceId: id as (typeof EXPERIENCE_IDS)[number],
+      };
+    }
+    console.error(
+      `Unknown --theme "${themeArg}". Known: venue, ${THREAD_IDS.map((t) => `thread:${t}`).join(", ")}, ${EXPERIENCE_IDS.map((e) => `experience:${e}`).join(", ")}`,
+    );
+    process.exit(1);
+  };
+  const theme = themeFromArg();
+
+  /** `--lodging lat,lng` (XXX-42). Absent = unknown, and it stays unknown. */
+  const lodgingArg = arg("--lodging");
+  const lodging =
+    lodgingArg === null
+      ? null
+      : {
+          lat: Number(lodgingArg.split(",")[0]),
+          lng: Number(lodgingArg.split(",")[1]),
+        };
+
   const request: GenerationRequest = {
     city: "toronto",
     date,
@@ -342,6 +384,8 @@ async function main() {
         : null,
     transport: ["walk", "transit"],
     seed,
+    ...(theme === null ? {} : { theme }),
+    ...(lodging === null ? {} : { lodging }),
   };
 
   const useLlm =
@@ -709,7 +753,13 @@ async function main() {
           for (const line of day.verdict) console.log(`   founder: "${line}"`);
         }
         if (outcome.status !== "ok") {
-          console.log(`   OUTCOME: ${outcome.status} — ${outcome.narrated.headline}`);
+          console.log(
+            `   OUTCOME: ${outcome.status} — ${
+              outcome.status === "theme-infeasible"
+                ? `${outcome.infeasibility.reason}: ${outcome.infeasibility.detail}`
+                : outcome.narrated.headline
+            }`,
+          );
           continue;
         }
         const slots = [...outcome.day.slots].sort((a, b) =>
@@ -831,11 +881,42 @@ async function main() {
     console.log(JSON.stringify(outcome, null, 2));
   } else if (outcome.status === "ok") {
     printDay(outcome.day);
+    // What ORGANIZING MODE built this day, and whether it was asked for
+    // (XXX-40). Printed before the narration so a reader sees the shape's
+    // provenance before its prose.
+    console.log(
+      `\n  theme: ${themeId(outcome.theme.theme)} (${outcome.theme.origin})` +
+        (outcome.theme.origin === "derived" ? ` — ${outcome.theme.reason}` : "") +
+        ` · template=${outcome.arcTemplateId}`,
+    );
+    const restSlot = outcome.day.slots.find((sl) => sl.role === "rest");
+    const composite = outcome.day.slots.find(
+      (sl) => sl.compositeDwell !== undefined,
+    );
+    if (composite !== undefined) {
+      console.log(
+        `  composite block: ${composite.startTime}–${composite.endTime} ` +
+          `(spec bounds ${composite.compositeDwell!.min}–${composite.compositeDwell!.max}min)`,
+      );
+    }
+    const provision = outcome.day.slots.find((sl) => sl.role === "provision");
+    if (provision !== undefined) {
+      console.log(
+        `  provisioning: ${provision.startTime}–${provision.endTime} ${outcome.day.places[provision.placeId]?.name ?? provision.placeId}`,
+      );
+    }
+    console.log(
+      `  rest stop: ${restSlot === undefined ? "none" : `${restSlot.startTime}–${restSlot.endTime} at ${outcome.day.places[restSlot.placeId]?.name ?? restSlot.placeId}`}`,
+    );
     console.log(`\n  headline: ${outcome.narrated.headline}`);
     for (const line of outcome.narrated.advisories) {
       console.log(`    note [${line.ruleId}]: ${line.text}`);
     }
     printNarration(outcome);
+  } else if (outcome.status === "theme-infeasible") {
+    console.log(
+      `\n  THEME INFEASIBLE — ${outcome.infeasibility.reason}: ${outcome.infeasibility.detail}`,
+    );
   } else {
     console.log(`\n  HONEST FAILURE — ${outcome.narrated.headline}`);
     for (const line of outcome.narrated.violations) {

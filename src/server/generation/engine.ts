@@ -21,6 +21,7 @@ import {
 } from "@/shared/day-grammar/validate";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { haversineKm } from "@/shared/day-grammar/travel";
+import type { Span } from "@/shared/day-grammar/predicates";
 import type { Violation } from "@/shared/day-grammar/types";
 import {
   ANCHOR_MIN_RATING_COUNT,
@@ -29,8 +30,8 @@ import {
 import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { timeToMinutes } from "@/shared/time";
 import {
-  CATEGORY_FAMILY,
   CITY_GEO,
+  isOutdoorCategory,
   type PlaceCategory,
 } from "@/shared/vocabulary";
 import type { Instrumentation } from "../instrumentation";
@@ -61,11 +62,15 @@ import {
   type Skeleton,
 } from "./compose";
 import { applyFounderGroundtruth } from "./groundtruth";
+import { environmentIsFair, selectTheme } from "./theme-select";
+import { readFerryTimetable } from "../city-facts/repo";
+import { EXPERIENCE_SPECS, themeId, themeZoneSlugs } from "@/shared/theme";
+import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
 import { collapseByPlace, scoreAll } from "./score";
-import { MENU_SIZE } from "./select";
+import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
 import type {
   Candidate,
   CardReason,
@@ -74,6 +79,7 @@ import type {
   GenerationStats,
   Menu,
   Selector,
+  SlotIntent,
   StageTimings,
 } from "./types";
 
@@ -283,8 +289,105 @@ export async function generateDay(
   });
 
   try {
+    /**
+     * ENVIRONMENT FIRST (XXX-40, Session 14).
+     *
+     * It used to be fetched just before composition. Theme selection needs
+     * weather — the founder's *"if the weather is good"* is a SELECTION input,
+     * not a post-hoc filter — and the theme is an input to `buildSkeleton`,
+     * which is the first thing the engine does. So the read moves up.
+     *
+     * Cost-neutral: it is a `weather_days` row and a computed ephemeris. No
+     * Google endpoint, no Anthropic call.
+     */
+    const environment =
+      deps.examEnvironmentOverride ??
+      (await fetchEnvironment(deps.supabase, request.city, request.date));
+    if (deps.examEnvironmentOverride !== undefined) {
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "exam",
+        endpoint: "environment_override",
+        metadata: { reason: "exam/test seam — synthetic weather in play" },
+      });
+    }
+    const dusk = timeToMinutes(environment.daylight.civilDuskLocal);
+
+    /**
+     * Which scheduled routes run today. Read ONCE, before selection, because
+     * a route that does not run makes its whole theme infeasible — and the
+     * traveller must be told that rather than handed a day without the boat.
+     */
+    const runningRoutes = new Set<string>();
+    for (const spec of EXPERIENCE_SPECS) {
+      if (spec.legs === undefined) continue;
+      const timetable = await readFerryTimetable(
+        deps.supabase,
+        request.city,
+        spec.legs.routeKey,
+        request.date,
+      );
+      if (timetable !== null) runningRoutes.add(spec.legs.routeKey);
+    }
+
+    // -- theme selection ---------------------------------------------------
+    const themeOutcome = selectTheme({
+      persona: request.persona,
+      requested: request.theme ?? null,
+      feasibility: {
+        persona: request.persona,
+        routeRuns: (routeKey) => runningRoutes.has(routeKey),
+        goodWeather: environmentIsFair(environment),
+        canHold: (theme) =>
+          theme.mode === "venue" ||
+          templatesHolding(
+            request.persona,
+            theme.mode === "thread" ? holdsAThread : holdsAnExperience,
+          ).length > 0,
+      },
+      dice: diceStream({
+        seed,
+        identity: personaIdentity(request.persona),
+        site: "theme",
+        context: request.date,
+      }),
+    });
+    if (themeOutcome.status === "refused") {
+      // A requested theme that cannot be built is not a failed day — the day
+      // was never possible. Said plainly rather than downgraded in silence.
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "theme",
+        endpoint: "requested_infeasible",
+        estCostUsd: 0,
+        metadata: {
+          theme: themeId(themeOutcome.theme),
+          reason: themeOutcome.infeasibility.reason,
+          detail: themeOutcome.infeasibility.detail,
+        },
+      });
+      const stats = finishStats(0, 0, 0);
+      await deps.instrumentation.endTrace(traceId, {
+        totalCostUsd: estCostUsd,
+        fullDayMs: stats.timings.totalMs,
+        metadata: {
+          ...deps.traceMetadata,
+          outcome: "theme_infeasible",
+          theme: themeId(themeOutcome.theme),
+          theme_refusal: themeOutcome.infeasibility.reason,
+        },
+      });
+      return {
+        status: "theme-infeasible",
+        theme: themeOutcome.theme,
+        infeasibility: themeOutcome.infeasibility,
+        stats,
+      };
+    }
+    const theme = themeOutcome.selection.theme;
+    /** A thread or an experience owns the day's centre; election is skipped. */
+    const themeOwnsAnchor = theme.mode !== "venue";
+
     // -- skeleton + retrieval ---------------------------------------------
-    let skeleton = buildSkeleton(request, { seed });
+    let skeleton = buildSkeleton(request, { seed, theme });
     /**
      * Anchor categories this day has proven it cannot seat. An unseatable
      * centrepiece is a reason to elect a different one — never a reason to
@@ -323,6 +426,7 @@ export async function generateDay(
       failedAnchorCategories.push(degraded.category);
       const reelected = buildSkeleton(request, {
         seed,
+        theme,
         excludeAnchorCategories: failedAnchorCategories,
       });
       await deps.instrumentation.logEvent(traceId, {
@@ -367,6 +471,8 @@ export async function generateDay(
       request.persona.lens,
       (request.anchors ?? []).map((a) => a.coords),
       diceStream({ seed, identity, site: "zone", context: request.date }),
+      // A theme has a geography, and the lens is not it (CP0 ruling 2).
+      themeZoneSlugs(theme),
     );
     const categories = [
       ...new Set(skeleton.intents.flatMap((i) => i.categories)),
@@ -503,19 +609,6 @@ export async function generateDay(
     );
     scored = scoreAll(kept, request.persona, request.budgetBand, seed);
     const candidatesById = new Map(scored.map((c) => [c.place.id, c]));
-
-    // -- environment (weather windows + daylight) --------------------------
-    const environment =
-      deps.examEnvironmentOverride ??
-      (await fetchEnvironment(deps.supabase, request.city, request.date));
-    if (deps.examEnvironmentOverride !== undefined) {
-      await deps.instrumentation.logEvent(traceId, {
-        provider: "exam",
-        endpoint: "environment_override",
-        metadata: { reason: "exam/test seam — synthetic weather in play" },
-      });
-    }
-    const dusk = timeToMinutes(environment.daylight.civilDuskLocal);
 
     // -- selection / composition / grammar loop ----------------------------
     const mealPattern = request.mealPattern ?? defaultMealPattern(request.persona);
@@ -674,6 +767,7 @@ export async function generateDay(
         failedAnchorCategories.push(failedCategory);
         const reelected = buildSkeleton(request, {
           seed,
+          theme,
           excludeAnchorCategories: failedAnchorCategories,
         });
         await deps.instrumentation.logEvent(traceId, {
@@ -696,6 +790,62 @@ export async function generateDay(
       }
       // Out of categories or out of re-elections and the day still has no
       // centre: that is a failure, and it says so rather than shipping.
+      /**
+       * THE CENTRE IS NOT OPTIONAL — including when a THEME owns it
+       * (XXX-40, Session 14 Step 3, found live).
+       *
+       * Both guards here tested `skeleton.electedAnchor !== null`, which is
+       * the record of an ELECTION. A themed day has none: the thread or the
+       * experience pre-empts election, so `electedAnchor` is null by design.
+       * The result was that the first live islands day lost its composite
+       * block to `unschedulable` and shipped anyway, reporting *"This day
+       * holds up — 8 notes."*
+       *
+       * That is Session 11's exact defect returning through a door this
+       * session opened: *"the matrix lost its anchor in 3 of 6 days and every
+       * one of them still returned status ok"*. The founder's words for it
+       * are on the record twice — **"the day isnt anchored on anything"**.
+       *
+       * So the question is asked about the DAY, not about the election: did
+       * the anchor intent get seated? Re-election still needs an elected
+       * anchor to re-elect (a theme's centre is not ours to swap), so a
+       * themed day with no seatable centre fails HONESTLY and immediately.
+       */
+      if (anchorUnfilled && skeleton.electedAnchor === null && themeOwnsAnchor) {
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "arc",
+          endpoint: "theme_anchor_unseatable",
+          estCostUsd: 0,
+          metadata: {
+            theme: themeId(theme),
+            anchor_categories: anchorIntent?.categories ?? [],
+          },
+        });
+        const stats = finishStats(pool.length, shortlist.length, passes);
+        await deps.instrumentation.endTrace(traceId, {
+          totalCostUsd: estCostUsd,
+          fullDayMs: stats.timings.totalMs,
+          metadata: {
+            ...deps.traceMetadata,
+            ...traceSummary(stats, "failed", request, lastViolations.length),
+            theme: themeId(theme),
+            theme_anchor_unseatable: true,
+          },
+        });
+        const violation: Violation = {
+          ruleId: "dwell.understay",
+          severity: "violation",
+          slotIds: [],
+          message: `This day's centre — ${anchorIntent?.label ?? "the theme's anchor"} — could not be seated, so the day has nothing at its middle.`,
+          data: { theme: themeId(theme) },
+        };
+        return {
+          status: "failed",
+          violations: [violation],
+          narrated: describeViolations([violation]),
+          stats,
+        };
+      }
       if (anchorUnfilled && skeleton.electedAnchor !== null) {
         await deps.instrumentation.logEvent(traceId, {
           provider: "arc",
@@ -774,6 +924,8 @@ export async function generateDay(
             // The arc is auditable after the fact: a later session can ask
             // which shape produced a day the founder rejected.
             arc_template_id: skeleton.templateId,
+            theme: themeId(theme),
+            theme_origin: themeOutcome.selection.origin,
             elected_anchor: skeleton.electedAnchor,
             anchor_degraded: skeleton.anchorDegraded,
             anchor_calibre_unmet: anchorCalibreUnmet,
@@ -790,6 +942,7 @@ export async function generateDay(
           anchorDegraded: skeleton.anchorDegraded,
           anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
+          theme: themeOutcome.selection,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,
@@ -856,29 +1009,146 @@ export async function generateDay(
 }
 
 /**
+ * How deep this intent's menu goes. Meals are structural and stay at four;
+ * the discretionary steps are where choice lives (XXX-40, CP1 ruling 1).
+ */
+/**
+ * How many venues of a LICENSED category lead its menu. Two: enough for the
+ * founder's two-shopping-stop shape when the first is already the anchor,
+ * few enough that a licence stays a bookend rather than a takeover.
+ */
+export const LICENSED_MENU_DEPTH = 2;
+
+export function menuSizeFor(intent: SlotIntent): number {
+  return intent.kind === "meal" ? MENU_SIZE : MENU_SIZE_DISCRETIONARY;
+}
+
+/**
+ * THE DIE'S LAST MILE (XXX-40, Session 14 CP1 ruling 1).
+ *
+ * `intent.categories` is a DICED ORDER, not a ranking — Session 12 built the
+ * whole dice layer so that a step's second and third choices are real. This
+ * function is where that order either survives into the menu or dies.
+ *
+ * It used to die. `buildMenus` sorted by `categories.indexOf(category)` and
+ * then took `slice(0, MENU_SIZE)`, so whenever the head category had four or
+ * more survivors — nearly always — **the menu was single-category and the
+ * rest of the diced order was unreachable.** Measured at CP0 on
+ * `persona-shopper`'s close: 65 viewpoints, 338 bars, 106 historic sites and
+ * 391 restaurants survived every filter, and the menu offered four viewpoints
+ * and nothing else. A die rolled upstream of a cap is still a funnel —
+ * Session 12's own lesson, one layer lower.
+ *
+ * Round-robin over the diced order: the best unused survivor of the first
+ * category, then of the second, and so on, cycling until the menu is full or
+ * every category is spent.
+ *
+ *   - the HEAD still leads the menu, so `DeterministicSelector`'s `options[0]`
+ *     still honours the die's first choice;
+ *   - positions 2..n are genuinely different categories, which is what the
+ *     alternates fallback in `composeDay` and the LLM selector need;
+ *   - a category with nothing left is skipped rather than reserving a slot,
+ *     so a thin category cannot shrink the menu.
+ */
+export function allocateMenu(
+  kept: Candidate[],
+  categories: readonly PlaceCategory[],
+  size: number,
+  /**
+   * A category that takes the first `LICENSED_MENU_DEPTH` slots before the
+   * round-robin begins (XXX-40, Session 14 — the licensed-close ruling).
+   *
+   * Only the family licence sets this. Promoting the licensed CATEGORY to the
+   * head of the list was measurably not enough: the head venue turned out to
+   * be the one already seated as the day's anchor, and the second venue of
+   * the same category sat six deep behind three other categories, so the
+   * shopper's day still closed on a bar.
+   *
+   * EXACTLY two, and the licensed category is then EXCLUDED from the
+   * round-robin remainder (Session 14 ruling). The licence grants a reserved
+   * PAIR, not a rotation share: left in the rotation it took three of six
+   * slots and pushed the tail category off the menu entirely, which is a
+   * takeover wearing a bookend's clothes. Two is what the founder's shape
+   * needs — one venue by day, a different one in the evening — and the rest
+   * of the menu stays genuinely different textures.
+   *
+   * Deduplication against already-seated venues needs no extra machinery:
+   * `DeterministicSelector` skips venues it has already used and `composeDay`
+   * skips venues already placed, so a second licensed venue on the menu is
+   * exactly what those two need in order to reach one.
+   */
+  priorityCategory?: PlaceCategory,
+): Candidate[] {
+  const byCategory = new Map<PlaceCategory, Candidate[]>();
+  for (const candidate of kept) {
+    const list = byCategory.get(candidate.category);
+    if (list === undefined) byCategory.set(candidate.category, [candidate]);
+    else list.push(candidate);
+  }
+  // Within a category the score decides — that part was never the problem.
+  for (const list of byCategory.values()) list.sort((a, b) => b.score - a.score);
+
+  const cursor = new Map<PlaceCategory, number>();
+  const out: Candidate[] = [];
+
+  if (priorityCategory !== undefined) {
+    const list = byCategory.get(priorityCategory) ?? [];
+    const take = Math.min(LICENSED_MENU_DEPTH, list.length, size);
+    for (let i = 0; i < take; i += 1) out.push(list[i]);
+    // Spent. The reserved pair is the whole grant.
+    byCategory.delete(priorityCategory);
+  }
+
+  let progressed = true;
+  while (out.length < size && progressed) {
+    progressed = false;
+    for (const category of categories) {
+      if (out.length >= size) break;
+      const list = byCategory.get(category);
+      if (list === undefined) continue;
+      const at = cursor.get(category) ?? 0;
+      if (at >= list.length) continue;
+      cursor.set(category, at + 1);
+      out.push(list[at]);
+      progressed = true;
+    }
+  }
+  return out;
+}
+
+/**
  * Deterministic shortlist: menu-depth-plus-spare per intent, capped,
  * deduped. The spare exists because link verification fails honestly for
  * long-tail names — fetching a little past menu depth keeps menus from
  * emptying when it does.
+ *
+ * **It MIRRORS `allocateMenu`** (XXX-40, Session 14) — the harness-fidelity
+ * doctrine applied to spend. This used to walk the score-ordered pool and
+ * take the top `SHORTLIST_DEPTH` across the intent's categories, which was a
+ * different rule from the menu's head-category slice: Details were bought for
+ * high-scoring candidates the menu then declined to offer. Whatever decides
+ * what the menu SHOWS must decide what the engine PAYS to learn about.
+ *
+ * `SHORTLIST_NOMINAL` still caps the whole thing, so the spend bound is
+ * unchanged by the wider discretionary menus.
  */
-const SHORTLIST_DEPTH = MENU_SIZE + 2;
+const SHORTLIST_SPARE = 2;
 export function pickShortlist(
   scored: Candidate[],
   skeleton: Skeleton,
 ): Candidate[] {
   const picked = new Map<string, Candidate>();
   for (const intent of skeleton.intents) {
-    let taken = 0;
-    for (const candidate of scored) {
-      if (taken >= SHORTLIST_DEPTH) break;
-      if (!intent.categories.includes(candidate.category)) continue;
-      if (picked.has(candidate.place.id)) {
-        taken++; // already shortlisted for an earlier intent still counts
-        continue;
-      }
+    if (picked.size >= SHORTLIST_NOMINAL) break;
+    const eligible = scored.filter((c) => intent.categories.includes(c.category));
+    const allocated = allocateMenu(
+      eligible,
+      intent.categories,
+      menuSizeFor(intent) + SHORTLIST_SPARE,
+    );
+    for (const candidate of allocated) {
       if (picked.size >= SHORTLIST_NOMINAL) break;
       picked.set(candidate.place.id, candidate);
-      taken++;
     }
   }
   return [...picked.values()];
@@ -903,29 +1173,48 @@ export function buildMenus(
      * The literal was correct when `parks` was the only outdoor category and
      * became wrong the moment it was not — so it now asks the question it
      * means ("is this outdoor?") instead of naming the one member it had.
+     *
+     * Session 14 (XXX-40) fixed the other half twice over.
+     *
+     * FIRST: routed through `isOutdoorCategory` rather than repeating the
+     * family test inline. The fifth load-bearing constant was the other half
+     * of this same question — `retrieveCandidates` was still deciding
+     * `PlaceTags.outdoor` from `category === "parks"`, and that tag is what
+     * `composeDay`'s own dusk clamp and every daylight/weather rule read. So
+     * for a whole session the clamp here and the tag there disagreed about
+     * `scenic_viewpoints`.
+     *
+     * SECOND, and larger: **the clamp is PER CANDIDATE, not per intent.**
+     * `intent.categories.some(isOutdoorCategory)` narrowed the WHOLE window
+     * whenever any one category was outdoor — and `closeCategories` always
+     * offers `parks`, so every close intent in the product was dusk-clamped
+     * for all four of its categories.
+     *
+     * What that cost, measured on `persona-shopper` at seed 42: a close
+     * window of 20:15–22:00 became 20:15–20:30, and fifteen minutes is a span
+     * only `scenic_viewpoints` (min dwell 15) can hold. Bars, historic sites
+     * and restaurants were struck from the menu by an outdoor rule that does
+     * not apply to them, so the menu returned four viewpoints and nothing
+     * else. A 21:00 bar close was legal and unreachable.
+     *
+     * A constraint that belongs to each MEMBER, applied to the SET — the same
+     * shape as the dead `Retail > Farmers Market` rule, and CLAUDE.md's own
+     * standing line about asserting per rule rather than over a set.
      */
-    const window = intent.categories.some(
-      (c) => CATEGORY_FAMILY[c] === "outdoor",
-    )
-      ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
-      : intent.window;
+    const windowFor = (candidate: Candidate): Span =>
+      isOutdoorCategory(candidate.category)
+        ? { start: intent.window.start, end: Math.min(intent.window.end, dusk) }
+        : intent.window;
     const { kept } = hardFilter(
       scored.filter(
         (c) =>
           intent.categories.includes(c.category) && !struck.has(c.place.id),
       ),
       date,
-      window,
+      windowFor,
       (c) => GRAMMAR_PARAMS.dwellMinutes[c.category].min,
     );
-    // An intent's category list is a preference order (breakfast wants
-    // cafes before restaurants) — the menu honors it before score, so a
-    // verified bar can no longer outrank every cafe for the morning slot.
-    const preferenceRanked = [...kept].sort(
-      (a, b) =>
-        intent.categories.indexOf(a.category) -
-          intent.categories.indexOf(b.category) || b.score - a.score,
-    );
+    const size = menuSizeFor(intent);
 
     /**
      * The ANCHOR's menu is filtered by calibre (XXX-35, Session 13 Step 2).
@@ -943,16 +1232,27 @@ export function buildMenus(
      * shortfall is reported instead of hidden.
      */
     if (intent.role === "anchor") {
-      const { worthy } = partitionByCalibre(preferenceRanked, (c) => ({
+      const { worthy } = partitionByCalibre(kept, (c) => ({
         name: c.place.name,
         category: c.category,
         userRatingCount: c.userRatingCount,
       }));
       if (worthy.length > 0) {
-        return { intent, options: worthy.slice(0, MENU_SIZE) };
+        return {
+          intent,
+          options: allocateMenu(worthy, intent.categories, size),
+        };
       }
     }
-    return { intent, options: preferenceRanked.slice(0, MENU_SIZE) };
+    return {
+      intent,
+      options: allocateMenu(
+        kept,
+        intent.categories,
+        size,
+        intent.licensedCategory,
+      ),
+    };
   });
 }
 

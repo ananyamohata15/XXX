@@ -121,9 +121,165 @@ export function categoryAffinity(
 }
 
 /**
- * The six golden persona lines as test instances (golden-set v2.2
- * headers, verbatim translation). These are the distinctiveness matrix's
- * six rows and the engine's exam personas.
+ * How far this traveller's first interest outranks everything unlike it.
+ *
+ * ONE mechanism with TWO clients (XXX-40, Session 14 CP1 ruling on the family
+ * licence). Session 13 §5.4c left *"persona intensity as a licence"* open
+ * after the founder's curation ruling — *"this happens only if someone is a
+ * die hard museum fan"* — and Session 14 CP0 produced a second client from a
+ * different direction. Designing one predicate for both is the ruling.
+ *
+ *   client 1 (built here): the day's CLOSE may share the ANCHOR's texture
+ *     family. Today `demoteRatherThanDrop` pushes any category whose family
+ *     the anchor already spent to the back of the close's list — which means
+ *     a persona's single strongest interest is structurally barred from the
+ *     day's ENDING. Measured at CP0: `persona-shopper`'s die put `shopping`
+ *     first for the close and freshness demoted it to third, because the
+ *     anchor was also `shopping`. The founder's own example is Yorkville by
+ *     day and the Eaton Centre class in the evening.
+ *
+ *   client 2 (NOT built — the call site is named, not wired): a single
+ *     museum, historic site or market may carry a day's anchor for a
+ *     traveller of this intensity. It needs the composite/theme anchor to
+ *     exist first, which is what Session 14 builds.
+ *
+ * The margin is measured against the best affinity in ANY OTHER TEXTURE
+ * FAMILY, not simply the second-best category. Second-best-category would be
+ * the wrong question: `markets` and `shopping` are one family, so a shopper's
+ * two top categories are the same texture and the margin would read ~0 for
+ * exactly the traveller the licence exists for.
+ */
+export interface GravityDominance {
+  /** The dominant category, or null when nothing dominates. */
+  category: PlaceCategory | null;
+  /**
+   * How many of the traveller's stated interests point INTO that category's
+   * texture family. See below for why this replaced an affinity margin.
+   */
+  positionsInFamily: number;
+  dominant: boolean;
+}
+
+/**
+ * **Why this counts positions instead of measuring a margin.**
+ *
+ * CP1 proposed, and the PO ruled, "top-affinity margin over second, versioned
+ * param" at 0.4. Built and measured across the eight exam personas, that
+ * threshold is a KNIFE-EDGE sitting on the single most common value in the
+ * lattice:
+ *
+ *     day-1-jays        margin 0.500
+ *     day-2-old-town    margin 0.400   <-- exactly on it
+ *     day-3-winter      margin 0.400   <-- exactly on it
+ *     day-4-budget      margin 0.200
+ *     day-5-wanderer    margin 0.400   <-- exactly on it
+ *     day-6-excursion   margin 0.400   <-- exactly on it
+ *     persona-shopper   margin 0.400   <-- exactly on it
+ *     persona-scenic    margin 0.650
+ *
+ * Five of eight. The cause is structural, not coincidental:
+ * `GRAVITY_WEIGHTS[1]` is **0.6** and most second interests map at full
+ * strength into a different family, so the margin is 1.0 − 0.6 = 0.4 for
+ * anyone ordinarily-shaped. At `>=` the licence fires for seven of eight
+ * personas — which is not a licence, it is a repeal of family-freshness — and
+ * at `>` it fires for two. The behaviour of the whole feature turned on one
+ * character.
+ *
+ * That is Session 12's `night >= 0.35` defect exactly, and Session 12's
+ * ruling was **delete the comparison, do not retune it**. So the question is
+ * asked structurally instead: *how many of this traveller's three stated
+ * interests point into one texture?* One means their day has other textures
+ * in it. Two or more means they are concentrated, which is what "die hard
+ * museum fan" and the founder's Yorkville-plus-Eaton-Centre shopper both
+ * describe.
+ *
+ *     day-1-jays 1 · day-2-old-town 1 · day-3-winter 2 · day-4-budget 1
+ *     day-5-wanderer 1 · day-6-excursion 1 · persona-shopper 2 · persona-scenic 2
+ *
+ * Three of eight, and the three are the concentrated travellers. An integer
+ * over a domain of 0..3 cannot sit on a knife-edge.
+ *
+ * Recorded as a DEVIATION from the CP1 ruling, with the measurement that
+ * forced it, rather than shipped quietly.
+ */
+export function gravityDominance(
+  persona: Persona,
+  categories: readonly PlaceCategory[],
+  familyOf: (category: PlaceCategory) => string,
+  /**
+   * How many stated interests must point into one texture family before the
+   * traveller counts as dominated by it.
+   *
+   * Passed in rather than imported: `COMPOSE_PARAMS` is the composer's
+   * versioned judgment and lives under `src/server`, which `src/shared` may
+   * never import. The caller supplies its own tunable and this stays pure.
+   */
+  minPositionsInFamily: number,
+): GravityDominance {
+  let best: PlaceCategory | null = null;
+  let bestAffinity = -1;
+  for (const category of categories) {
+    const affinity = categoryAffinity(persona, category);
+    if (affinity > bestAffinity) {
+      bestAffinity = affinity;
+      best = category;
+    }
+  }
+  if (best === null || bestAffinity <= 0) {
+    return { category: null, positionsInFamily: 0, dominant: false };
+  }
+  const bestFamily = familyOf(best);
+
+  // One position may map to several categories; it counts once, for the
+  // family its STRONGEST category sits in. Counting every category would
+  // score a family by how many members it happens to have, which is a fact
+  // about the vocabulary rather than about the traveller.
+  let positionsInFamily = 0;
+  for (const interest of persona.gravity) {
+    let top: PlaceCategory | null = null;
+    let topWeight = 0;
+    for (const category of categories) {
+      const weight = INTEREST_CATEGORY_AFFINITY[interest][category] ?? 0;
+      if (weight > topWeight) {
+        topWeight = weight;
+        top = category;
+      }
+    }
+    if (top !== null && familyOf(top) === bestFamily) positionsInFamily += 1;
+  }
+
+  return {
+    category: best,
+    positionsInFamily,
+    dominant: positionsInFamily >= minPositionsInFamily,
+  };
+}
+
+/**
+ * The engine's exam personas — the distinctiveness matrix's rows.
+ *
+ * **Two naming conventions, on purpose (XXX-40, Session 14 CP0 ruling 3).**
+ *
+ * `day-1-…` … `day-6-…` are translations of golden-set v2.2's own persona
+ * lines, so they carry the golden day's number honestly: `day-3-winter` IS
+ * the persona of Golden Day 3.
+ *
+ * `persona-…` entries have no golden day behind them. They were added in
+ * Session 13 for vocabulary v2 and were originally called `day-7-shopper`
+ * and `day-8-scenic` — which collided the moment the golden set gained its
+ * own **Golden Day 7 (The Islands Day)** and was promised a Golden Day 8.
+ * "Day 7" then meant two unrelated things in one codebase, and Session 14's
+ * founder vet asks for the shopper day and the islands day in one sitting.
+ *
+ * Golden days are founder-verified documents of record with stable
+ * identities; persona keys are code labels. So the labels moved.
+ *
+ * Every consumer derives its key list from this object (`PERSONA_KEYS` in
+ * the tasting room, the generate route's Zod enum, every script), so the
+ * rename needed no call-site edits. One consequence, stated rather than
+ * discovered: a trace persisted under an OLD key no longer resolves — and
+ * `seed-fidelity.ts` / `generation-report.ts` already fail loudly on an
+ * unknown persona rather than guessing, which is the behaviour we want.
  */
 export const GOLDEN_PERSONAS: Record<string, Persona> = {
   "day-1-jays": {
@@ -175,12 +331,15 @@ export const GOLDEN_PERSONAS: Record<string, Persona> = {
    * widened distinctiveness matrix. Neither could exist before: `shopping`
    * and `views` had no interest tag and no category to elect.
    *
-   * `day-7-shopper` is `icons` on purpose — the ticket's own examples are
+   * Neither has a golden day behind it, which is why neither is named for
+   * one — see the module note above.
+   *
+   * `persona-shopper` is `icons` on purpose — the ticket's own examples are
    * Yorkville, Eaton Centre, Yorkdale and Sherway, which is the icons end of
    * the lens. A corners shopper is a different day (Queen West, Kensington)
-   * and would be a seventh line, not a variant of this one.
+   * and would be another line, not a variant of this one.
    */
-  "day-7-shopper": {
+  "persona-shopper": {
     pace: "moderate",
     gravity: ["shopping", "food", "local_life"],
     foodCourage: "comfort",
@@ -188,12 +347,12 @@ export const GOLDEN_PERSONAS: Record<string, Persona> = {
     lens: "icons",
   },
   /**
-   * `day-8-scenic` leans on `views` first with nature behind it, which is
+   * `persona-scenic` leans on `views` first with nature behind it, which is
    * the founder's "likes scenic views" as a whole traveller rather than a
    * single stop. Relaxed, because a day built around looking at things is
    * not a packed day.
    */
-  "day-8-scenic": {
+  "persona-scenic": {
     pace: "relaxed",
     gravity: ["views", "nature", "food"],
     foodCourage: "classic",

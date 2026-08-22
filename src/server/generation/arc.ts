@@ -102,6 +102,31 @@ export const ARC_TEMPLATES: readonly ArcTemplate[] = [
 ];
 
 /**
+ * THE EXPERIENCE TEMPLATE FAMILY (XXX-38, Session 14 Step 3 — granted as
+ * recorded legislation).
+ *
+ * Kept out of `ARC_TEMPLATES` because it is not a variation on a city day.
+ * The first live islands generation proved the difference: filtering the
+ * ordinary templates gave the composite block a 240-minute window between
+ * lunch and dinner, which is a four-hour island day with no room to walk to
+ * the ferry. Golden Day 7's own block runs **12:00–20:00**.
+ *
+ * The shape is `meal → [provision] → anchor-block → meal`. The block is
+ * permitted to DOMINATE the day and to run through meal windows; the trailing
+ * meal seats after it, which is the founder's conditional late dinner.
+ * `provision` is inserted ahead of the anchor by `buildSkeleton` when the
+ * spec declares it, so it is not written here.
+ */
+export const EXPERIENCE_TEMPLATES: readonly ArcTemplate[] = [
+  {
+    id: "experience-a",
+    structure: "scheduler",
+    pace: "relaxed",
+    steps: ["meal", "anchor", "meal"],
+  },
+];
+
+/**
  * Invariants every template holds, asserted in tests rather than trusted:
  *
  *  1. exactly one `anchor` — a day has one centre
@@ -133,6 +158,24 @@ export const TEMPLATE_INVARIANTS = {
    * the same shape from the other side.
    */
   lastSteps: ["close", "meal"] as ArcStep[],
+  /**
+   * A scheduler template carries at least two meal steps — **AMENDED**
+   * (XXX-38, Session 14 Step 3 ruling 2, cited here because invariants are
+   * rulings and this one now has its vote).
+   *
+   * The amendment: **a composite block whose `ExperienceSpec` declares
+   * `absorbsMeals` counts as one meal step.** The picnic is lunch, and the
+   * provisioning stop is its evidence — so an experience day that eats
+   * brunch, spends eight hours on a beach with a grocery bag, and offers a
+   * conditional late dinner has three meals, not two, even though only two
+   * are seated as stops.
+   *
+   * The original reasoning is untouched and still holds for city days: a
+   * scheduler with ONE meal step strands its whole non-meal arc on one side
+   * of a single meal window, which is how the first draft produced days that
+   * started at 19:00. An absorbed meal does not strand anything — it is
+   * happening inside the block.
+   */
   minMealStepsScheduler: 2,
   minMealStepsWanderer: 1,
 };
@@ -175,15 +218,91 @@ export function templatesForDraw(
  * symptom. Seed still varies the draw, so one persona on two dates gets
  * two shapes — the property the arc needs to avoid trip-level monotony.
  */
-export function pickTemplate(persona: Persona, seed: number): ArcTemplate {
-  return templateForDraw(
-    {
-      identity: personaIdentity(persona),
-      structure: persona.structure,
-      pace: persona.pace,
-    },
-    seed,
+export function pickTemplate(
+  persona: Persona,
+  seed: number,
+  /**
+   * Restricts the draw to templates that can hold this shape (XXX-40).
+   *
+   * A THREAD needs at least two discretionary positions, because its spine is
+   * 2–3 same-family stops and `THREAD_INVARIANTS.threadMinStops` says a
+   * one-stop spine is a venue day with extra words. Measured before it was
+   * added: `relaxed-a` has no `contrast` step, so `day-3-winter` and
+   * `persona-scenic` drew a history-thread day whose whole "tour" was a
+   * single historic site — precisely the shape the founder ruled cannot
+   * carry a day.
+   *
+   * Returns null rather than throwing when nothing matches, so the caller
+   * decides whether a themeless fallback or an honest failure is right.
+   */
+  requires?: (template: ArcTemplate) => boolean,
+): ArcTemplate {
+  const draw = {
+    identity: personaIdentity(persona),
+    structure: persona.structure,
+    pace: persona.pace,
+  };
+  if (requires === undefined) return templateForDraw(draw, seed);
+  const options = templatesForDraw(draw).filter(requires);
+  if (options.length === 0) return templateForDraw(draw, seed);
+  const key = (draw.identity ^ (Math.abs(seed) >>> 0)) >>> 0;
+  return options[key % options.length];
+}
+
+/**
+ * Templates that can hold a THREAD.
+ *
+ * Two requirements, and the second was found by measuring rather than by
+ * reasoning:
+ *
+ *  1. a `contrast` step, so the spine has its second stop. Without it the
+ *     "tour" is one historic site, which is exactly the shape the founder
+ *     ruled cannot carry a day.
+ *  2. a `warmup` or a `close`, so the day has a THIRD TEXTURE. A spine is
+ *     same-family by construction and meals are all `table`, so a template
+ *     of `[meal, anchor, contrast, meal]` — `relaxed-d` — produces a
+ *     two-family day and trips `pacing.minTextureFamilies`. Measured:
+ *     `persona-scenic` drew exactly that and came back at 2.
+ *
+ * A thread breaks anti-alternation ON PURPOSE at its spine; it does not get
+ * to break the texture floor as a side effect.
+ */
+export function holdsAThread(template: ArcTemplate): boolean {
+  return (
+    template.steps.includes("contrast") &&
+    (template.steps.includes("warmup") || template.steps.includes("close"))
   );
+}
+
+/**
+ * Can this traveller's template set hold this shape at all?
+ *
+ * **Wanderers cannot hold a thread**, and that is a real answer rather than
+ * a gap to paper over: no wanderer template carries a `contrast` step,
+ * because the CP1 ruling gave wanderers three intents and negative space.
+ * A 2–3 stop scheduled spine is in tension with that shape by design.
+ *
+ * Returned as a feasibility fact so theme SELECTION can filter on it — the
+ * funnel rule, filter first then roll — and so a REQUESTED thread for a
+ * wanderer fails honestly instead of silently degrading to a one-stop
+ * "tour". Adding a wanderer-thread template is a founder call about what a
+ * drifting history day even is, not something to invent here.
+ */
+export function templatesHolding(
+  persona: Persona,
+  requires: (template: ArcTemplate) => boolean,
+): ArcTemplate[] {
+  return templatesFor(persona).filter(requires);
+}
+
+/**
+ * Templates that can hold a multi-hour composite block without the day
+ * collapsing around it. A template already carrying two contrast steps has
+ * committed its afternoon to variety, which is the opposite of what an
+ * experience day wants.
+ */
+export function holdsAnExperience(template: ArcTemplate): boolean {
+  return template.steps.filter((s) => s === "contrast").length <= 1;
 }
 
 /**
@@ -211,6 +330,71 @@ export function templateForDraw(draw: TemplateDraw, seed: number): ArcTemplate {
   const options = templatesForDraw(draw);
   const key = (draw.identity ^ (Math.abs(seed) >>> 0)) >>> 0;
   return options[key % options.length];
+}
+
+/**
+ * Which categories a stop seated in the EVENING may draw from — the single
+ * owner of the question (XXX-40, Session 14 CP0 census).
+ *
+ * This existed TWICE and the two copies had drifted. Session 13 found
+ * `compose.ts`'s copy silently deleting `scenic_viewpoints` from every close
+ * — a hardcoded three written when the vocabulary had seven — fixed it, and
+ * recorded the lesson in CLAUDE.md as the fourth load-bearing constant. It
+ * did not know there was a second copy in `pickContrast`, which still read
+ * `["nightlife_bars", "historic_sites"]`. So for a whole session an evening
+ * CONTRAST could not be a viewpoint while an evening CLOSE could, and
+ * nothing said so.
+ *
+ * Two things fix that, and only the second one is durable:
+ *
+ *  1. one owner, so the copies cannot disagree; and
+ *  2. **an EXHAUSTIVE map rather than an admit-list.** `satisfies
+ *     Record<PlaceCategory, boolean>` means adding a category to the
+ *     vocabulary does not compile until someone rules on its evening. An
+ *     admit-list defaults a new category to "no" in silence, which is
+ *     precisely how `scenic_viewpoints` was deleted from every evening close
+ *     — and a single owner alone would have kept that failure mode intact,
+ *     just in one file instead of two.
+ *
+ * `historic_sites` is TRUE and inherited: many are open-air and lit, and the
+ * hours filter is what stops the ones that are not.
+ *
+ * **`shopping` is TRUE by founder ruling (Session 14 CP0), and it is a
+ * BEHAVIOUR CHANGE recorded as one.** It was carried in at `false` — today's
+ * behaviour — as an open question, on the ground that Eaton Centre trades
+ * until 21:00. The founder's ruling names the better principle:
+ *
+ *   *the coarse category gate should stop encoding what per-venue,
+ *   per-weekday hours already know.*
+ *
+ * That is the honest division of labour. A boutique that shuts at 18:00 dies
+ * on its own verified hours in `hardFilter`, where the decision belongs and
+ * where it is a FACT. Refusing the whole category here instead makes the
+ * grammar guess on behalf of every venue in it — and guesses badly, because
+ * the mall class it was accidentally excluding is precisely the class that IS
+ * open. This list's job is "could a stop of this kind plausibly be an evening
+ * at all", not "is this particular door open", and `museums_galleries`
+ * remains false because the answer to the first question is genuinely no.
+ *
+ * Proven by an offline A/B ($0) at the ruling, and due the founder's eye at
+ * CP4 rather than treated as settled by the argument alone.
+ */
+export const EVENING_VIABLE = {
+  restaurants: true,
+  cafes: false,
+  museums_galleries: false,
+  historic_sites: true,
+  markets: false,
+  nightlife_bars: true,
+  parks: false,
+  shopping: true,
+  scenic_viewpoints: true,
+  grocery: false,
+} as const satisfies Record<PlaceCategory, boolean>;
+
+/** Is a stop of this category plausibly worth seating after ~19:00? */
+export function isEveningViable(category: PlaceCategory): boolean {
+  return EVENING_VIABLE[category];
 }
 
 export interface ElectedAnchor {
@@ -345,13 +529,16 @@ export function pickContrast(
   options: { eveningOnly?: boolean; dice: () => number },
 ): PlaceCategory[] {
   const anchorFamily = CATEGORY_FAMILY[anchor];
-  const eveningOk: readonly PlaceCategory[] = ["nightlife_bars", "historic_sites"];
   const evening = options.eveningOnly === true;
   const eligible = PLACE_CATEGORIES.filter((c) => {
     if (GRAMMAR_PARAMS.pacing.foodCategories.includes(c)) return false;
     if (CATEGORY_FAMILY[c] === anchorFamily) return false;
     if (used.has(CATEGORY_FAMILY[c])) return false;
-    if (evening && !eveningOk.includes(c)) return false;
+    // `EVENING_VIABLE`, not a local list. This line held its own copy —
+    // `["nightlife_bars", "historic_sites"]` — which Session 13's fix to the
+    // OTHER copy never reached, so an evening contrast could not be a
+    // viewpoint while an evening close could.
+    if (evening && !isEveningViable(c)) return false;
     return true;
   });
   // A bar is an EVENING contrast. Daytime windows exclude `night` outright
@@ -423,11 +610,29 @@ export function closeCategories(
    * outdoor slots, so a sunset close is bounded by real ephemeris rather
    * than by hope.
    */
+  /**
+   * `shopping` joins the CLOSE list (XXX-40, Session 14 CP0, founder ruling).
+   *
+   * It is offered UNIVERSALLY rather than gated on a shopping persona, and
+   * that is the palette philosophy stated plainly: **the palette offers,
+   * affinity weights, the die orders.** A category-level `if` for "is this a
+   * shopper" would re-import the knife-edge the `night >= 0.35` gate above
+   * was deleted for — `categoryAffinity` already returns 0 for a persona with
+   * no shopping interest, so the draw sinks it without a threshold to
+   * mis-tune.
+   *
+   * The gate change alone was inert: `EVENING_VIABLE.shopping = true` filters
+   * what the palette proposes, and this list was not proposing it. Measured
+   * at the ruling — 271 shopping candidates survive `persona-shopper`'s
+   * 20:15–22:00 close window, so the category was legal, wanted, and
+   * unreachable.
+   */
   const experience: PlaceCategory[] = [
     "nightlife_bars",
     "scenic_viewpoints",
     "historic_sites",
     "parks",
+    "shopping",
   ];
   const drawn = weightedOrderBy(
     experience,

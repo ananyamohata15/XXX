@@ -72,28 +72,46 @@ export const ANCHOR_MIN_RATING_COUNT = 1000;
 /**
  * The founder's anchor-worthy list — TIER 1, operator trust.
  *
- * Seeded ONLY with venues the founder named verbatim, plus the two the
- * golden set already treats as day-defining destinations. Nothing here is
- * invented on the founder's behalf: an assistant's opinion about what makes
- * a good Toronto anchor is a tier-3 guess wearing a tier-1 badge, and the
- * whole value of this list is that it is not that.
+ * Curated by the founder against `scripts/curation-list.ts`'s worksheet
+ * (Session 13 close-out). Nothing here is invented on their behalf: an
+ * assistant's opinion about what makes a good Toronto anchor is a tier-3
+ * guess wearing a tier-1 badge, and the whole value of this list is that it
+ * is not that.
  *
- * `scripts/curation-list.ts` prints the ten-minute worksheet — the venues
- * the pool would actually elect per category, ranked — for the founder to
- * accept or reject. Additions land here, in a reviewed commit.
+ * Every entry is the POOL'S OWN SPELLING, resolved by
+ * `scripts/curation-resolve.ts` — because matching is exact-normalized (see
+ * `matchesCuratedName`) AND because this record is keyed by CATEGORY while
+ * `anchorCalibre` looks a candidate up under the candidate's own category.
+ * An entry filed under a key the pool does not agree with never fires, and
+ * fails silently, which is the worst failure available to the highest-trust
+ * signal in the system: it looks exactly like a list nobody is consulting.
  *
- * Matching is by NAME, EXACTLY (see `matchesCuratedName` for the four
- * false admits that killed the fuzzy version). Entries must therefore be
- * the pool's own spelling — which is exactly what the worksheet prints, so
- * the founder ticks real identities rather than recalling names.
+ * THE STANDING RULING THIS LIST DOES NOT YET EXPRESS (founder, Session 13
+ * curation): *"a day cannot be solely anchored on any one museum / historic
+ * site / market"* — a single venue of those categories is not a day's
+ * centrepiece unless it is of exceptional scale ("the Louvre or something of
+ * that size") or the traveller is a die-hard for it. What IS an anchor is a
+ * THEME: *"a history tour of Toronto would be an anchor"*. Membership here
+ * therefore means "fit to carry an anchor WHEN one of this category is
+ * warranted", not "sufficient alone". The composite anchor that would make
+ * the ruling expressible is XXX-38's, and it is recorded in SESSION_NOTES
+ * rather than half-built here.
  */
 export const FOUNDER_ANCHOR_WORTHY: Readonly<
   Partial<Record<PlaceCategory, readonly string[]>>
 > = {
-  // Founder, verbatim: "canadas wonderland, or toronto zoo, or the lion
-  // safari near hamilton". None is inside Toronto's pool bbox today; they
-  // are recorded because they are the founder's own definition of the bar,
-  // and XXX-38's excursion engine is where they become reachable.
+  /**
+   * The founder ticked NONE of the twelve parks the worksheet offered —
+   * including Berczy Park, which this module's own tests pin as the
+   * rating-count bar's known false admit — and named seven it had missed.
+   * That is the tier-1 signal doing exactly the job tier 2 cannot.
+   *
+   * `Canada's Wonderland`, `Toronto Zoo` and `African Lion Safari` are the
+   * founder's original verbatim examples and sit outside Toronto's bbox;
+   * `Hanlan's Point` is absent from the pool. All four are kept as the
+   * definition of the bar, and XXX-38's excursion engine is where they
+   * become reachable.
+   */
   parks: [
     "Canada's Wonderland",
     "Toronto Zoo",
@@ -102,17 +120,50 @@ export const FOUNDER_ANCHOR_WORTHY: Readonly<
     "Toronto Islands",
     "Hanlan's Point",
     "High Park",
+    // Named by the founder at Session 13 curation; pool spellings resolved.
+    "Coronation Park",
+    "Trillium Park",
+    "Trinity Bellwoods Park",
+    "Toronto Music Garden",
+    // NOT included: the founder named "riverdale park" and the pool carries
+    // "Riverdale Park West" (and no East). Which identity they meant is a
+    // guess, and a guess does not belong at tier 1 — it is flagged for the
+    // next curation round instead.
   ],
-  // Golden Day 1's centre. Both spellings the pool actually carries — the
-  // worksheet found them, and exact matching means each needs its own line.
   markets: [
     "St Lawrence Market",
     "St. Lawrence Market (North Building)",
     "Kensington Market",
+    "STACKT market",
+    "Toronto Flower Market",
   ],
-  museums_galleries: [],
-  historic_sites: [],
-  nightlife_bars: [],
+  museums_galleries: [
+    "Art Gallery of Ontario",
+    // Two duplicate identities in the pool, both UNLINKED — so no Details
+    // fetch, no rating count, and no route to the tier-2 bar. Curation is
+    // the only way the ROM can anchor a day at all.
+    "Royal Ontario Museum",
+    /**
+     * The founder ruled Casa Loma "is both". The pool maps it to
+     * `historic_sites` ONLY, so this entry is inert today and the
+     * historic_sites one below is what fires. Kept rather than dropped: it
+     * records the founder's judgment, and it starts working the moment the
+     * mapping agrees. Recorded as a category-mapping question, not silently
+     * resolved in the curator's favour.
+     */
+    "Casa Loma",
+  ],
+  historic_sites: ["Casa Loma"],
+  nightlife_bars: [
+    "Big Trouble",
+    "Handlebar",
+    "The Porch",
+    "El Catrin Destileria",
+    "Sneaky Dee's",
+    // Founder: "There are more; rebel, cabana (for day time), hotel x,
+    // mezcal spots, speakeasies, etc" — named as a direction rather than as
+    // identities, so not transcribed. Next curation round.
+  ],
 };
 
 /** Lowercase, strip punctuation and collapse space — for name comparison. */
@@ -122,6 +173,49 @@ export function normalizeName(name: string): string {
     .replace(/[’']/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+/**
+ * The most selective substring that survives BOTH spellings of a name —
+ * for use as a database prefilter before `matchesCuratedName` decides.
+ *
+ * This exists because of a defect it is worth naming precisely (XXX-40,
+ * Session 14 CP0). `curation-resolve.ts` normalized the SEARCH TERM and then
+ * ran `ilike` against RAW pool names:
+ *
+ *     wanted "Hanlan's Point"  →  token "Hanlans"  →  ilike '%Hanlans%'
+ *     pool    "Hanlan's Point Beach"                  ← never matches
+ *
+ * The exact-match test below it is correct and normalizes both sides — but
+ * it never received a row to test, because the prefilter had already emptied
+ * the haystack. The instrument printed "NOT IN POOL", and that verdict went
+ * into Session 13's close-out as a recorded pool gap (§5.4c) for two
+ * identities that are both present. `Mildred's Temple Kitchen` went the same
+ * way.
+ *
+ * **Normalize both sides of a comparison, or the instrument will report the
+ * pool is missing what only its own query is missing.** The sampler lesson
+ * from Session 13 with the failure mode inverted: that one accused good data
+ * by looking at one corner of it, this one accused good data by looking for
+ * a spelling nothing uses. An instrument that lies about ABSENCE is worse
+ * than no instrument, because absence is what nobody double-checks.
+ *
+ * The fix is to pick a token that cannot disagree: the longest run of
+ * ALPHANUMERIC characters, which is by construction a substring of the raw
+ * name AND of its normalized form, whichever apostrophe the source used
+ * (straight, curly, or none at all).
+ *
+ *     "Hanlan's Point"          → "Hanlan"   (not "Hanlans", not "Hanlan's")
+ *     "Mildred's Temple Kitchen"→ "Kitchen"
+ *     "St. Lawrence Market"     → "Lawrence"
+ *
+ * It is deliberately a PREFILTER and not a match: it is permissive on
+ * purpose, and `matchesCuratedName` still decides. Widening a prefilter can
+ * only cost a few rows to inspect; narrowing one costs a true answer.
+ */
+export function prefilterToken(name: string): string {
+  const runs = name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return runs.reduce((best, run) => (run.length > best.length ? run : best), "");
 }
 
 /**

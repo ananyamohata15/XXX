@@ -64,6 +64,17 @@ export const COMPOSE_PARAMS = {
      * sets WHICH bucket — an icons persona never draws a corners zone.
      */
     zone: 0.3,
+    /**
+     * WHICH THEME a derived day takes (XXX-40, Session 14).
+     *
+     * 0.25 — between the anchor's 0.05 and the contrast's 0.3, and the
+     * position is the argument. A theme is a bigger commitment than a
+     * contrast, so it should follow gravity more firmly; it is a smaller one
+     * than the anchor, which IS the persona's first interest made concrete.
+     * At 0.05 every nature-first persona would draw the islands on every
+     * eligible date, which is monotony wearing a theme.
+     */
+    theme: 0.25,
   },
 
   /**
@@ -104,6 +115,100 @@ export const COMPOSE_PARAMS = {
      * of the Session 13 CP1 matrix and due for the founder's eye at CP4.
      */
     minDwellMinutes: 75,
+  },
+
+  /**
+   * Persona intensity as a LICENCE (XXX-40, Session 14 CP1).
+   *
+   * One number serving two exceptions — see `gravityDominance`. Tier 3, and
+   * explicitly pending the founder's calibration at CP4: the question they
+   * answer is *does the licence fire only for genuine dominance?*
+   */
+  persona: {
+    /**
+     * How many of a traveller's three stated interests must point into ONE
+     * texture family before that family earns an exception.
+     *
+     * **2, and it is a COUNT rather than an affinity margin — a deviation
+     * from the CP1 ruling, forced by measurement.** The ruled
+     * `dominanceMargin: 0.4` was built and then measured across the eight
+     * exam personas: five of them land on **exactly 0.400**, because
+     * `GRAVITY_WEIGHTS[1]` is 0.6 and an ordinarily-shaped persona's second
+     * interest maps at full strength into another family. At `>=` the licence
+     * fired for seven of eight; at `>` for two. The whole feature turned on
+     * one character — Session 12's `night >= 0.35` defect, rebuilt.
+     *
+     * Session 12's ruling was to DELETE such a comparison rather than retune
+     * it, so the question is asked structurally: one interest in a texture
+     * means the traveller has other textures; two or more means they are
+     * concentrated. That licenses `day-3-winter`, `persona-shopper` and
+     * `persona-scenic` — the three concentrated personas — and nobody else.
+     *
+     * An integer over 0..3 has no knife-edge to sit on. Still Tier 3, and
+     * still the founder's call at CP4: *does the licence fire only for
+     * genuine dominance?*
+     */
+    dominantFamilyPositions: 2,
+  },
+
+  /**
+   * The rest stop (XXX-42, Session 14 CP1). Tier 3, founder's eye at CP4:
+   * *does the rest stop get dealt where the body wants it?*
+   */
+  rest: {
+    /**
+     * Cumulative walking + commute minutes since the day started, above
+     * which the day has earned a hotel reset.
+     *
+     * 150 — two and a half hours on your feet or in transit. Below it a
+     * traveller is having a day; above it they are grinding one out. It
+     * deliberately counts TRAVEL time, not elapsed time: two hours sitting in
+     * a gallery is not load, and the founder's complaint that produced the
+     * exposure rules was about walking specifically ("Winter days with 30+
+     * mins of walking is illogical").
+     */
+    physicalLoadMinutes: 150,
+    /**
+     * How long a hotel reset is worth. 60 minutes: enough to shower and
+     * change for the evening, short enough that it does not become the
+     * afternoon.
+     */
+    dwellMinutes: 60,
+    /**
+     * The EVENT-PREP trigger is three FACTS rather than a vibe (XXX-42).
+     * All three must hold:
+     *
+     *   1. the next stop is a `restaurants` venue,
+     *   2. it is the day's LAST meal — structurally the evening one, and
+     *   3. it is priced in the top band the trip's budget admits.
+     *
+     * **Condition 2 was a clock literal (`>= "19:00"`) and is now
+     * structural** — Session 12's delete-the-comparison law, applied when
+     * the fixture that was meant to prove this arm failed its own premise.
+     * Every pattern's dinner window is 17:30–21:30 and the seat objective
+     * centres a 90-minute dinner at **18:45**, so a 19:00 threshold missed
+     * the composer's own most common dinner. The literal was not mistuned;
+     * it was asking the clock a question that belongs to the day's shape.
+     *
+     * "The last meal of the day" needs no tuning and cannot drift when the
+     * seating objective is refitted.
+     */
+    /**
+     * The earliest a hotel reset makes sense.
+     *
+     * A rest stop is preparation for the EVENING — golden Day 2's own reset
+     * is 17:00–19:00 — so it is sought in the afternoon, not wherever the
+     * first big gap happens to be. 14:00 is early enough to catch a day whose
+     * afternoon opens up and late enough that a mid-morning hole is still
+     * treated as free time rather than as a reason to go back to the hotel.
+     */
+    fromHour: "14:00",
+    /**
+     * Fraction of the trip's budget ceiling a dinner must reach to count as
+     * the fancy class. 0.35 of a $140 day is ~$49 for two, which is the
+     * point where a traveller changes clothes.
+     */
+    eventPrepBudgetShare: 0.35,
   },
 
   seating: {

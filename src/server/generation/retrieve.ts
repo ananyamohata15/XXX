@@ -19,15 +19,38 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
-import type { PlaceCategory } from "@/shared/vocabulary";
+import { isOutdoorCategory, type PlaceCategory } from "@/shared/vocabulary";
 import { weightedOrderBy } from "@/shared/dice";
+import { THEME_ZONES } from "@/shared/theme";
 import { ANCHORS, type Anchor } from "../discovery/plan";
 import { COMPOSE_PARAMS } from "./compose-params";
 import type { Candidate } from "./types";
 
 const PER_CATEGORY_CAP = 400;
-/** How far past a zone anchor's own radius a candidate may sit. */
+/**
+ * How far past a DISCOVERY anchor's own radius a candidate may sit.
+ *
+ * It exists because Session 4's nine anchors are approximations of
+ * neighbourhoods — a point and a radius standing in for a shape — so a venue
+ * just outside the circle is usually still in the neighbourhood.
+ *
+ * A THEME ZONE is not an approximation. It is drawn for one purpose against
+ * measured coordinates, and the slack actively harms it: the first live
+ * islands generation retrieved **St. James Park**, 3.3 km away on the
+ * mainland, because 2.5 km of radius plus 1.0 km of slack reaches across the
+ * harbour. The day then seated a mainland park as its island centre.
+ *
+ * So the slack is a property of the ZONE, not a constant of retrieval.
+ */
 const ZONE_SLACK_KM = 1.0;
+
+/**
+ * A zone as retrieval sees it: a discovery anchor, optionally with its own
+ * reach. `slackKm: 0` means "this circle is the answer, not an estimate".
+ */
+export type RetrievalZone = Anchor & { slackKm?: number };
+
+const slackOf = (zone: RetrievalZone): number => zone.slackKm ?? ZONE_SLACK_KM;
 
 /**
  * The smallest zone set a day is still composed from. Below this the bbox
@@ -69,7 +92,41 @@ export function zonesFor(
   lens: Lens,
   anchorCoords: LatLng[],
   dice?: () => number,
-): Anchor[] {
+  /**
+   * Zone slugs the DAY'S THEME asks for (XXX-40, Session 14 CP0 ruling 2).
+   *
+   * **A theme has a geography, and the persona's lens is not it.** An
+   * experience day is defined by the place it goes to; the lens describes how
+   * a traveller likes to see a CITY. Session 14 CP0 measured what that cost:
+   * golden Day 7's persona is `corners`, whose bucket is Kensington / Queen
+   * West / Annex / Leslieville, and the Toronto Islands are not reachable
+   * from any of them at any seed. 94 island identities sat in the pool and
+   * the engine could not retrieve one.
+   *
+   * So a theme uses the same door a USER ANCHOR already uses — the branch
+   * below — and for the same reason: a committed day is a geographic fact
+   * that outranks a stylistic preference.
+   *
+   * Precedence, stated once: **user anchors > theme zones > lens bucket.**
+   * The lens remains the themeless default.
+   */
+  themeZoneSlugs: readonly string[] = [],
+): RetrievalZone[] {
+  if (themeZoneSlugs.length > 0 && anchorCoords.length === 0) {
+    const zones = THEME_ZONES.filter((z) => themeZoneSlugs.includes(z.slug));
+    // An unknown slug is a typo in a spec, not a reason to silently hand back
+    // the lens's zones and generate a mainland day under an island theme.
+    if (zones.length !== themeZoneSlugs.length) {
+      throw new Error(
+        `unknown theme zone(s): ${themeZoneSlugs
+          .filter((s) => !THEME_ZONES.some((z) => z.slug === s))
+          .join(", ")}`,
+      );
+    }
+    // A theme zone carries NO discovery slack: it is a hand-drawn circle for
+    // one purpose, and the extra kilometre reaches across the harbour.
+    return zones.map((z) => ({ ...z, slackKm: 0 }));
+  }
   if (anchorCoords.length > 0) {
     // A committed day is a geographic fact: draw from every zone within
     // reach of any user anchor, whatever the lens says.
@@ -140,7 +197,7 @@ export const POOL_WINDOWS: readonly { column: string; ascending: boolean }[] = [
   { column: "lng", ascending: false },
 ];
 
-function bboxOf(zones: Anchor[]): {
+function bboxOf(zones: RetrievalZone[]): {
   latMin: number;
   latMax: number;
   lngMin: number;
@@ -152,7 +209,7 @@ function bboxOf(zones: Anchor[]): {
   let lngMin = 180;
   let lngMax = -180;
   for (const z of zones) {
-    const reachKm = z.radiusM / 1000 + ZONE_SLACK_KM;
+    const reachKm = z.radiusM / 1000 + slackOf(z);
     const dLat = reachKm / kmPerDegLat;
     const dLng = reachKm / (111.32 * Math.cos((z.lat * Math.PI) / 180));
     latMin = Math.min(latMin, z.lat - dLat);
@@ -175,8 +232,11 @@ interface PoolRow {
   fetched_at: string;
 }
 
-function nearestZone(zones: Anchor[], coords: LatLng): Anchor | null {
-  let best: Anchor | null = null;
+function nearestZone(
+  zones: readonly RetrievalZone[],
+  coords: LatLng,
+): RetrievalZone | null {
+  let best: RetrievalZone | null = null;
   let bestKm = Infinity;
   for (const z of zones) {
     const km = haversineKm(coords, { lat: z.lat, lng: z.lng });
@@ -185,7 +245,7 @@ function nearestZone(zones: Anchor[], coords: LatLng): Anchor | null {
       bestKm = km;
     }
   }
-  return best !== null && bestKm <= best.radiusM / 1000 + ZONE_SLACK_KM
+  return best !== null && bestKm <= best.radiusM / 1000 + slackOf(best)
     ? best
     : null;
 }
@@ -194,7 +254,7 @@ export async function retrieveCandidates(
   client: SupabaseClient,
   city: string,
   categories: PlaceCategory[],
-  zones: Anchor[],
+  zones: RetrievalZone[],
   /**
    * Picks which of `POOL_WINDOWS` this request pages by. Omit for the
    * canonical `fsq_place_id` ascending window — what the fixtures and any
@@ -238,6 +298,21 @@ export async function retrieveCandidates(
       const coords = { lat: row.lat, lng: row.lng };
       const zone = nearestZone(zones, coords);
       if (zone === null) continue; // inside the bbox but outside every circle
+      /**
+       * The LABEL is the venue's own neighbourhood, never the admitting
+       * zone's name (XXX-40, Session 14 Step 3 ruling 2).
+       *
+       * A theme day draws from ONE zone, so labelling by the admitting zone
+       * made every venue read "· Toronto Islands" — including a mainland
+       * waterfront LCBO the traveller visits before the ferry, which is a
+       * correct stop wearing a wrong address.
+       *
+       * Discovery anchors are what neighbourhoods are FOR, so the label comes
+       * from the nearest of those. A venue genuinely out on the islands
+       * matches no mainland anchor and keeps the theme zone's label, which is
+       * then the true answer rather than a default.
+       */
+      const labelZone = nearestZone(ANCHORS, coords) ?? zone;
       const categoryFact: GrammarFact<PlaceCategory> = {
         status: "present",
         value: category,
@@ -249,9 +324,21 @@ export async function retrieveCandidates(
         place: {
           id: row.id,
           name: row.name,
-          neighborhood: zone.label,
+          neighborhood: labelZone.label,
           coords,
-          tags: { outdoor: category === "parks", goldenHourAffine: false, highCrowd: false },
+          /**
+           * `outdoor` derives from the FAMILY, never from a category literal
+           * (XXX-40, Session 14 CP0). It read `category === "parks"` — true
+           * when `parks` was the only outdoor category, wrong the moment
+           * `scenic_viewpoints` joined the family in Session 13, and silent
+           * about it because a `false` here does not fail anything: it just
+           * removes the place from every daylight and weather rule's sight.
+           */
+          tags: {
+            outdoor: isOutdoorCategory(category),
+            goldenHourAffine: false,
+            highCrowd: false,
+          },
           category: categoryFact,
         },
         category,

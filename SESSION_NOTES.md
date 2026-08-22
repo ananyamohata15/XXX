@@ -1,3 +1,1149 @@
+# Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
+
+Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
+**CHECKPOINT 0 complete — awaiting ratification before Step 1 design.**
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### 0.1 Base state — confirmed, with one correction to the brief
+
+`main` carries Session 13. The brief says "S13 (PR #14)"; the record says
+otherwise and the correction matters only because a reader chasing the PR
+would land on the wrong session:
+
+| PR | session | branch | merged |
+|---|---|---|---|
+| **#15** | **Session 13** — seed fix + anchor calibre + vocabulary v2 | `session-13-seed-and-vocabulary` | 2026-08-16 13:05 UTC |
+| #14 | Session 12 — variety audit | `session-12-variety-audit` | 2026-08-16 13:05 UTC |
+
+Both are in `main`; S13's own close-out required #14 to merge first and it
+did. `main` head is `5c0cc3b` ("land the founder's curation"), so this branch
+carries the curated anchor list, `src/shared/dice.ts`, vocabulary v2 and the
+required-`seed` composer.
+
+**Baseline gates, run not remembered** (this branch, no edits yet):
+`tsc --noEmit` **clean** · `vitest` **527 passed, 3 skipped, 27 files**.
+S13's close-out recorded 523; the +4 is the curation commit's own pins.
+
+### 0.2 Golden day 7 — present, and its facts are legal
+
+`docs/golden-set/golden-set-v2.md` lines 104–134 carry **Golden Day 7 — The
+Islands Day (v1.0, founder-verified 2026-08-15)**. It was committed during
+S13 (it had arrived loose in the working tree).
+
+**Ferry-facts posture for this session, as briefed and accepted:** the day's
+schedule facts are founder-verified — fetched from toronto.ca 2026-08-15 and
+red-penned — so they enter through the **founder ground-truth channel at
+tier 1**. That channel is always legal (comment 10289: "unconditional tier 1
+— operator trust"), and it is the only fact channel this session opens.
+**XXX-39's automated civic-KB stays out of scope** pending its licensing
+addendum in the PO chat.
+
+One mechanical consequence, flagged now because it is design work and not
+plumbing: `src/shared/founder-groundtruth.ts` is **per-PLACE** — its three
+fact keys (`business_status`, `hours_corrections`, `price_range`) all hang
+off a pool identity. A ferry timetable is a **city-scoped, mode-scoped**
+fact about a route, and there is nowhere to put it today. Step 1 proposes
+where.
+
+### 0.3 The theme layer's insertion point — argued
+
+**`DayTheme` selects above `buildSkeleton`, and `buildSkeleton` takes it as
+an input.** The argument is mechanical rather than aesthetic:
+
+`buildSkeleton(request, {seed})` already owns all three things a theme must
+be able to change, and owns them in one pass:
+
+1. **template family** — `pickTemplate(persona, seed)` draws from
+   `templatesFor(persona)`, keyed on (structure × pace) only;
+2. **palette** — the category choices at `warmup` / `contrast` / `close`
+   (`compose.ts:646-770`), each a diced order over a vocabulary subset;
+3. **anchor mode** — `electAnchor` returns exactly one category and
+   `NOMINAL.anchor` is one dwell.
+
+Nothing downstream of `buildSkeleton` can widen any of them: `buildMenus`
+filters within `intent.categories`, the selector picks within the menu, and
+`composeDay` seats what it is given. Nothing upstream exists — `generateDay`
+calls `buildSkeleton` as its first act (`engine.ts:287`). So the theme is an
+input to the skeleton or it is nothing.
+
+Two things this rules OUT, recorded so they are not re-litigated:
+
+- **Not a post-filter on composed days.** "Generate, then check it looks like
+  a history tour" cannot produce a thread day at all — the thread's spine is
+  2–3 same-family sites, and `pickContrast` structurally forbids a second
+  stop in the anchor's family (`compose.ts:341-372`). The layer that must
+  change is the one that wrote that rule.
+- **Not a new `SlotRole`.** A theme is a property of the DAY, not of a stop.
+  Roles stay five.
+
+### 0.4 What the islands day costs us: the pool is fine, the GEOGRAPHY is not
+
+The brief calls golden day 7 "the experience exam". Before designing to it I
+measured whether the engine can reach the islands at all. **It cannot, and
+the reason is not the pool.** All figures below are $0 pool reads.
+
+**Every identity golden day 7 names is present:**
+
+| the day needs | pool identity | category | linked? |
+|---|---|---|---|
+| brunch | `Mildred's Temple Kitchen` (43.6400, −79.4200) | restaurants | no |
+| provisioning | `No Frills Toronto Liberty Village` (43.6392, −79.4200) | grocery | no |
+| provisioning | `LCBO` (43.6400, −79.4198) · `Longo's` (43.6400, −79.4229) | grocery | no |
+| the anchor | `Toronto Islands` (43.6221, −79.3785) | parks | no |
+| the beach | `Hanlan's Point Beach` (43.6168, −79.3919) | parks | no |
+| the sunset | `Toronto Islands Pier`, `Toronto Skyline Viewpoint`, `Sunfish Cut Point` | scenic_viewpoints | no |
+
+94 identities sit in the island band; 30 of them are unreachable and the
+rest are reachable only by an **icons** persona. `zonesFor` (`retrieve.ts:68`)
+picks zones from nine hand-set MAINLAND anchors, and golden day 7's persona
+is **corners** — whose bucket is Kensington / Queen West / Annex /
+Leslieville. That bucket reaches Liberty Village (0.53 km from the Queen West
+anchor) and **does not reach the islands at all**. Even on `icons`,
+`Hanlan's Point Beach` misses the `waterfront` circle by **90 metres**
+(2.59 km against a 2.50 km reach).
+
+So the finding, stated as a design constraint rather than a bug:
+
+> **A theme has a geography, and the persona's lens is not it.** An
+> experience day is defined by the place it goes to; the lens describes how
+> a traveller likes to see a CITY. Today only a user anchor can override the
+> lens's geography (`zonesFor`'s first branch), and that path is right — it
+> is the same argument. The theme needs the same door.
+
+Deliberately NOT proposed: widening `ZONE_SLACK_KM` by 100 m to admit
+Hanlan's. That would buy one beach by loosening every zone in every city, and
+the 90 m is a coincidence of where a hand-set anchor was dropped, not a
+statement about Toronto.
+
+### 0.5 Three defects found during intake, all pre-existing
+
+**(a) `curation-resolve.ts` cannot see any possessive identity — and S13's
+recorded pool gap is a false negative it produced.** The script strips
+apostrophes from the QUERY to build its prefilter token
+(`curation-resolve.ts:64`) and then runs `ilike("name", "%Hanlans%")` against
+RAW pool names containing `Hanlan's`. The haystack is never normalized, so
+the prefilter returns zero rows and the correctly-normalized exact-match
+below it never gets anything to compare. Verified both ways: querying
+`%Hanlan%` returns `Hanlan's Point Beach`; querying `%Hanlans%` returns
+nothing.
+
+S13 §5.4c recorded *"Pool gaps worth a ticket: … `Hanlan's Point` absent as
+an identity"*. **It is present.** So is `Mildred's Temple Kitchen`, which
+this session's first pool check also reported absent for the same reason.
+This is CLAUDE.md's own standing line arriving from a new direction — *an
+instrument that always looks at the same part of its data will eventually
+accuse the data* — and the specific form is worth writing down: **normalize
+both sides of a comparison, or the instrument will report the pool is
+missing what only its own query is missing.**
+
+**(b) `retrieve.ts:254` — `outdoor: category === "parks"`. The fifth
+load-bearing constant, and it is squarely in this session's path.**
+`scenic_viewpoints` joined the OUTDOOR family in S13 (`vocabulary.ts:172`,
+with the argument that "the exposure and dusk rules already treat them
+alike"). They do not. Three readers key on the FAMILY and one keys on the
+TAG:
+
+| reader | keys on | sees a viewpoint as outdoor? |
+|---|---|---|
+| `buildMenus` dusk clamp (`engine.ts:907`) | `CATEGORY_FAMILY` | yes (S13 fixed this one) |
+| `composeDay` dusk clamp (`compose.ts:1162`) | `place.tags.outdoor` | **no** |
+| `checkEnvironment` daylight rules (`environment.ts:40`) | `place.tags.outdoor` | **no** |
+| `checkExposure` | leg modes, not tags | n/a |
+
+So a retrieved viewpoint is invisible to `daylight.outdoor-after-dark` and to
+every weather rule. The S13 fix was written as *"the two changes are one
+change"* about the menu clamp and the evening list; the tag is a third half
+of the same change that nobody counted. It matters here because **golden day
+7's closing beat is a sunset from a west-facing beach** — the one day in the
+set whose whole point is an outdoor slot timed against the ephemeris.
+
+**(c) The persona keys and the golden-set day numbers are now two different
+numbering spaces that collide.** `GOLDEN_PERSONAS` carries `day-7-shopper`
+and `day-8-scenic` (added S13 for vocabulary v2). The golden SET carries
+`Golden Day 7 — The Islands Day`, and the brief owes a founder-drafted
+**golden day 8**. "Day 7" already means two unrelated things in one
+codebase, and the founder vet in Step 4 asks for both a *shopper venue day*
+and *the islands day* in one sitting. Step 1 proposes a rename rather than a
+convention nobody will hold.
+
+### 0.6 Spend and the free-tier calendar
+
+**$0.00 spent this session.** Everything in Step 0 is a pool read, a
+typecheck or a test run — no Google endpoint, no Anthropic call.
+
+Against the **≤$15 billed** gate: $15.00 remaining.
+
+**Free-tier calendar position:** today is **2026-08-16**. The Google free
+tier resets **2026-09-01**, sixteen days out. The session as planned
+(one live confirm set ~$3–4 at CP3, founder vet ~$5 at CP4) **does not
+straddle the reset** — every dollar in this session's budget is drawn
+against the CURRENT period. If the session runs past 2026-08-31 the spend
+lines will say which side of the reset each row fell on.
+
+### 0.7 The three defects — landed (PO rulings, CP0)
+
+All three ruled fixes are in, with the census the ruling asked for. Gates
+after: `tsc --noEmit` clean · `eslint` clean · `npm run build` exit 0 ·
+**540 passed**, 3 skipped, 27 files (from 527 — +13 tests, no test removed).
+Golden set unchanged.
+
+**(1) Apostrophe defect — fixed, and the record corrected.**
+`prefilterToken` (`src/shared/anchor-calibre.ts`) takes the longest
+ALPHANUMERIC RUN, which is a substring of the raw name AND of its normalized
+form whichever apostrophe the source used. `curation-resolve.ts` uses it, and
+now also **refuses to support an absence verdict when its prefilter hit the
+row cap** — an arbitrary 1000-row slice cannot prove a name is missing.
+
+Re-verified through the fixed resolver:
+
+| S13 recorded gap | verdict now |
+|---|---|
+| `Hanlan's Point` | **FALSE NEGATIVE** — present as `Hanlan's Point Beach` (parks, unlinked) |
+| `Mildred's Temple Kitchen` | **FALSE NEGATIVE** — present (restaurants, unlinked) |
+| `Kensington Market` | **real** — nothing in the pool by that identity |
+| `Riverdale Park East` | **real** — the pool carries only `Riverdale Park West` |
+
+S13 §5.4c and §5.7 item 9 are corrected in place. **No curated entry was
+harmed**: every name in `FOUNDER_ANCHOR_WORTHY` happens to have its longest
+token free of apostrophes, so the list resolved correctly by luck of spelling
+rather than by the instrument being right.
+
+Regression: `tests/generation/anchor-worthiness.test.ts`, four cases, Hanlan's
+as the fixture — including the defect itself pinned as "the old token is NOT
+a substring of the pool name".
+
+**(2) The outdoor tag — fixed, and it cost a close. That is the fix working.**
+
+`isOutdoorCategory` (`src/shared/vocabulary.ts`) is now the single owner.
+`retrieveCandidates` derives `PlaceTags.outdoor` from it instead of
+`category === "parks"`; `buildMenus`' dusk clamp calls the same function.
+
+Regressions in both directions: the producer side pins the tag against
+`CATEGORY_FAMILY` **per category** (not "the set is non-empty" — CLAUDE.md's
+standing rule) and proves `composeDay`'s dusk clamp binds on a viewpoint with
+an indoor control; the rule side proves `daylight.outdoor-after-dark` fires on
+a viewpoint past civil dusk, **and pins the defect itself** — the same slot
+with the tag false reports nothing.
+
+One control had to be rebuilt mid-write and it is worth recording: at
+`outdoorLatestEnd = 20:30` the indoor control ALSO ended at 20:30, because the
+seat objective centres a 60-minute stop in an 18:00–22:00 window at
+19:30–20:30. The control agreed with the treatment by arithmetic. Moved to
+19:00, where a clamp and a coincidence look different.
+
+**THE CONSEQUENCE, measured and not hidden: `closes (restated)` moves
+7/7 → 6/7.** `persona-shopper` now reports `unfilled=close`. Reproduced, then
+explained, per constraint 7 — and my first explanation was wrong, which is why
+the rule exists:
+
+- **What the close WAS**, before the fix: `Spadina Wave Deck`, a waterfront
+  lookout, seated **20:45–21:25** — entirely after the 20:30 civil dusk,
+  tagged `outdoor: false`, so not one daylight rule could see it.
+- So S13's `closes 7/7 PASS` was **counting a viewpoint in the dark as a
+  seated close.** The metric moved because the instrument got honest, exactly
+  as the discretionary re-baseline did in S13. A day that now says "no close"
+  is more truthful than a day that ended at a dark lookout.
+
+**(3) Naming collision — renamed.** `day-7-shopper` → `persona-shopper`,
+`day-8-scenic` → `persona-scenic`. Golden days keep their numbers: they are
+founder-verified documents of record, and `day-1-…`–`day-6-…` genuinely ARE
+those days' persona lines. The two renamed entries have no golden day behind
+them, which is now said in the module doc. Every consumer derives its key list
+from `GOLDEN_PERSONAS` (the room's `PERSONA_KEYS`, the generate route's Zod
+enum, eight scripts), so **no call site needed editing**. One consequence
+stated rather than discovered: a trace persisted under an old key no longer
+resolves, and `seed-fidelity.ts` / `generation-report.ts` already fail loudly
+on an unknown persona rather than guessing.
+
+### 0.8 The census the ruling asked for
+
+`category === "<literal>"` and hardcoded category lists, across `src/` and
+`scripts/`, against the vocabulary-v2 ten:
+
+| site | literal | verdict |
+|---|---|---|
+| `retrieve.ts:254` | `category === "parks"` → `outdoor` | **FIXED** (ruled) |
+| `engine.ts:916` | family test inlined at the dusk clamp | **FIXED** — routed to the one owner |
+| `arc.ts:348` | `eveningOk = ["nightlife_bars","historic_sites"]` | **FIXED** — see below |
+| `compose.ts:575` | `eveningOk` (four entries) | **FIXED** — merged into the owner |
+| `compose.test.ts:35` | `outdoor: category === "parks"` in the FIXTURE | **FIXED** — a fixture that derives a tag differently from the producer cannot catch the producer's defect (harness-fidelity doctrine, S12) |
+| `discovery/plan.ts:33` | `CATEGORIES` is still the **v1 SEVEN** | **CENSUSED, not fixed** — see below |
+| `discovery/plan.ts:69` | `category.key === "parks"` → search radius | **CENSUSED** — same file, same decision |
+| `offline-recompose.ts:366`, `harness-fidelity-probe.ts:92`, `trace-audit.ts:178,241` | `c === "restaurants" \|\| c === "cafes"` | **CENSUSED** — four hand-rolled copies of `GRAMMAR_PARAMS.pacing.foodCategories`. Instruments, not the pipeline; they silently disagree the day that list widens |
+| `arc.ts` warmup / close lists | curated preference lists | **not defects** — each is argued at the constant, and S13 deliberately excluded `scenic_viewpoints` from warmup with a reason |
+
+**The `eveningOk` finding is the one worth reading.** It existed **twice, and
+the copies had drifted.** Session 13 found `compose.ts`'s copy deleting
+`scenic_viewpoints` from every close, fixed it, and wrote it into CLAUDE.md as
+the fourth load-bearing constant. It did not know `pickContrast` held a second
+copy — still the original two entries — so for a whole session an evening
+CONTRAST could not be a viewpoint while an evening CLOSE could.
+
+The fix is one owner, but the DURABLE half is that `EVENING_VIABLE` is an
+exhaustive `Record<PlaceCategory, boolean>` rather than an admit-list: adding a
+category to the vocabulary now **fails to compile** until someone rules on its
+evening. A single owner alone would have preserved the failure mode in one
+file instead of two.
+
+**Measured, not assumed:** an A/B of the old drifted list against the new one
+produces **byte-identical** category sequences across all eight personas at
+seed 42 — no contrast step in this matrix seats after 19:00, so the drifted
+copy never bound here. The defect is real and latent; the exhaustive map is
+what stops the next one.
+
+**One value left deliberately unchanged, and it is an open question for the
+founder:** `shopping: false`. Eaton Centre trades until 21:00, so an evening
+shopping stop is plausible in a way a 19:30 museum is not. Widening it is a
+behaviour change the founder has not seen, and smuggling one in under a
+deduplication would be an unrecorded tightening in reverse.
+
+**`discovery/plan.ts` is censused rather than fixed, and it is bigger than it
+looks.** Its `CATEGORIES` list is the v1 seven: `shopping`,
+`scenic_viewpoints` and `grocery` were never added. The paid Google discovery
+run has therefore never searched for a shop, a lookout or a grocer. It does
+not break vocabulary v2 — those categories reach the pool through the FSQ base
+layer, which is mapped separately — but it means the Google-discovered half of
+the pool has a seven-category shape. Out of scope: no discovery run is planned
+this session, and re-running one is a spend decision.
+
+### 0.9 The finding this uncovered — and it is CP1 material, not a fix
+
+Chasing the lost close produced something larger, and it is measured rather
+than argued. For `persona-shopper`'s close intent (window 20:15–22:00,
+categories `[scenic_viewpoints, nightlife_bars, historic_sites, restaurants]`),
+here is what survived every filter, per category, **before the menu cap**:
+
+```
+  scenic_viewpoints     65
+  nightlife_bars       338
+  historic_sites       106
+  restaurants          391
+```
+
+**The menu that was offered contained four viewpoints and nothing else.**
+
+`buildMenus` sorts by `intent.categories.indexOf(category)` FIRST and then
+takes `slice(0, MENU_SIZE)` — four. So whenever the drawn head category has
+four or more survivors, which is nearly always, **the menu is
+single-category and the diced second, third and fourth choices are
+unreachable.** 338 legal bars and 106 legal historic sites were invisible to
+the selector, to the alternates fallback, and to the repair loop.
+
+`buildSkeleton`'s own comment states the opposite intent — *"The whole diced
+ORDER is carried, not its head: `buildMenus` filters across every category in
+this list, so when the drawn first choice has nothing open at this hour the
+DICED second choice is used."* That is true only in the degenerate case where
+the head has **nothing**. With 65 viewpoints available, the rest of the order
+never existed.
+
+This is **Session 12's funnel rule recurring one layer lower**: *a die rolled
+upstream of a funnel is still a funnel* — and a cap is a funnel. Two
+consequences worth weighing at CP1:
+
+1. It is why the close was lost: the menu held only the category my fix had
+   just made honest about dusk, so there was no indoor fallback to fall to.
+2. It is a strong candidate cause for **the discretionary-overlap failure
+   Session 14 inherited** (max = 1.00, `day-3-winter` vs `day-4-budget`, S13
+   §5.7 item 1). If menus are single-category, the composed category sequence
+   IS the drawn category order, and no amount of venue-level variety can
+   separate two days that drew the same categories.
+
+**Not fixed.** It is unruled, it is menu-composition design, and the theme
+layer's *palette* sits on exactly this surface — so it belongs in the Step 1
+proposal rather than in a CP0 fix round.
+
+**One related change I did land, and its honest status.** `hardFilter`'s
+window may now be **per-candidate**, and `buildMenus` clamps to dusk per
+CANDIDATE rather than narrowing the whole intent whenever any one of its
+categories is outdoor. That per-intent clamp struck indoor candidates with an
+outdoor rule — a constraint that belongs to each MEMBER applied to the SET,
+the same shape as the dead `Retail > Farmers Market` rule. It is in scope by
+the ruling's own terms (it is the very expression I was ruled to fix), but it
+is **currently latent**: the matrix is byte-identical with and without it,
+because the cap above makes these menus single-category anyway. Recorded as
+correct-but-unmeasured rather than claimed as an improvement.
+
+### 0.10 Spend after the fix round
+
+Still **$0.00**. Every measurement above — the pool checks, the A/Bs, the
+close probe, four full matrix runs — is a Supabase read against the persisted
+pool. No Google endpoint, no Anthropic call. $15.00 remains against the gate.
+
+### 0.11 CP0 rulings — of record
+
+1. **Theme insertion above `buildSkeleton`** — ratified as argued (§0.3):
+   single owner of template family, palette and anchor mode; a post-filter is
+   provably insufficient.
+2. **"A theme has a geography"** — ratified as the design line (§0.4). Themes
+   carry their own zone geography and override lens geography through the same
+   door user anchors already use; the lens remains the themeless default.
+   **No `ZONE_SLACK_KM` nudging** — the refusal is commended and recorded.
+3. **Ferry facts get a home**: a minimal **city-scoped facts table** (city ×
+   fact-kind × route/mode key, under the full provenance law), built this
+   session with the founder-verified ferry timetable as its first tenant.
+   XXX-39's pipeline inherits the shape later.
+4. **Auto-mode prompt declined permanently** — the permission regime stays
+   hand-legislated.
+
+And on the three defects: **fix all three now** (§0.7), with the literal
+census reported and only this session's surface fixed (§0.8). The apostrophe
+finding joins the sampler lesson as a standing line: *an instrument that lies
+about absence is worse than none.*
+
+### 0.12 Post-fix rulings — landed, with one premise that did not survive measurement
+
+**Ruling 3 (`EVENING_VIABLE.shopping = true`) is landed** with the founder's
+reasoning at the constant: *the coarse category gate should stop encoding what
+per-venue, per-weekday hours already know.*
+
+Two things the offline A/B ($0) then said, and both need the founder before
+the ruling's intended OUTCOME exists.
+
+**(a) The change is inert for closes, because the close palette never offers
+shopping.** Measured at seed 42:
+
+```
+closeCategories(persona-shopper) = [scenic_viewpoints, parks, nightlife_bars,
+                                    historic_sites, restaurants]
+```
+
+`EVENING_VIABLE` is a FILTER over whatever the palette proposes. `shopping` is
+not in `closeCategories` (nor in the evening arm of `pickContrast` for most
+draws), so raising its gate admits a category nobody was offering. The A/B is
+byte-identical across all eight personas — same anchors, same sequences, same
+`closes 6/7`. The ruling's stated outcome — *"the Eaton Centre class becomes
+legally available for evening closes"* — needs `shopping` added to
+`closeCategories`, which is a **palette** decision the ruling did not make.
+
+Worth knowing while deciding: **271 shopping candidates survive
+`persona-shopper`'s 20:15–22:00 close window**, so the palette change would
+very likely seat the close this session's tag fix exposed.
+
+**(b) The ruling's premise — "a 18:00-closing boutique dies on its own hours" —
+does not hold for this pool today.** Measured against the live database:
+
+```
+toronto fsq pool identities : 39,849
+  with a google link        :    451   (1.13%)
+  stored 'hours' facts      :      0
+```
+
+Hours are never persisted (decision 001) and are fetched in memory for the
+SHORTLIST only — `DETAILS_CAP` 30, `SHORTLIST_NOMINAL` 24 — while `buildMenus`
+draws from the whole re-scored pool of ~2,700. So for all but a couple of
+dozen candidates a day, `canHoldVisit` returns null, `hardFilter` keeps them
+under honest-absence discipline, and **nothing downstream knows whether the
+door is open.**
+
+That is why 351 `museums_galleries` — the AGO among them — and 108 `markets`
+— including `St Lawrence Market`, which golden Day 2 verifies as Sat
+07:00–17:00 — "survive" a 20:15–22:00 window. They survive because we have no
+hours for them, not because they are open.
+
+So the category gate is **not** redundant with per-venue hours today; it is
+the only thing standing between the menu and a 20:15 museum, which is exactly
+why Session 9 CP2 put it there (*"museums and markets at 19:30 are the
+unverified-junk trap the first live run walked into"*).
+
+**None of this contradicts the shopping ruling itself** — the mall class is
+genuinely an evening, and `shopping: true` stays landed as ruled. What it
+contradicts is the general principle offered with it. Recorded so the next
+category gate is not relaxed on a premise that costs 1.13% link coverage to
+be true.
+
+**Ruling 2 → close-out work order (XXX-25).** Extend `discovery/plan.ts`'s
+`CATEGORIES` to the S13 vocabulary before the Sep 1–3 re-discovery: +3
+categories × 9 anchors = **+27 cells ≈ +$0.90 list**, sanctioned for that run,
+so September refreshes clocks and discovers the new categories in one pass.
+
+**Ruling 4 → close-out work order.** Extract the four hand-rolled
+`c === "restaurants" || c === "cafes"` copies
+(`offline-recompose.ts`, `harness-fidelity-probe.ts`, `trace-audit.ts` ×2) to
+`GRAMMAR_PARAMS.pacing.foodCategories`. Fourth occurrence; the extraction
+threshold is three.
+
+**Ruling 1 (menu allocation) and ruling 5** carried into Step 1 — see §0.13.
+
+### 0.12b The close palette lands — and the A/B proves the menu defect is the binding one
+
+`shopping` joins `closeCategories`' experience list, offered **universally**
+per the ruling: the palette offers, affinity weights, the die orders. No
+per-persona `if` — `categoryAffinity` already returns 0 for a persona with no
+shopping interest, and a category-level threshold would re-import the
+knife-edge the `night >= 0.35` gate was deleted for.
+
+**The palette philosophy works exactly as ruled.** The raw draw for
+`persona-shopper` puts `shopping` **first**:
+
+```
+persona-shopper (shopping>food>local_life)
+  raw closeCategories draw : [shopping, parks, historic_sites, scenic_viewpoints, nightlife_bars, restaurants]
+  close intent AS BUILT    : [scenic_viewpoints, nightlife_bars, shopping, historic_sites, restaurants]
+  roles: meal:restaurants > anchor:shopping > contrast:museums_galleries > meal:restaurants > close:scenic_viewpoints
+```
+
+**And the close is still unfilled.** The ruling's prediction did not hold, and
+the reason is the whole point:
+
+1. `EVENING_VIABLE.shopping = true` was **necessary** — `forEvening` would
+   otherwise strike it outright.
+2. `shopping` in `closeCategories` was **necessary** — it is never drawn
+   otherwise, and the die puts it first when it is.
+3. Neither is **sufficient**, because two things downstream undo them:
+   - **`demoteRatherThanDrop` pushes the draw's winner to third.** The anchor
+     is `shopping`, `shopping` is in the MARKET family (S13's deliberate
+     conservative call), so family-freshness demotes the persona's own
+     top-affinity category out of the head.
+   - **The 4-deep head-category slice** then takes four `scenic_viewpoints`
+     and stops — the same dead menu as before.
+
+So the measured chain is: the die wanted shopping, freshness demoted it, and
+the cap buried it. **This is the empirical case for ruling 1.** Menu
+allocation is the binding constraint; until it lands, palette and gate changes
+cannot express themselves.
+
+**A second interaction this exposed, and it is not small.** The same shape hits
+`persona-scenic`: raw draw `scenic_viewpoints` first (affinity 1.0), demoted
+because the anchor already spent OUTDOOR, close becomes `historic_sites`.
+Generalised: **a close can never share the anchor's family, so a persona's
+single strongest interest is structurally barred from the day's ending.** For
+a shopper the founder's own example is Yorkville by day and the Eaton Centre
+class in the evening — a shape the family rule currently forbids. Raised for
+CP1 rather than changed: `demoteRatherThanDrop` exists to stop A-B-A-B
+monotony and is doing its job; what is missing is a licence for a
+gravity-dominant persona, which is the same "persona intensity as a licence"
+item S13 §5.4c left open for the single-venue anchor exception.
+
+**A/B, seed 42, date 2026-08-15:**
+
+| | before | after |
+|---|---|---|
+| day-1 … day-6 sequences | — | **byte-identical** |
+| `persona-shopper` | close unfilled | close unfilled (unchanged) |
+| `persona-scenic` close | `nightlife_bars` | `historic_sites` |
+| raw category-sequence mean | 0.615 | **0.577** |
+| discretionary mean | 0.483 | **0.425** |
+| discretionary max (gates) | 1.00 FAIL | 1.00 FAIL (unmoved) |
+| anchors seated | 8/8 | 8/8 |
+| closes (restated) | 6/7 | 6/7 |
+
+`persona-scenic`'s close moved as a **draw-cardinality side effect**, not
+because shopping won: adding a sixth option to `weightedOrderBy` changes which
+dice values each position consumes, so the whole order reshuffles. Stated
+rather than left as an unexplained diff.
+
+### 0.12c PRINCIPLE OF RECORD — category gates are honest-absence armor
+
+Promoted from this session's measurement (§0.12b), and it **supersedes** the
+earlier "hours gate the truth" phrasing:
+
+> **A category gate is honest-absence ARMOR. It encodes what per-venue,
+> per-weekday hours WOULD say if we held them — and for 98.87% of the pool we
+> do not.** A gate may be relaxed only under one of two conditions:
+>   **(i) hours-present-at-the-decision-point**, or
+>   **(ii) categorical uniformity** — the whole class behaves alike, as the
+>   mall class does.
+>
+> Design consequence, binding on the theme layer: **any theme that relaxes a
+> gate must name what catches the venue instead.**
+
+The evidence is §0.12b: 451 of 39,849 Toronto identities carry a Google link
+(1.13%), zero hours facts are persisted, and hours are fetched for a ≤30
+shortlist while menus draw from ~2,700. `shopping` was relaxed under (ii),
+which is why it stands.
+
+### 0.13 Carried into Step 1 as design input
+
+- **Menu allocation** (§0.9), ratified with its principle of record: *the menu
+  is the die's last mile.* Allocation preserves the diced order ACROSS
+  categories — interleaved or proportional from top-k — never a
+  head-category-only slice. Strong-suspect status for the discretionary
+  max = 1.00 is noted and gets **measured after the design lands**, not
+  assumed.
+- **The close palette** (§0.12a) — whether `shopping` joins
+  `closeCategories`, which is what the shopping ruling's stated outcome
+  actually requires.
+- **Hours coverage is 1.13%** (§0.12b) — the theme layer leans on category
+  palettes, and palettes are load-bearing precisely because per-venue hours
+  are absent for the pool at menu time. Any design that relaxes a category
+  gate must say what catches the venue instead.
+- **The per-candidate dusk clamp is latent** (§0.9) — correct, landed,
+  unmeasured. Menu allocation should make it bite; that is the moment to
+  re-measure it.
+
+## Step 1 — Design (CHECKPOINT 1)
+
+Everything below is a PROPOSAL. Nothing here is built yet.
+
+### 1.1 `DayTheme` — the type, and what it is allowed to change
+
+`src/shared/theme.ts` (shared law: no I/O, no React, dependency-light).
+A discriminated union, not flags — CLAUDE.md's standing preference:
+
+```ts
+export type DayTheme =
+  | { mode: "venue" }                                   // today's arc, unchanged
+  | { mode: "thread"; threadId: ThreadId }              // the narrative IS the anchor
+  | { mode: "experience"; experienceId: ExperienceId }; // the composite block
+```
+
+Thread and experience definitions are CURATED DATA in the shape of
+`ARC_TEMPLATES` — literal rows, no DSL, every row asserted against invariants
+in tests:
+
+```ts
+interface ThreadSpec {
+  id: ThreadId; label: string;
+  spine: { categories: PlaceCategory[]; minStops: 2; maxStops: 3 };
+  zones?: ThemeZoneSlug[];        // §1.4
+  absorbsMeals?: number;          // §1.3 — declared, unused in v1
+}
+interface ExperienceSpec {
+  id: ExperienceId; label: string;
+  anchor: { categories: PlaceCategory[]; dwell: { min: 240; max: 480 };
+            microActivities: string[] };
+  provisioning?: { category: "grocery"; reason: string };
+  legs?: { mode: "ferry"; routeKey: string };
+  zones: ThemeZoneSlug[];
+  requiresGoodWeather: boolean;
+}
+```
+
+**What the theme changes, per mode** — and it changes nothing else:
+
+| | template family | anchor mode | palette | geography |
+|---|---|---|---|---|
+| `venue` | today's `templatesFor` | `electAnchor` | today's draws | lens |
+| `thread` | templates with >=2 discretionary steps | **bypassed** — the spine IS the anchor | spine categories at anchor+contrast | spec or lens |
+| `experience` | templates that can hold a long anchor | **bypassed** — composite block | spec anchor + provisioning upstream | **spec** |
+
+`buildSkeleton(request, { seed, theme })`. Ratified at CP0 as the single owner
+of all three.
+
+**The `venue` regression guarantee, stated as an AC:** a `{mode:"venue"}` day
+must be byte-identical to today's output for the same (persona, date, seed).
+`themeId` is the only thing that appears in the trace.
+
+### 1.2 Selection — requested or derived
+
+```ts
+export type ThemeSelection =
+  | { origin: "requested"; theme: DayTheme }
+  | { origin: "derived"; theme: DayTheme; reason: string };
+```
+
+The tasting room's picker offers the concrete themes plus **"concierge's
+choice"**, which is not a theme — it is the ABSENCE of a request, and falls
+through to derivation. Recorded that way so the room cannot express a fourth
+mode by accident.
+
+Derivation follows the FUNNEL RULE — filter first, then roll:
+
+1. **Feasibility gates** (facts, not preferences): season (is the ferry route
+   present for this date, from the city-facts table), weather (an experience
+   with `requiresGoodWeather` needs a clear window — this is the founder's
+   *"if the weather is good"* as a SELECTION input, argued), daylight (a
+   sunset-side experience needs a sunset at a civilised hour), transport (a
+   ferry route needs the traveller to accept it).
+2. **Weight by persona affinity** — a thread by its spine's affinity, an
+   experience by its anchor categories'. `{mode:"venue"}` is always eligible
+   and carries the persona's own best non-food affinity, so a themeless day
+   competes on the same scale rather than being a fallback.
+3. **Roll** `weightedOrderBy(..., COMPOSE_PARAMS.dice.theme)`, seeded by the
+   S12 dice at site `"theme"`, context = the date. Take the head.
+
+Proposed `dice.theme = 0.25`. Argued: a theme is a bigger commitment than a
+contrast (0.3) and a smaller one than an anchor (0.05) — it should follow
+gravity firmly but not be immovable, or every nature-first persona gets the
+islands every time.
+
+**Recorded in the trace and the outcome**: `theme_mode`, `theme_id`,
+`theme_origin`, `theme_reason`, and the feasibility gates that FAILED. A theme
+that was refused for weather is a thing a reviewer must be able to see.
+
+### 1.3 Composition rule of record — meals are connective tissue
+
+> **Meals and coffee are never the theme.** They are the day's connective
+> tissue; the theme is what the day is FOR.
+
+Founder verbatim, and this session's own measurement agrees: **0.417 of the
+0.577 raw category-sequence overlap is the meal pattern alone.** A day
+organised around eating three times is not organised.
+
+Enforced, not just written: `THREAD_INVARIANTS` / `EXPERIENCE_INVARIANTS`
+assert that no spec's spine or composite anchor names a category in
+`GRAMMAR_PARAMS.pacing.foodCategories` — the same shape as
+`TEMPLATE_INVARIANTS`, asserted per row rather than over the set (CLAUDE.md).
+
+Thread days: the thread deals its spine into DISCRETIONARY positions only;
+meals interleave from the pattern exactly as today.
+
+**The food-crawl tension, stated rather than silently resolved.** The brief
+names "food crawl" as a thread. A crawl's spine IS food, which collides with
+the rule above and with `pacing.maxFoodStops` (4) — three pattern meals plus a
+three-stop crawl is six food stops. The mechanism that resolves it is
+`ThreadSpec.absorbsMeals`: a crawl reduces the pattern's meal step count by
+the number of spine stops it contributes. **Declared in the type, not built
+in v1** — this session ships the culture thread the exam actually needs, and
+the crawl arrives when a founder-drafted golden day defines what one is. No
+speculative abstraction; the interface does not preclude it.
+
+### 1.4 Zone geography — the theme's own door
+
+`zonesFor` gains a theme argument, with precedence stated once:
+
+```
+user anchors  >  theme zones  >  lens bucket
+```
+
+The lens remains the themeless default (CP0 ruling 2).
+
+**`THEME_ZONES` is a SEPARATE list from `ANCHORS`, and that is the whole
+design.** Adding `toronto_islands` to `ANCHORS` would have three silent
+consequences, all of them the vocabulary-widening failure this session has
+already hit twice:
+
+1. the `icons_with_corners` lens takes `[...ANCHORS]`, so **every**
+   mixed-lens day would suddenly draw island venues;
+2. `discovery/plan.ts` iterates `ANCHORS x CATEGORIES`, so the next paid
+   discovery run would silently gain ~10 cells of spend;
+3. `nearestZone` would start labelling waterfront places with an island
+   neighbourhood.
+
+Separate lists, unioned only when a theme asks. Mainland days are provably
+unaffected.
+
+```ts
+const THEME_ZONES = [
+  { slug: "toronto_islands", label: "Toronto Islands",
+    lat: 43.6205, lng: -79.3785, radiusM: 2500 },
+] as const;
+```
+
+Checked against the pool: that circle reaches `Hanlan's Point Beach`
+(1.30 km), `Gibraltar Point Lighthouse` (0.85 km), `Ward's Island` (2.13 km)
+and `Toronto Islands` itself (0.24 km) — the 30 identities CP0 measured as
+out-of-zone come in, and **no `ZONE_SLACK_KM` was touched.**
+
+**Consequence to sanction at close-out:** the islands are NOT in the Sep 1-3
+discovery run unless someone adds them deliberately. Recorded beside the
+XXX-25 work order.
+
+### 1.5 The family licence — ONE mechanism, two clients
+
+S13 §5.4c left *"persona intensity as a licence"* open for the single-venue
+anchor exception (*"only if someone is a die hard museum fan"*). CP0's A/B
+produced a second client: a close can never share the anchor's family, so a
+persona's strongest interest is structurally barred from the day's ending.
+
+One mechanism, in `src/shared/persona.ts`:
+
+```ts
+export interface GravityDominance {
+  category: PlaceCategory;
+  /** top affinity minus the best affinity of any OTHER family. */
+  margin: number;
+  dominant: boolean;
+}
+export function gravityDominance(persona: Persona): GravityDominance;
+```
+
+Proposed `COMPOSE_PARAMS.persona.dominanceMargin = 0.4`, versioned and Tier 3.
+Argued rather than picked: `GRAVITY_WEIGHTS` steps by **0.35**, so a margin
+above one whole declared rank is the honest definition of "this traveller's
+first interest is not close to their second". 0.4 leaves headroom above the
+knife-edge — and the knife-edge is not hypothetical, it is exactly the
+`night >= 0.35` defect Session 12 deleted.
+
+**Client 1 — the family licence (this session).** When `dominant` holds and
+the licensed category shares the anchor's family, `demoteRatherThanDrop` does
+not demote it for the CLOSE step.
+
+Texture rules still bind, and this is the part that makes it safe:
+`rhythm.alternating-texture` still forbids A-B-A-B, and
+`pacing.minTextureFamilies` (3) still applies. So a licensed day is
+`anchor(F) ... close(F)` with at least three families in between — **a
+bookend, not an alternation.** The founder's own shopper example, Yorkville by
+day and the Eaton Centre class in the evening, is a bookend.
+
+**Client 2 — the single-venue anchor exception (NOT built this session).** The
+same `dominant` predicate is the licence for a single museum, historic site or
+market to carry a day. It needs the composite/theme anchor to exist first,
+which is what this session builds; the call site is named so the next session
+wires one predicate rather than inventing a second.
+
+Applies chiefly to DERIVED days — a requested theme carries an explicit
+palette and does not consult the licence.
+
+### 1.6 Lodging topology (XXX-42)
+
+**Lodging becomes a PLACE.** One mechanism serves four requirements that would
+otherwise need four:
+
+- the first leg `lodging -> stop1` becomes a real recorded `ComposedLeg`
+  (today it is priced and thrown away — `recordLeg` needs a `prevPlaceId`);
+- the return leg is priced and must fit inside `daySpan.end`; if it does not,
+  the composer shortens or drops the close rather than shipping a day the
+  traveller cannot end;
+- a REST STOP has somewhere to be — `slots.place_id` is NOT NULL, and a rest
+  stop at the hotel is a slot at a place;
+- honest absence stays honest: **lodging unset -> behaviour is unchanged**,
+  and the tasting room says so on the page rather than defaulting to downtown.
+
+`SLOT_ROLES` gains `rest`. Triggers, both versioned in `COMPOSE_PARAMS.rest`:
+
+- **(a) physical load** — cumulative walking + commute minutes since day start
+  crosses `physicalLoadMinutes` (proposed **150**, Tier 3, founder's eye at
+  CP4). Dealt into the next gap that already meets `resetGapMinutes` (90).
+- **(b) event-prep** — the next slot is the fancy-dinner class, defined
+  honestly and narrowly as **price band in the top band for the trip's budget
+  AND window start >= 19:00 AND category `restaurants`**. Named as a
+  three-part test rather than a vibe, per the brief.
+
+**The S11 advisory upgrades.** `structure.reset-gap-without-lodging` fires
+today because we cannot vouch for a gap. With lodging known, the gap becomes a
+PLACED rest stop with a reason, and the advisory is not emitted. Lodging
+unknown keeps the advisory unchanged. Morning slots bias toward lodging via a
+small `wLodging` term on the FIRST discretionary seat only — Tier 3,
+versioned, and off when lodging is null.
+
+### 1.7 Experience machinery (XXX-38, as the EXPERIENCE theme's machinery)
+
+- **Composite anchor block.** `SlotIntent.composite?: { minutes, microActivities }`.
+  The seated slot carries its micro-activities as NARRATION, not sub-slots
+  (brief, verbatim). Dwell 4-8h comes from the spec.
+
+  **This breaks a constant, and the constant is named now rather than
+  discovered later:** `GRAMMAR_PARAMS.dwellMinutes.parks.max` is **150**, so
+  `dwell.overstay` rejects an 8-hour island day. `anchorDwellFor` clamps to
+  the same ceiling. Both assumed a stop is a stop. A composite block is not,
+  and the grammar must learn the difference — **proposed as a RULING, not
+  slipped in**: `dwell.overstay` exempts slots carrying a composite block, and
+  the block's own min/max governs. An unrecorded tightening is legislation
+  nobody voted for, and so is an unrecorded loosening.
+
+- **Provisioning role.** `SLOT_ROLES` gains `provision`; category `grocery`
+  (already `NON_ANCHOR`, already dwelled 10/25/45 by S13 — that groundwork
+  was laid for exactly this). Placed UPSTREAM of the experience it serves and
+  the causality is narrated: the picnic supplies exist BECAUSE of the picnic.
+
+- **Ferry as a mode.** `ferry` joins `TRANSPORT_MODES`, and its estimate comes
+  from the city-facts timetable rather than a speed model — it is the first
+  SCHEDULED mode. **Vocabulary-widening census owed at build time**: every
+  list that enumerated the four modes must be found and ruled on
+  (`modeFor`, `SHELTERED_MODES`, the exposure caps, the travel matrix, the
+  timeline's mode labels). This session has hit that failure four times; the
+  census is written into the build plan, not left to memory.
+
+- **Travel-as-experience.** `ComposedLeg.experiential?: { reason: string }` —
+  the ferry is narrated as part of the day, not as a cost.
+
+- **Seasonal infeasibility is an HONEST FAILURE.** Winter -> the Hanlan's
+  route is absent from the city facts -> the experience theme is infeasible ->
+  `generateDay` returns a themed failure naming the reason. It does **not**
+  silently fall back to a venue day. That is constraint 4 pointed at our own
+  scheduling.
+
+### 1.8 The city-scoped facts table (CP0 ruling 3)
+
+Forward-only migration, first tenant the founder-verified ferry timetable:
+
+```sql
+create table city_facts (
+  id          uuid primary key default gen_random_uuid(),
+  city        text        not null,
+  fact_kind   text        not null,   -- 'ferry_timetable'
+  subject_key text        not null,   -- route/mode key: 'ferry:hanlans'
+  value       jsonb       not null,
+  source      text        not null,   -- provenance law, all three columns
+  tier        smallint    not null check (tier in (1,2,3)),
+  fetched_at  timestamptz not null,
+  valid_from  date,                   -- seasonal validity: May 13 - Sep 15
+  valid_to    date,
+  created_at  timestamptz not null default now(),
+  unique (city, fact_kind, subject_key, valid_from)
+);
+```
+
+Provenance is NOT NULL on all three columns — constraint 2 admits no exception,
+including seed data. Zod at the boundary; the timetable enters as
+`source = 'founder_groundtruth'`, `tier = 1`, which is the always-legal
+operator channel. XXX-39's pipeline inherits the shape and adds rows with a
+different `source` and `tier`, changing nothing else.
+
+### 1.9 Menu allocation — the die's last mile (CP0 ruling 1)
+
+> **Allocation preserves the diced order ACROSS categories. Never a
+> head-category-only slice.**
+
+Today `buildMenus` sorts by `intent.categories.indexOf(category)` then score,
+and takes `slice(0, 4)`. CP0 measured what that costs: 338 legal bars and 106
+historic sites invisible behind four viewpoints; and with the palette fixed,
+the die's own first choice buried at position three.
+
+**Proposed: round-robin over the diced category order**, best-scoring unused
+survivor from each non-empty category in turn, cycling until the menu is full.
+The head still leads the menu — so the deterministic selector's `options[0]`
+still honours the die — but positions 2..n are now genuinely different
+categories, which is what the alternates fallback and the LLM selector need.
+
+- **`MENU_SIZE` stays 4 for single-category intents** (meals).
+- **Discretionary intents get `MENU_SIZE_DISCRETIONARY = 6`.** Argued: with 4
+  or 5 categories in a diced order, a 4-deep menu gives the head exactly one
+  option and no within-category depth to survive an hours failure. 6 buys
+  depth without buying spend.
+- **Spend is untouched, and this is the load-bearing claim:** `MENU_SIZE`
+  governs menu composition only. `SHORTLIST_NOMINAL` (24) and `DETAILS_CAP`
+  (30) are the spend bounds and **neither moves.**
+- **`pickShortlist` must mirror allocation.** `SHORTLIST_DEPTH = MENU_SIZE + 2`
+  today; if the menu becomes cross-category and the shortlist stays
+  head-category, Details get spent on venues the menu will not offer. The
+  shortlist allocates the same way, at the same cap — the harness-fidelity
+  doctrine applied to spend.
+- **Interaction with the armor principle (§0.12c), named rather than
+  discovered:** allocation puts MORE unknown-hours venues on menus. What
+  catches them is unchanged and must stay: `EVENING_VIABLE`, the per-candidate
+  dusk clamp, and `hardFilter`'s known-bad checks. Mirroring the shortlist is
+  what keeps Details pointed where the menu looks.
+
+**Measurement owed, not assumed.** The discretionary max = 1.00 failure is a
+STRONG SUSPECT for this defect, not a diagnosis. It gets re-measured after
+allocation lands, and if it does not move, the suspicion was wrong and is
+recorded as wrong.
+
+### 1.10 Exams, gates and budget
+
+**The day-7 shape exam** (offline, replayed from captured/synthetic
+candidates, because the live pool reaches the islands only through the theme
+zone). Given the islands persona, date, lodging and the experience theme, the
+engine must produce an islands-SHAPED day:
+
+| assertion | source |
+|---|---|
+| composite anchor block >= 4h | golden day 7 traps: "capping the island at parks' 150-min dwell" |
+| a `provision` slot, grocery, BEFORE the anchor | "the grocery stop exists BECAUSE of the picnic" |
+| >= 2 ferry legs, schedule-gated from tier-1 facts | "ferry as dead time" trap |
+| the sunset beat inside the anchor, on the sunset side | "Hanlan's beach is west-facing" |
+| a conditional ending, narrated | founder-ratified concept |
+| winter date -> honest infeasibility, not a venue day | "WINTER = Ward's route ONLY" |
+
+**Venue-for-venue match is NOT required** — shape and constraint compliance is
+the AC, per the brief.
+
+**The thread exam** is mechanical this session: a history-of-Toronto day
+generates, is grammar-clean, has a spine of 2-3 historic/museum sites, meals
+interleaved, and holds the discretionary gate. Golden day 8 is
+founder-drafted later via the bootstrap.
+
+**Standing gates**: venue overlap · anchors/theme seated · closes-restated ·
+discretionary max <= 0.67 · golden 6/6 · day-7 exam.
+**Regression**: every prior golden day still clean, and a "concierge's choice"
+venue day looks like S13's output class (§1.1's AC).
+
+**Budget**: offline-first, $0. ONE live confirm set at CP3 (~$3-4); founder
+vet at CP4 (~$5). Projected session total **~$8-9 against the $15 gate**,
+leaving headroom for one HOLD-and-refix round. Free tier resets 2026-09-01;
+nothing in this plan straddles it.
+
+### 1.11 Open questions carried INTO the build
+
+1. **`dwell.overstay` exempting composite blocks** (§1.7) — proposed as a
+   ruling because loosening a rule silently is the same offence as tightening
+   one silently.
+2. **`dominanceMargin = 0.4`** (§1.5) — Tier 3, and the founder's eye at CP4
+   is what settles it.
+3. **`physicalLoadMinutes = 150`** (§1.6) — same status.
+4. **The islands are outside the Sep discovery run** (§1.4) — sanction or
+   accept.
+
+
+## Step 2 — Build + offline exams (CHECKPOINT 2)
+
+Landed across 14 atomic commits. Gates at close of Step 2: `tsc --noEmit`
+clean · `eslint` clean · `npm run build` exit 0 · **612 passed**, 3 skipped.
+
+**Menu allocation** (`allocateMenu`) round-robins the diced category order;
+the head still leads so `options[0]` honours the die. Discretionary intents
+take 6, meals 4, and **spend is untouched** — `SHORTLIST_NOMINAL` (24) and
+`DETAILS_CAP` (30) do not move. `pickShortlist` mirrors allocation, closing a
+gap where Details were bought by score while the menu preferred the head
+category. First measurement read NULL because `offline-recompose` never
+passed `alternates`; with the fidelity fix, closes went **6/7 → 7/7**.
+
+**The max = 1.00 suspicion was recorded as WRONG.** Allocation moved the mean
+(0.615 → 0.542 raw) and left the max untouched.
+
+**Theme layer**: `src/shared/theme.ts` (union, curated specs, per-row
+invariants), `THEME_ZONES` separate from `ANCHORS`, `zonesFor`'s theme door,
+`selectTheme` (filter → weight → roll), and the room picker where
+*concierge's choice* is the absence of a request.
+
+**Family licence**: `gravityDominance`, count-based after the ruled margin
+form measured as a knife-edge (five of eight personas at exactly 0.400).
+Licensed closes get a reserved PAIR of menu slots.
+
+**XXX-42**: lodging as a place, rest stop as a post-pass, whether/where split.
+
+**XXX-38**: composite anchor, provisioning role, city-facts table, ferry seed.
+
+## Step 3 — Live confirm (CHECKPOINT 3)
+
+**Spend: $7.6535 over 15 paid generations**, read from `traces.total_cost_usd`
+and never estimated. Against the $15 gate: **$7.35 remaining**. The overshoot
+past the ~$3–4 estimate was surfaced before it was spent, not after.
+
+### 3.1 What the live set found — three defects, all in Step 2's machinery
+
+Every one cost a real generation, and every one is now pinned.
+
+**Run 1 — `dwell.understay`, honest failure.** The composite block seated for
+150 minutes against its own 240 floor. `clampDwell(480, parks{20,150})` is
+150: **a THIRD reader of the category table** the owner-swap had not reached,
+after the skeleton and the validator were both taught otherwise. The same run
+retrieved **St. James Park**, 3.3 km away across the harbour, because the
+islands zone's 2.5 km radius plus 1.0 km of *discovery* slack reaches the
+mainland. A discovery anchor approximates a neighbourhood; a theme zone is
+drawn against measured coordinates, so it now carries no slack.
+
+**Run 2 — the day shipped without its centre.** `unfilled: A day on the
+Toronto Islands (unschedulable)`, and the outcome read *"This day holds up —
+8 notes."* Both anchorless guards tested `skeleton.electedAnchor !== null`,
+which is the record of an ELECTION, and a themed day has none by design.
+Session 11's defect returning through a door this session opened. **A guard
+asks about the DAY, never about the record of how the day was decided** —
+pinned in the trap set so there is no third visit.
+
+**The template family** (granted as legislation, §3.2) — filtering city-day
+templates gave the block a 240-minute window between lunch and dinner, which
+is a four-hour island day with no room to reach the ferry.
+
+### 3.2 The live set, as run
+
+| day | verdict |
+|---|---|
+| **islands experience** | **PASS** — brunch 09:35 · provisioning (LCBO) 10:50 · **composite block 11:25–19:25, 480 min** · dinner 20:05 after the block. Golden Day 7's shape; grammar-clean, 11 advisories, 0 violations |
+| **thread** | **PASS** — market warm-up, culture spine (St. Michael's Cathedral + Mackenzie House), meals interleaved, sunset-viewpoint close, clean |
+| **venue** | **PASS** — Yorkville gallery anchor, Distillery dinner, bar close: S13's output class, which was the AC |
+| **event-prep dinner** | **DID NOT FIRE — formally unverified**, carried to CP4 |
+| **8-persona matrix** | **PASS** — see §3.4 |
+
+### 3.3 Event-prep: why more money would not have bought it
+
+Two measurements, both $0, settle it:
+
+- the pool holds **ONE** stored `price_range` fact across **39,849**
+  identities. Prices are fetched per-request for the ~24 shortlisted
+  candidates and never persisted (decision 001), and Google bands these
+  neighbourhoods at **$10–20**;
+- the seat objective leaves about **40 minutes** before the day's last meal,
+  and a rest stop wants 60. `day-1-jays` measured gaps of 75, 35, 75, 40, 5.
+
+So the arm is not reachable by sampling. The MECHANISM is proven on a
+hand-built day; the LIVE arm goes to CP4 unverified, as ruled. **Lowering the
+rest dwell until a 40-minute gap qualified would have been tuning a threshold
+to pass a test**, and was refused.
+
+The attempt found a real defect: the trigger's `>= "19:00"` was a **clock
+literal that missed the composer's own most common dinner** (every dinner
+window is 17:30–21:30 and the objective centres a 90-minute dinner at 18:45).
+DELETED, not retuned — the condition is now "the day's last meal", which is
+structural and cannot drift when the seating objective is refitted. **The
+fixture failing its own premise is what surfaced it.**
+
+**Recorded as a coupled CP4 calibration input:** `seating.wIdle` and
+`rest.physicalLoadMinutes` are one question for the founder's body — the idle
+penalty squeezes the very gaps a rest stop needs.
+
+### 3.4 The matrix — full pairwise, 8 personas
+
+```
+anchors seated                8/8   PASS
+closes (restated)             7/7   PASS   (raw 7/8)
+venue overlap                 mean 0.014 (AC ≤0.35)  max 0.40 (AC ≤0.5)  PASS
+exam                          8/8 days validated clean
+category-sequence (reported, non-gating, n=21)   mean 0.511  max 0.80
+cross-shape (|Δstops|≥2, n=7, non-gating)        mean 0.238  max 0.67
+all pairs (n=28)              mean 0.443  max 0.80   [S9 baseline 0.693]
+role-sequence (observed)      mean 0.931
+seat-centering A/B            52.5min → 6.5min from window centre (IMPROVED)
+```
+
+### 3.5 Two findings the good islands day surfaced — both fixed before CP4
+
+1. **`route.detour-avoidable` advised moving the LCBO after the island**, to
+   save 34 minutes. Arithmetically true; it would have sent the traveller to a
+   beach with nothing to eat. One clause: a swap that moves a `provision` stop
+   after what it serves is never advised. **Causality outranks distance.**
+2. **Every venue on a single-zone theme day wore the zone's name** — a
+   mainland waterfront LCBO read "· Toronto Islands", a correct stop with a
+   wrong address. Labels now come from the nearest DISCOVERY anchor; a venue
+   genuinely on the islands matches no mainland anchor and keeps the theme
+   label as the true answer.
+
+
+## Step 4 — Founder vet (CHECKPOINT 4, phone)
+
+**The room is live and serving the current build.**
+
+```
+http://192.168.2.10:3000/tasting
+```
+
+Same Wi-Fi, phone browser, passphrase as usual. Verified before handing over:
+`/tasting` returns 200 on the LAN address, and the client bundle contains
+both new controls (`A day on the Toronto Islands`, `Staying downtown`) — the
+first attempt found a stale dev server from earlier in the session still
+serving pre-theme code, which is why this was checked rather than assumed.
+
+**Budget for the evening**: ~$0.50 a generation, so ten days is ~$5. Spent so
+far **$7.6535**; the $15 gate leaves **$7.35**.
+
+### 4.1 What is new on the page
+
+- a **theme picker** — *Concierge's choice* (the absence of a request; the
+  engine derives one), *A day around one place*, *A history of Toronto*,
+  *A day on the Toronto Islands*;
+- a **"Staying downtown"** toggle that sets lodging. Off by default, and the
+  page says what is lost without it rather than assuming;
+- every day now prints its **theme and origin**, so a derived theme can be
+  told from a requested one;
+- a refused theme gets its own amber panel saying nothing was generated and
+  nothing was spent.
+
+### 4.2 What to look for, in the founder's own terms
+
+| what | the verdict it answers |
+|---|---|
+| **the islands day against your own golden Day 7** | THE moment of the session. Shape, not venue-for-venue: brunch → provisioning → a block of six to eight hours → a late dinner after it |
+| a history thread day | *"a history tour of Toronto would be an anchor"* — does a 2–3 site spine read as a tour, or as two museums in a row? |
+| a shopper venue day | does Yorkville by day and the Eaton Centre class in the evening feel right as a BOOKEND, or as repetition? (the family licence) |
+| same-persona re-rolls | do themed days vary the way venue days do |
+| **the rest stop** | `day-1-jays` with lodging on is the day that deals one. Does it land where your body wants it? |
+
+### 4.3 The three calibrations this evening decides
+
+All Tier 3, all recorded as pending your eye rather than settled:
+
+1. **`dominantFamilyPositions = 2`** — does the family licence fire only for
+   genuine dominance? It licenses `day-3-winter`, `persona-shopper` and
+   `persona-scenic`, and nobody else.
+2. **`physicalLoadMinutes = 150` and `seating.wIdle = 0.5` are ONE COUPLED
+   QUESTION.** The idle penalty squeezes the very gaps a rest stop needs: the
+   objective leaves ~40 minutes before dinner and a reset wants 60. Judging
+   them separately will produce a rest stop that never fires or a day full of
+   dead time.
+3. **The event-prep rest stop is FORMALLY UNVERIFIED.** It never fired live —
+   the pool holds one price fact in 39,849 identities, so a top-band dinner is
+   not something more generations would buy. If you generate a fancy-dinner
+   day and a hotel stop appears before it with its reason, that is its first
+   real firing. If none appears, it stays unverified and does not ship claimed
+   working.
+
+**Verdicts go IN THE APP**, not in chat — Session 12's process note: findings
+that live only in chat are findings the miners never see.
+
+
 # Session 13 — The honest seed + a bigger vocabulary (XXX-35 findings, XXX-37)
 
 Branch: `session-13-seed-and-vocabulary`. Status: **CP1–CP3 complete and adjudicated; CP4 (founder quick-vet) is the founder's to run.**
@@ -808,6 +1954,105 @@ just the symptom.
 confirmation of an already-failing offline result is recorded as the budget
 policy working, not as a gap in evidence.
 
+### 5.4c Founder curation round (Session 13 close-out) — and the ruling inside it
+
+The worksheet came back ticked. **The doctrine attached to it outranks the
+ticks**, and is recorded first.
+
+**THE RULING: a single venue is not a day's centrepiece, for three of the
+categories.** Verbatim:
+
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE MUSEUM (unless for example
+> it's Paris and the Louvre or something of that size; this happens only if
+> someone is a die hard museum fan; but a person who likes museums normal
+> amounts may want to go to 1-2 museums in a TRIP)"*
+>
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE [historic site] BUT A HISTORY
+> TOUR OF TORONTO WOULD BE AN ANCHOR"*
+>
+> *"A DAY CANNOT BE SOLELY ANCHORED ON ANY ONE [market] THOUGH"*
+
+Three consequences, none of them small:
+
+1. **Anchor-worthiness is not purely a property of a VENUE.** Session 13
+   built it as one — `anchorCalibre` judges a place. The founder is saying
+   that for `museums_galleries`, `historic_sites` and `markets` the question
+   is malformed at the venue level: the centrepiece is a THEME ("a history
+   tour of Toronto"), a COMPOSITE of stops, or a venue of exceptional scale.
+   This is Session 12 finding 3(ii) restated by the founder in his own terms
+   — *the arc composes a shape; nothing composes a theme* — and it is
+   XXX-38's composite anchor arriving from a second direction.
+2. **A trip-level constraint appears for the first time.** *"1-2 museums in a
+   TRIP"* is a budget across DAYS, and the engine generates one day with no
+   knowledge of its neighbours. Nothing in the schema carries it. Recorded as
+   new scope, not quietly dropped: comment 10294's point 4 ("day 2 shouldn't
+   rhyme with day 1") is the same axis and equally unbuilt.
+3. **Persona intensity gates the exception.** *"only if someone is a die hard
+   museum fan"* — a single museum CAN carry a day, for the right traveller.
+   Today `categoryAffinity` has the signal (gravity position 1 at weight 1.0)
+   and nothing consumes it as a licence.
+
+**What the list means as a result.** Membership in `FOUNDER_ANCHOR_WORTHY`
+now reads *"fit to carry an anchor WHEN one of this category is warranted"*,
+not *"sufficient alone"*. Written into the module doc so a later reader
+inherits the distinction.
+
+**The ticks, resolved to pool identities** (`scripts/curation-resolve.ts`,
+new — $0):
+
+| category | curated | note |
+|---|---|---|
+| museums_galleries | Art Gallery of Ontario · Royal Ontario Museum · *Casa Loma* | ROM is **two duplicate identities, both UNLINKED** — no Details, no rating count, so curation is its only route in |
+| historic_sites | Casa Loma | founder ruled it "is both"; the pool maps it to historic_sites ONLY, so the museums entry is inert today and kept as a recorded mapping question |
+| markets | St Lawrence Market · St. Lawrence Market (North Building) · STACKT market · Toronto Flower Market · *Kensington Market* | Kensington absent from pool |
+| nightlife_bars | Big Trouble · Handlebar · The Porch · El Catrin Destileria · Sneaky Dee's | founder named more as a DIRECTION ("rebel, cabana, hotel x, mezcal spots, speakeasies") — not transcribed, because a direction is not an identity |
+| parks | + Coronation Park · Trillium Park · Trinity Bellwoods Park · Toronto Music Garden | resolved from the founder's own list |
+
+**Two things the resolution caught that a transcription would not:**
+
+- **Casa Loma was ticked under museums and is mapped to historic_sites.**
+  `anchorCalibre` looks a candidate up under the CANDIDATE'S category, so an
+  entry filed under a key the pool disagrees with never fires — and fails
+  **silently**, which is indistinguishable from a list nobody is consulting.
+  Now pinned by a test that admits every curated entry under its own filed
+  category.
+- **"Trinity Bellwoods" and "riverdale park" do not exist under those
+  spellings.** The pool carries `Trinity Bellwoods Park` (linked) and
+  `Riverdale Park West` (no East). Bellwoods is curated; **Riverdale is
+  deliberately NOT** — which identity the founder meant is a guess, and a
+  guess does not belong at tier 1.
+
+**THE GAP THIS ROUND EXPOSED: the list admits, it cannot deny.** The founder
+ticked **none** of the twelve parks offered — including **Berczy Park**,
+which this module's own test pins as the rating-count bar's known false
+admit. Berczy clears the fame bar at ~4,000 ratings and **would still be
+seated as a nature-first day's centrepiece**. Tier 1 currently has no
+downward vote.
+
+Not-ticked is weaker evidence than denied, so no deny-list was invented from
+silence. Pinned as a test instead, so the day a deny-list lands the
+expectation changes on purpose. **Open question for the founder: does
+"not ticked" mean "not anchor-worthy"?** If yes, `FOUNDER_ANCHOR_DENIED` is a
+small change with a large effect — it is the only mechanism that can
+currently overrule fame.
+
+**Pool gaps worth a ticket**: `Kensington Market`, `Riverdale Park East`,
+`Hanlan's Point` absent as identities; `Buzz PR` (a PR agency) is mapped to
+`markets`, which is the small-business dilution §3.5 measured, showing up in
+a founder's own eyeline.
+
+> **CORRECTED 2026-08-16 (Session 14 CP0, PO ruling).** `Hanlan's Point` was
+> a **FALSE NEGATIVE of `curation-resolve.ts`**, not a pool gap. The script
+> stripped apostrophes from the query and matched against raw pool names, so
+> `%Hanlans%` found nothing while `Hanlan's Point Beach` (parks, unlinked) sat
+> in the pool the whole time. `Mildred's Temple Kitchen` was hidden the same
+> way and is also present. Re-verified through the fixed resolver: **the other
+> two gaps are REAL** — `Kensington Market` and `Riverdale Park East` are
+> genuinely absent (the pool carries only `Riverdale Park West`). No curated
+> entry was harmed: every name in `FOUNDER_ANCHOR_WORTHY` happens to have its
+> longest token free of apostrophes, so the list resolved correctly by luck of
+> spelling rather than by the instrument being right.
+
 ### 5.5 Standing lines this session earned
 
 > **A die nobody plumbed is a die nobody rolled** (Session 12's, now proven
@@ -859,12 +2104,22 @@ surface by `seed-fidelity.ts` rather than promoted again.
 5. **XXX-31's real quality signal** — `anchor-calibre` is explicitly interim,
    and its known limitation (fame ≠ calibre; Berczy Park clears the bar) is
    pinned as a test that should CHANGE when XXX-31 lands.
-6. **Founder curation of the anchor list** — the worksheet is built and was
-   requested at CP2 for museums/galleries, historic sites and parks; the
-   founder's ticked names had not arrived by close-out, so
-   `FOUNDER_ANCHOR_WORTHY` still holds only verbatim-founder entries. Nothing
-   was invented on their behalf.
-7. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
+6. **The composite/theme anchor** (§5.4c ruling) — a single museum, historic
+   site or market is not a day's centrepiece; a THEME is. Arrives from two
+   directions now: the founder's curation ruling and XXX-38's golden Day 7.
+   Carries two sub-items the schema cannot express today: a TRIP-level budget
+   ("1-2 museums in a trip", same axis as comment 10294 point 4) and persona
+   intensity as a licence for the single-venue exception.
+7. **A deny side for the curated list** (§5.4c) — tier 1 can admit and cannot
+   refuse, so Berczy Park still clears the fame bar and would still be seated
+   after the founder declined to tick it. Blocked on one founder answer: does
+   "not ticked" mean "not anchor-worthy"?
+8. **Seated times still unrecorded** (Session 12 §5.8 item 3, still open).
+9. **Pool gaps from the curation round** — `Kensington Market`,
+   `Riverdale Park East`, ~~`Hanlan's Point`~~ absent as identities; `Buzz PR`
+   mapped to `markets`. **CORRECTED (S14 CP0): `Hanlan's Point` is PRESENT**
+   as `Hanlan's Point Beach` — the absence was `curation-resolve.ts`'s
+   apostrophe defect, now fixed and re-verified. The other two gaps stand.
 
 # Session 12 — Variety audit: every selection point, one dice pattern (XXX-35)
 

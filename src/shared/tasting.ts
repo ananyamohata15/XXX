@@ -86,6 +86,12 @@ export type TastingOutcome =
       } | null;
       /** True = a fabricated day. The page must say so, loudly. */
       synthetic: boolean;
+      /**
+       * What organizing mode built this day, and whether the traveller asked
+       * for it (XXX-40). `reason` is present only for a derived theme — a
+       * requested one needs no explanation.
+       */
+      theme: { id: string; origin: "requested" | "derived"; reason: string | null };
       /** Distinct fact/travel sources on this day — attribution keys off it. */
       sources: string[];
       /** Non-null = generated weather-blind. One honest line, not a modal. */
@@ -109,6 +115,18 @@ export type TastingOutcome =
       status: "failed";
       headline: string;
       violations: NarratedLineView[];
+      meter: TastingMeter;
+    }
+  | {
+      /**
+       * A requested theme that cannot be built on this date (XXX-40). Not a
+       * failure — the day was never possible, and the room says which theme
+       * and why rather than quietly showing a different kind of day.
+       */
+      status: "theme-infeasible";
+      theme: string;
+      reason: string;
+      detail: string;
       meter: TastingMeter;
     }
   | {

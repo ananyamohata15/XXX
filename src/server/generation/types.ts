@@ -9,6 +9,7 @@
  */
 
 import type { NarratedDay } from "@/shared/day-grammar/describe";
+import type { DayTheme, ThemeInfeasibility, ThemeSelection } from "@/shared/theme";
 import type {
   GrammarDay,
   GrammarPlace,
@@ -58,6 +59,12 @@ export interface GenerationRequest {
   seed?: number;
   dayStart?: string;
   dayEnd?: string;
+  /**
+   * The caller's REQUESTED theme (XXX-40). Absent or null = "concierge's
+   * choice", which is the absence of a request and resolves to a derived
+   * theme — not a fourth mode.
+   */
+  theme?: DayTheme | null;
 }
 
 /** One pool row plus everything learned about it during this request. */
@@ -87,6 +94,28 @@ export interface SlotIntent {
   dwellMinutes: number;
   /** What this stop is FOR in the day's arc (XXX-35). */
   role?: SlotRole;
+  /**
+   * The category the FAMILY LICENCE promoted for this step (XXX-40, Session
+   * 14). Set on the close only, and only for a traveller whose stated
+   * interests concentrate in one texture.
+   *
+   * It exists because promoting the CATEGORY was not enough to produce the
+   * founder's own example. Measured: with `shopping` licensed to the head of
+   * `persona-shopper`'s close list, the menu's best shopping venue was
+   * **Amavi Atelier — already seated as the day's anchor** — and the second
+   * shopping venue sat at menu position 6 behind three other categories,
+   * because allocation round-robins. The day closed on a bar. Yorkville by
+   * day and the Eaton Centre class in the evening needs TWO venues of the
+   * licensed category on the menu, not one.
+   */
+  licensedCategory?: PlaceCategory;
+  /**
+   * Present = this intent is an experience's COMPOSITE BLOCK, and its dwell
+   * is governed by the `ExperienceSpec` rather than the category table
+   * (XXX-38, Session 14 CP1 owner-swap). Rides onto the seated
+   * `GrammarSlot.compositeDwell`, which is what `dwell.overstay` reads.
+   */
+  composite?: { min: number; max: number };
 }
 
 /**
@@ -285,6 +314,8 @@ export type GenerationOutcome =
        */
       anchorCalibreUnmet: { category: PlaceCategory; examined: number } | null;
       arcTemplateId: string;
+      /** How this day's theme was decided, and what it is (XXX-40). */
+      theme: ThemeSelection;
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];
       narrated: NarratedDay;
@@ -297,5 +328,20 @@ export type GenerationOutcome =
       status: "failed";
       violations: Violation[];
       narrated: NarratedDay;
+      stats: GenerationStats;
+    }
+  | {
+      /**
+       * A REQUESTED theme that cannot be built on this date (XXX-40).
+       *
+       * Its own status rather than a `failed` day, because nothing was wrong
+       * with the generation — the day was never possible. Golden Day 7 in
+       * January is the case: the Hanlan's route does not run, so the islands
+       * experience is infeasible and the traveller must be told that, not
+       * handed a mainland day under the same name.
+       */
+      status: "theme-infeasible";
+      theme: DayTheme;
+      infeasibility: ThemeInfeasibility;
       stats: GenerationStats;
     };
