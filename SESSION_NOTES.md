@@ -134,6 +134,41 @@ Persona and generateDay does not change"). Schema proposal is Step 1's.
 Session spend so far: **$0** (all intake was DB reads). Gate ≤$15; planned:
 CP3 live confirm ~$1.50, CP4 founder session ~$5–6.
 
+### 0.6 CHECKPOINT 0 — RATIFIED, rulings of record
+
+1. **Cuisine ruling.** The FSQ raw-label fact is adopted: a pure
+   label→cuisine function over stored `source_labels` (Session 5's foresight,
+   now load-bearing). 84.9% coverage; **honest-absence for bare-label
+   restaurants — no reason may claim a cuisine for the untagged 15.1%.**
+   Dietary ships as **weighting-plus-stated-absence, never guarantee.**
+2. **Nine-seam inventory accepted** (§0.3).
+3. **CONSTRAINT LAW — a theme REFUSES, it does not substitute.** A theme
+   whose spine needs an excluded category refuses in concierge voice. Never
+   a silent swap.
+4. **The grammar rule is the provable guarantee**: an excluded category
+   seated → the day is REJECTED before display. It gets its trap fixture.
+5. **`excludedCategories` on `GenerationRequest`** confirmed as the carrier.
+6. **`EVENING_VIABLE` untouched — viable ≠ permitted.** Recorded as a
+   distinction, not an omission: that list answers "could a stop of this kind
+   be an evening at all", and permission is the constraint's job. Single
+   owner per question, per the Session 14 lesson.
+7. **`profiles` approved** as founder-singular tier-1 user facts, mapping
+   onto the existing `Persona` contract.
+
+**Anomalies resolved PO-side.** The six S14 findings came from the PO chat —
+the close-out instruction was never pasted pre-merge. **Process lesson of
+record: a merge waits for its close-out, and the merge-command block states
+it as a precondition henceforth.** Jira corrected (XXX-43 In Progress,
+XXX-42 Done); future PR bodies name only completed keys.
+
+**Scope note, stated honestly.** Of the six findings, the two named to me
+inline are **#4 ferry pills** and **#6 advisory collapse** — this session's
+UX scope, to be marked PAID in the CP1 spec. The brief's own list adds
+**jargon refusals**. Items 1/2/3/5 were recorded PO-side with their homes;
+their text did not reach this context, so CP1 does not claim to pay them and
+does not paraphrase them. If any belongs in this session, CP1 is where it
+gets tabled.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
