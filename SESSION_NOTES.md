@@ -1,3 +1,139 @@
+# Session 15 — The taste front door: chat intent, profile, product UX (XXX-43)
+
+Branch: `session-15-taste-front-door`, cut from `main` at `057c922` (the
+Session 14 merge). Status: **CHECKPOINT 0 complete — awaiting ratification
+before Step 1 design.**
+
+Mandate in one line: the founder — not a persona — tells the app who he is
+and what he wants, in his own words, and gets a day that feels like his.
+Founder verbatim (XXX-43): *"i dont want dropdowns and stuff anymore… show it
+to me like how the app will work… no non-intuitive ways of interacting."*
+The tasting room becomes the product prototype; this session is judged on UX
+as much as machinery.
+
+## Step 0 — Intake (CHECKPOINT 0)
+
+### 0.1 Base state — confirmed, with two record anomalies
+
+`main` is at `057c922` = the PR #16 merge; working tree clean; branch cut
+from it. Session 14's machinery is all present (theme layer, lodging,
+city_facts, the 10-category vocabulary).
+
+**Anomaly 1 — the Session 14 close-out was never written.** The brief asked
+for "Session 14's SESSION_NOTES close-out (the six CP4 mechanism findings)".
+It does not exist: SESSION_NOTES.md's Session 14 record ends at Step 4 (the
+CP4 *launch*), PR #16's body says only "CP4 verdict re-sequences: XXX-43
+next", Jira holds no close-out comment or spawned tickets, and the verdict
+corpus holds the founder's words but no mined findings list. What the CP4
+record actually consists of, in full:
+
+- **The corpus**: one day verdict on `day-8-scenic` (trace `67d5426e`,
+  2026-08-16 13:31): *"Food food one small park spot then Food food"* /
+  *"Long gaps between transits and the travel -> annex to queen to yorkvile
+  to queen to harborfront, what a waste of time in the day"*.
+- **XXX-43's description**: the verbatim-class verdict (*"…no ability to
+  tell things I like… I don't drink, I love Italian, Thai… a chat-based way
+  to input would be better… no personalization, it's no fun"*).
+- **The brief itself** names the UX debts as if from that close-out: the
+  advisory wall, ferry pills unlabeled, jargon refusals, the persona
+  dropdown on the product surface.
+
+Honest-absence applies to our own process: rather than inventing "the six",
+Step 1's UX spec will enumerate the UX debts it pays from these three
+sources, each cited to its actual record. If a six-item list exists in the
+founder's own notes, CP1 is the place to table it.
+
+**Anomaly 2 — Jira status drift.** XXX-43 AND XXX-40 are both marked *Done*
+(both updated 2026-08-22 18:48, the minute XXX-43 was created), while
+XXX-42 — whose build merged in PR #16 — sits at *To Do*. XXX-43 is this
+session's mandate and is not done. Left untouched pending founder
+correction; flagged here so the board's word is not silently trusted.
+
+(Minor: the first DB contact of the session failed with "JWT issued at
+future"; local clock verified against network time to the second, retry
+succeeded, all subsequent reads clean. Recorded, not chased.)
+
+### 0.2 The cuisine signal — measured, and the answer is FREE ($0 spent)
+
+The question was whether "loves Thai/Italian" can bind to anything honest.
+Measured over the live pool (DB reads only):
+
+| measure | value |
+|---|---|
+| pool places | 39,850 |
+| places carrying the `categories` fact with `source_labels` | **39,849** |
+| mapped restaurants | 19,286 |
+| restaurants with a cuisine-level FSQ leaf (deeper than bare "Restaurant") | **16,372 (84.9%)** |
+| distinct cuisine leaves | 152 |
+| founder probes | Thai **398** · Italian **754** · Indian 934 · Japanese 1,261 · Chinese 1,641 · Mexican 620 |
+
+**The raw FSQ labels are already persisted** — `facts.fact_key =
+"categories"`, `value.source_labels`, tier 2, source `fsq_os_places`,
+stored (per `domain/schemas.ts`) *"so future re-mapping needs no dataset
+re-scan"*. Session 5's schema decision pays off in full: no re-ingest, no
+extract pass, no Google spend. And `retrieve.ts` ALREADY joins this exact
+fact when building candidates, so cuisine tags can ride the `Candidate` for
+the cost of a pure label→cuisine mapping function.
+
+**What "loves Thai" binds to, ranked honestly:**
+
+1. **FSQ `source_labels` (RECOMMENDED)**: free, already in every retrieval
+   join, 84.9% coverage of restaurants, provenance intact (tier 2,
+   fsq_os_places). Weighs in `score.ts` and is citable in selection/reasons.
+2. Request-time Google types: costs money, covers only Details-fetched
+   candidates (~24/day), and decision 001 forbids persisting them — strictly
+   worse for a standing preference.
+3. Nothing-yet: false — option 1 exists.
+
+**Honest-absence story**: 2,914 restaurants (15.1%) carry only the bare
+"Restaurant" label. They get NO cuisine tag: neutral in weighting (never
+penalized for our ignorance), and no reason may claim a cuisine for them.
+Dietary is thinner: "Vegan and Vegetarian Restaurant" tags 253 venues —
+enough to WEIGH toward, never enough to GUARANTEE a vegetarian-safe day;
+the dietary constraint ships as weighting + honest absence, stated as such,
+until a menu-level fact source exists.
+
+### 0.3 Where constraints must reach — the inventory
+
+For a hard category exclusion (no-alcohol → `nightlife_bars`), every seam
+where a category enters a day, as built today:
+
+| seam | site | what must happen |
+|---|---|---|
+| close palette | `closeCategories` (`arc.ts:600`) — `nightlife_bars` is literally first in the experience list | excluded categories drop before the draw |
+| evening gate | `EVENING_VIABLE` (`arc.ts:383`) | untouched — it answers "viable", not "permitted"; permission is the constraint's job (single-owner) |
+| skeleton/template slots | `SlotIntent.categories` built in `compose.ts` (incl. contrast picker) | excluded categories never enter an intent |
+| theme palettes | `ThreadSpec.categories` / `ExperienceSpec.categories` (`shared/theme.ts`) | a theme whose spine needs an excluded category REFUSES (concierge voice), never silently substitutes |
+| family licence | `gravityDominance` → `licensedCategory` (`compose.ts:825`, close intent) | may never promote an excluded category |
+| retrieval | `retrieve.ts:256` queries pool by intent categories | excluded categories are never queried (correct + saves spend) |
+| selection prompt | `select-llm.ts` menus | clean by construction if upstream is clean — but proven, not assumed |
+| repair passes | `repair.ts` re-runs | constraint must ride the request through repair, not the first pass only |
+| **the validator** | new day-grammar rule | the provable guarantee: a day seating an excluded category is REJECTED before display — the trap fixture's assertion point, per-rule fire proof required (Session 13 law) |
+
+XXX-43's "one filter field" reading holds: `excludedCategories` on
+`GenerationRequest`, applied at intent-construction/licence/palette/
+retrieval, asserted by the validator. Design detail is Step 1's.
+
+### 0.4 Profile storage candidates
+
+Existing tables: `trips` (trip circumstances — wrong owner), `taste_signals`
+(the verdict corpus — evidence, not priors), `reporters` (authority),
+nothing user-scoped. Single-owner law says **Profile owns identity priors**
+and no table owns them today.
+
+Candidate: a new `profiles` table — founder-singular (XXX-17 auth is out of
+scope), user-scoped tier-1 facts (their word on their own taste is
+absolute), fields for hard constraints (excluded categories, dietary),
+loves (cuisines, interests), and the five interview dimensions, which map
+1:1 onto the existing `Persona` contract (`shared/persona.ts` was built for
+exactly this — E6's note: "when the learned profile lands, it derives a
+Persona and generateDay does not change"). Schema proposal is Step 1's.
+
+### 0.5 Spend and gates
+
+Session spend so far: **$0** (all intake was DB reads). Gate ≤$15; planned:
+CP3 live confirm ~$1.50, CP4 founder session ~$5–6.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
