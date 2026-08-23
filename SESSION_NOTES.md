@@ -1268,6 +1268,166 @@ bundle rather than assuming the dev server reloaded.
 Spend to date: **$1.5237** of the $15 gate. The founder's own CP4 generations
 are additional and recorded against their traces.
 
+### 4.8 CP4 round two — four findings, one root
+
+Founder's framing, and it is the right one: **the engine composes stops but
+not geography, and not experiences beyond the islands template.**
+
+#### A — route incoherence (XXX-47)
+
+Trace `10708aa4`, by longitude: Bombay Chowpatty −79.3244 → Sea Kings
+−79.4013 → Roja's −79.4458 → Dianna Witte −79.3432 → Simpl Things −79.4343 →
+Ki Modern −79.3793. Roughly **8 km of east–west swing, three times**, and
+`route.detour-avoidable` fired on two stops. A second day shipped naming a
+74-minute saving.
+
+**Zone coherence is absent from every stage that DECIDES and present only in
+the one that REPORTS.** Retrieval is zone-scoped but its zones are wide;
+`scoreCandidate` has no distance term and structurally cannot (it scores one
+candidate before any sequence exists); `allocateMenu` is per-intent and blind
+to the rest of the day; the selector receives all menus at once. `composeDay`
+measures the damage after the day is committed.
+
+**The suspected cheap fix does not exist**, and I checked before proposing:
+"prefer the current zone-cluster" needs a *current zone*, which needs
+sequential selection — and selection is per-slot and parallel by
+construction. Four real options are in the ticket, with anchor-relative menu
+clustering recommended as the cheapest partial and a post-selection swap pass
+as the principled fix. **Not patched** — it moves composition and owes a
+golden re-run.
+
+#### B — "picnic" produced no picnic (XXX-48)
+
+Derived theme was `venue` (origin `derived`), anchor `markets` on *"food is
+this traveller's first interest"*. No park, no provisioning, four
+table-family stops.
+
+**Experience mode was unreachable because there is only one experience and it
+is an island.** `EXPERIENCE_IDS` contains exactly `toronto-islands`, which is
+ferry-gated, weather-gated and zone-bound. Nothing mainland existed to derive,
+so derivation fell to `venue`.
+
+**The finding worth having: Session 14's experience machinery is ALREADY
+GENERAL — only its ZONE assumption is islands-specific.** `ExperienceSpec`
+carries a composite anchor with curated dwell, optional `legs`, a weather
+gate, absorbed meal stops, and a `provisioning` stop whose islands reason is
+*"the island has no supermarket — the picnic is why this stop exists"*. The
+spec's own `microActivities` list literally contains `"picnic"`. Generalizing
+needs one vocabulary widening, `zones` made optional (zone-binding belongs to
+the islands, not to experiences), a `zonesFor` fallback, and one new spec.
+`themeAffinity`, `templatesHolding` and the refusal path need **no change**.
+
+It is golden Day 7's shape minus the ferry — which is why it is the right
+second tenant: it proves the experience layer is a layer.
+
+#### C — shopping destinations (recorded on XXX-41)
+
+Resolved with the now-trustworthy resolver. **One complaint, three different
+gaps:**
+
+| named | verdict |
+|---|---|
+| Eaton Centre | PRESENT as `CF Toronto Eaton Centre`, mapped `shopping`, **unlinked** |
+| Holt Renfrew | PRESENT ×2 (duplicate rows), mapped `shopping`, **unlinked** |
+| Yorkdale | **mall absent** — only tenants |
+| Sherway Gardens | **mall absent** — only tenants |
+| Yorkville | **not a venue** — a district |
+| Queen Street West | **not a venue** — a street |
+
+The first two are electable **today** and were never chosen: unlinked venues
+carry `freshness` 0.4 against a fetched venue's 1.0, and no rating drops
+`ratingQuality` to its 0.35 prior. **A destination the pool HAS can be
+unreachable because nothing ever linked it** — the same root as "five of six
+stops carried unverified hours".
+
+And the founder named two different KINDS of thing. Malls are venues;
+Yorkville and Queen West are **zones**. A district-anchored day is a
+zone-scoped day, which `ThemeZone` already models — so C and A are the same
+machinery seen from two sides.
+
+#### D — the rest-shaped gap (XXX-49)
+
+**The honest-absence path is what shipped, and it is correct.** Lodging was
+unset, `structure.reset-gap-without-lodging` fired as an advisory, no hotel
+was invented. Nothing to fix in the engine.
+
+**The gap is the surface's**: the app names a thing it needs and offers no way
+to tell it, because lodging is settable only in the Workshop — which the
+founder is correctly never asked to open. Proposed as an inline offer that
+appears *only* when a rest-shaped gap occurred; an always-present lodging
+field is the dropdown-shaped surface he rejected.
+
+#### An instrument gap of my own, reported
+
+`day_wants` is **not** in trace metadata. The patch that added it was in the
+same failed replacement as `persona_key`, and I fixed only the half I
+grepped for. Consequence: **the trace cannot confirm whether the parser's
+`wants` reached the picnic request** — the functional override did land
+(`generate.ts:303–305`), but its audit trail did not. Recorded on XXX-48. It
+is the lesson I promoted to CLAUDE.md this session, earned again: a claim I
+made about my own patch, unverified.
+
+## Step 5 — Close-out
+
+### Gates
+
+`tsc --noEmit` clean · **701 tests passing**, 3 skipped · `npm run build`
+clean · `eslint` clean. Standing exams untouched and green: golden 6/6, the
+27+1 traps, Day 7 shape, determinism, the persona matrix.
+
+### Spend
+
+| | |
+|---|---|
+| day generations, all surfaces | **16** |
+| CP3 constraint proof (3 gen) | $1.5237 |
+| tasting room incl. both CP4 sessions (13 gen) | $5.6570 |
+| **total recorded** | **$7.1807** |
+| gate | $15 |
+
+Comfortably inside, and every dollar is attributable to a trace.
+
+### Shipped
+
+Cuisine tags as a prefix view on the source taxonomy · the profile table with
+its live round-trip · nine constraint seams plus the grammar backstop and its
+trap · the chat parser with the asking floor · seven product screens · the
+ferry pill · the advisory collapse · cuisine fairness by rotation · the
+in-product honest limit · and the four CP4 defect fixes.
+
+### Tickets opened
+
+**XXX-44** attribute constraints need provenanced facts (with the measured
+742/3.85% and the free label-based first cut) · **XXX-46** adjacency as a
+grammar rule · **XXX-47** zone coherence · **XXX-48** generalize the
+experience layer · **XXX-49** the rest-gap lodging offer · seed corrections
+recorded on **XXX-41**. **XXX-45** was my duplicate of XXX-44, marked as such.
+
+### Next session's first commits, by founder ruling
+
+**XXX-44's label-based bar fix and XXX-46's adjacency rule, together** — both
+change composition and both deserve a full golden re-run rather than a patch
+landed before a vet.
+
+### Merge
+
+**PRECONDITION, from this session's own process lesson: a merge waits for its
+close-out.** Session 14 merged without one and the six CP4 findings existed
+only in chat, which cost this session a day of reconstruction. This block runs
+only after the notes above are complete — they are.
+
+```
+git switch session-15-taste-front-door && git log --oneline main..HEAD
+git push -u origin session-15-taste-front-door
+gh pr create --base main \
+  --title "Session 15: taste front door — chat intent, profile, product UX (XXX-43)" \
+  --body "See SESSION_NOTES.md"
+gh pr checks --watch && gh pr merge --merge --delete-branch && git switch main && git pull
+```
+
+PR body names **XXX-43 only** — the completed key. XXX-44/46/47/48/49 are
+opened, not done.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
