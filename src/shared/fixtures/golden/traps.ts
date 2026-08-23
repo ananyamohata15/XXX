@@ -756,4 +756,54 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
       );
     },
   ),
+  /**
+   * XXX-46. The founder's own CP4 close: food, then food again.
+   *
+   * His day ended dinner at Simpl Things 18:45–20:15, then **Tibet Kitchen at
+   * 20:25** seated as the activity close. Three rules were in the frame and
+   * none fired: the food cap counts TOTALS (3 against `classic`'s 4), the
+   * texture rule counts DISTINCT FAMILIES in a four-stop window (3, meeting
+   * `minTextureFamilies`), and `pickContrast`'s guards do not reach the close.
+   * Two table stops back to back were invisible to the whole validator.
+   *
+   * Reproduced here as the same shape, not a paraphrase: a second restaurant
+   * seated as an ACTIVITY ten minutes after dinner ends. It stays under the
+   * food cap (4 stops against 4) and it is not a meal slot, so neither of the
+   * rules that already exist has anything to say — which is exactly what makes
+   * it the right trap.
+   *
+   * The day gains a stop and the twenty-five minutes to hold it. That is one
+   * change: a late bite, added after dinner.
+   */
+  broken(
+    goldenDay2,
+    {
+      key: "trap-consecutive-same-family",
+      title: "A second dinner, ten minutes after the first",
+      expect: "rhythm.consecutive-same-family",
+      trapClass: null,
+      why: "The founder's CP4 day closed on a restaurant straight after dinner and validated clean. Composition was fixed in Session 15 (`closeCategories` drops the table tail when the previous step was food); this is the rule that makes the shape unreachable rather than merely uncomposed. BLOCKING for the `table` family only — the blanket version fails two founder-verified golden days on three outdoor pairs, and would forbid pub hopping.",
+    },
+    (g) => {
+      g.day.dayEnd = "22:00";
+      g.day.places.latebite = {
+        id: "latebite",
+        name: "Tibet Kitchen",
+        neighborhood: "Distillery",
+        coords: at(43.6505, -79.3589),
+        tags: tags(),
+        category: present("restaurants", CONCIERGE, TIERS.observed),
+        hours: present(
+          hours({ default: [["17:00", "23:30"]] }),
+          PLACES_API,
+          TIERS.verified,
+        ),
+        businessStatus: present("operational", PLACES_API, TIERS.verified),
+        priceRange: present(cad(18, 26), PLACES_API, TIERS.observed),
+      };
+      g.day.slots.push(
+        slot({ id: "s7", place: "latebite", from: "21:10", to: "22:00" }),
+      );
+    },
+  ),
 ];

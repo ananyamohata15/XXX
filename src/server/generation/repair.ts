@@ -50,6 +50,12 @@ const PLACE_CAUSED: ReadonlySet<RuleId> = new Set<RuleId>([
    * still die — which is the failure mode the note above this list records.
    */
   "constraint.drinking-focused-venue",
+  /**
+   * XXX-46. Two table stops back to back are fixed by re-seating the SECOND
+   * one, which is exactly what a strike does: the slot re-draws from its own
+   * menu and the composer's `closeCategories` guard keeps it off the tail.
+   */
+  "rhythm.consecutive-same-family",
 ]);
 
 export interface RepairPlan {

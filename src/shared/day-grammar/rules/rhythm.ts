@@ -242,6 +242,9 @@ export function checkRhythm(day: GrammarDay, ctx: GrammarContext): Violation[] {
   // --- texture: no A-B-A-B ------------------------------------------------
   found.push(...checkTexture(day, ctx, slots));
 
+  // --- adjacency: not the same thing twice in a row ------------------------
+  found.push(...checkAdjacency(day, ctx, slots));
+
   // --- an ending that lands -----------------------------------------------
   found.push(...checkEnding(day, ctx, slots));
 
@@ -332,6 +335,100 @@ function checkTexture(
           slotIds: window.map((s) => s.id),
         },
       ),
+    );
+  }
+  return found;
+}
+
+/**
+ * Two stops in a row that are the same thing twice (XXX-46, Session 16).
+ *
+ * WHY THIS RULE EXISTS WHEN `closeCategories` ALREADY GUARDS IT. Session 15
+ * fixed composition so the close never draws a table after food, and reported
+ * honestly that no GRAMMAR rule forbids the shape — a day that reached it
+ * another way would still validate clean. This is that rule, and the argument
+ * for having both is `constraints.ts`'s: composition is a place someone can
+ * add a path that forgets; this sits after every such path and rejects the
+ * day. The difference between *"we compose carefully"* and *"a day that eats
+ * twice in a row cannot reach a user"*.
+ *
+ * TWO QUESTIONS, and they are genuinely different — the `EVENING_VIABLE` vs
+ * `isCategoryPermitted` division, for the same reason:
+ *
+ *   1. **Did the traveller just sit down to a meal, and are we sitting them
+ *      down to another?** `pacing.mealGrade`. BLOCKING. This is the CP4
+ *      defect and the only adjacency the grammar refuses outright.
+ *   2. **Are these two stops the same texture?** `pacing.consecutiveFamily`.
+ *      Advisory at most, and permitted for the two families the founder's own
+ *      days and words put beyond argument.
+ *
+ * Asking (1) through the family would have been wrong, and the offline
+ * recompose caught it rather than an argument: `cafes` → `restaurants` is
+ * table → table, and it is coffee then brunch — a meal pattern this product
+ * ships by name. The measurement is recorded at `mealGrade`.
+ *
+ * THE PAIR, NOT THE RUN. Three parks in a row is two pairs, not one
+ * three-stop finding, because the repair is per-pair: strike the SECOND stop
+ * and the day re-draws that one slot. Which is also why only the later slot
+ * goes into `slotIds` — `PLACE_CAUSED` strikes every id it is handed, and
+ * striking the first would re-draw a stop that is not the problem, quite
+ * possibly the anchor or a meal seated in its own window.
+ *
+ * Unknown categories break the chain rather than match it — the discipline
+ * `checkTexture` set: an absence is not evidence of monotony. Two stops the
+ * USER committed to are not ours to call repetitive, the same carve-out
+ * `checkTexture` and `dwell.ts` make.
+ */
+function checkAdjacency(
+  day: GrammarDay,
+  ctx: GrammarContext,
+  slots: GrammarSlot[],
+): Violation[] {
+  const found: Violation[] = [];
+  for (let i = 1; i < slots.length; i += 1) {
+    const previous = slots[i - 1];
+    const next = slots[i];
+    if (previous.origin === "user" && next.origin === "user") continue;
+
+    const before = readFact(placeOf(day, previous)?.category);
+    const after = readFact(placeOf(day, next)?.category);
+    if (before.state !== "present" || after.state !== "present") continue;
+
+    const twoMeals =
+      ctx.params.pacing.mealGrade[before.value] &&
+      ctx.params.pacing.mealGrade[after.value];
+    const family = CATEGORY_FAMILY[before.value];
+    const sameFamily = CATEGORY_FAMILY[after.value] === family;
+    const verdict = twoMeals
+      ? "blocking"
+      : sameFamily
+        ? ctx.params.pacing.consecutiveFamily[family]
+        : "permitted";
+    if (verdict === "permitted") continue;
+
+    const both = `${describePlace(placeOf(day, previous), previous.placeId)} then ${describePlace(placeOf(day, next), next.placeId)}`;
+    const data = {
+      family,
+      previousCategory: before.value,
+      category: after.value,
+      slotId: next.id,
+      previousSlotId: previous.id,
+      verdict,
+    };
+    found.push(
+      verdict === "blocking"
+        ? violation(
+            "rhythm.consecutive-same-family",
+            [next.id],
+            `${both} — a second sit-down meal at ${next.startTime}, ${timeToMinutes(next.startTime) - timeToMinutes(previous.endTime)} minutes after the first one ends. A day that eats twice in a row has served the same thing twice; make the second stop something else.`,
+            data,
+          )
+        : advisory(
+            "rhythm.consecutive-same-family",
+            [next.id],
+            `${both} are both ${family} stops, one after the other. Not wrong — sometimes it is exactly the point — but it is the same texture twice, and worth a word.`,
+            data,
+          ),
     );
   }
   return found;

@@ -379,9 +379,10 @@ export const RULE_IDS = [
   "pacing.no-breather",
   "pacing.wanderer-overscheduled",
   "pacing.long-gap-without-food",
-  // arc / rhythm — texture, and endings that land
+  // arc / rhythm — texture, endings that land, and adjacency
   "rhythm.alternating-texture",
   "rhythm.ending-without-landing",
+  "rhythm.consecutive-same-family",
   // meals
   "meal.outside-pattern-window",
   "meal.pattern-unknown",

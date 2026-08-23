@@ -16,7 +16,11 @@ import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
-import { PLACE_CATEGORIES } from "@/shared/vocabulary";
+import {
+  CATEGORY_FAMILY,
+  PLACE_CATEGORIES,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 /**
  * Offline recompose of the matrix — the $0 half of the CP2 proof.
@@ -511,6 +515,53 @@ async function main(): Promise<void> {
       floorN++;
     }
   }
+  /**
+   * ADJACENCY CENSUS (XXX-46, Session 16) — the fire-rate line the rule owes.
+   *
+   * Labelled as what it is: not a validator run (this harness has no forecast
+   * and no ephemeris, so half the rules would fire on absence), but the
+   * adjacency verdict applied to the composer's OWN category sequences using
+   * the rule's OWN tables. It answers the one question a green test cannot —
+   * does the composer still produce the shape, and does the rule agree with
+   * the days this harness has always called good?
+   *
+   * It is also where a narrowing got caught. The first version of this rule
+   * blocked the whole `table` family; run here it condemned day-2 and day-6
+   * for opening `cafes` → `restaurants` — coffee then brunch, a meal pattern
+   * this product ships by name. The fixtures were silent, because no
+   * founder-authored fixture happens to have that pair.
+   */
+  const adjacencyRows: string[] = [];
+  let blocking = 0;
+  let advisories = 0;
+  for (const k of keys) {
+    const seq = catSeq.get(k)!;
+    for (let i = 1; i < seq.length; i++) {
+      const a = seq[i - 1] as PlaceCategory;
+      const b = seq[i] as PlaceCategory;
+      if (!PLACE_CATEGORIES.includes(a) || !PLACE_CATEGORIES.includes(b)) continue;
+      const twoMeals =
+        GRAMMAR_PARAMS.pacing.mealGrade[a] && GRAMMAR_PARAMS.pacing.mealGrade[b];
+      const family = CATEGORY_FAMILY[a];
+      const verdict = twoMeals
+        ? "blocking"
+        : CATEGORY_FAMILY[b] === family
+          ? GRAMMAR_PARAMS.pacing.consecutiveFamily[family]
+          : "permitted";
+      if (verdict === "permitted") continue;
+      if (verdict === "blocking") blocking++;
+      else advisories++;
+      adjacencyRows.push(
+        `    ${verdict.toUpperCase().padEnd(9)} ${k.padEnd(17)}${a} → ${b}`,
+      );
+    }
+  }
+  console.log(
+    `  adjacency census [rule tables over composed sequences]: ${blocking} blocking, ${advisories} advisory` +
+      `${blocking === 0 ? "  → PASS (no recomposed day is refused)" : "  → FAIL"}`,
+  );
+  for (const row of adjacencyRows) console.log(row);
+  if (blocking > 0) process.exitCode = 1;
   console.log(
     `  structural floor from the meal pattern alone: mean=${(floorSum / Math.max(1, floorN)).toFixed(3)} of the ${cmpMean.toFixed(3)} measured`,
   );
