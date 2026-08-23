@@ -1041,6 +1041,66 @@ beat silent ones:** a traveller who knows the edge of a promise can work
 around it; one who finds it by sitting down in a wine bar has been told
 something untrue by omission.
 
+## Step 4 — CP4: the founder's session (phone)
+
+**The room is live and serving the new surface.**
+
+```
+http://192.168.2.10:3000/tasting
+```
+
+Same Wi-Fi, phone browser, the usual passphrase.
+
+**Verified before handing over, not assumed** — Session 14 lost time to a
+stale dev server still serving pre-theme code, and the lesson was that a
+handover claim must be checked:
+
+- `/tasting` returns **200** on both localhost and the LAN address;
+- the served client bundle actually contains the new surface — `What's the
+  plan`, `What are you into`, `drinking-focused venues`, `Nothing was
+  generated` all present in the shipped chunks;
+- `/api/tasting/profile` and `/api/tasting/parse` return **401** without a
+  session cookie, which is the gate working rather than a fault.
+
+### 4.1 What is different this time
+
+This is **not a vet — it is a USE.** The acceptance question is XXX-43's own:
+*"does this feel like MINE"* — the question the Session 14 vet could not even
+ask, because there was no way to tell the app anything.
+
+1. **You onboard through your own interview.** Six questions, about a minute,
+   skip any of them. This is where "I don't drink" becomes permanent — by
+   tap, never by parse.
+2. **You type a real request** in your own words. The reading comes back as
+   chips you can correct **before anything is spent** — a misread costs one
+   tap, not one generation.
+3. **You get YOUR day.** Not a persona's. The persona dropdown is behind the
+   gear and nowhere else.
+
+### 4.2 What to look at
+
+| what | the verdict it answers |
+|---|---|
+| **the interview** | sixty seconds, or too long? Are these the questions you'd want asked? |
+| **the chips after you type** | did it hear you? Is correcting a misread cheaper than regenerating? |
+| **your no-alcohol day** | zero bars — and the honest line about wine slipping through. Does honesty read as care or as excuse-making? |
+| **Thai and Italian across two or three days** | the rotation ruling. Do both show up, or does one dominate the way it did at CP3? |
+| **the day itself** | one note at the foot instead of eleven above. Does the day arrive before the caveats now? |
+| **a refusal** | ask for the islands in October. Does the refusal sound like a person? |
+
+### 4.3 Known limits, said before you find them
+
+- **A wine bar can still reach a no-alcohol day** (XXX-44). The app says so
+  itself on any constrained day. Measured at 742 of 19,286 restaurants;
+  the fix is free and is next session's first commit.
+- **Dietary leans, it does not promise.** 253 vegetarian and 116 halal venues
+  are tagged; a directory tag is not a certification and the day says so.
+- **Verdicts go IN THE APP**, not in chat — Session 12's process note stands:
+  findings that live only in chat are findings the miners never see.
+
+**Spend before this evening: $1.5237 of the $15 gate.** A generation is about
+$0.50, so ten days is about $5 and leaves room.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
