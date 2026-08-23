@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CUISINE_TAGS } from "@/shared/cuisine";
+import { INTEREST_TAGS } from "@/shared/persona";
 import { PLACE_CATEGORIES } from "@/shared/vocabulary";
 import { checkGate, gateResponse } from "@/server/tasting/gate";
 import { runTastingGeneration } from "@/server/tasting/generate";
@@ -52,6 +53,8 @@ const bodySchema = z.strictObject({
   /** Per-day constraints from the parsed chat request. */
   excludedCategories: z.array(z.enum(PLACE_CATEGORIES)).default([]),
   lovedCuisines: z.array(z.enum(CUISINE_TAGS)).default([]),
+  /** What the traveller asked to DO today — overrides standing gravity. */
+  wants: z.array(z.enum(INTEREST_TAGS)).default([]),
   /** Trip circumstance. `null` = unknown, and the room says so. */
   lodging: z
     .strictObject({ lat: z.number(), lng: z.number() })

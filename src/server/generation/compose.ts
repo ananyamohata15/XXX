@@ -755,6 +755,8 @@ export function buildSkeleton(
   // --- 3. choose categories, in time order --------------------------------
   const usedFamilies = new Set<CategoryFamily>();
   if (elected !== null) usedFamilies.add(CATEGORY_FAMILY[elected.category]);
+  /** The family of the step placed immediately before the current one. */
+  let previousFamily: CategoryFamily | null = null;
   /**
    * Evening viability now lives in ONE place — `arc.ts:EVENING_VIABLE`
    * (XXX-40, Session 14 CP0 census).
@@ -995,7 +997,16 @@ export function buildSkeleton(
        */
       licensedFamily = licensedFamilyFor(usedFamilies);
       categories = demoteRatherThanDrop(
-        forEvening(closeCategories(persona, rollFor("close", at)), item.window),
+        forEvening(
+          closeCategories(
+            persona,
+            rollFor("close", at),
+            // "Did we just eat?" — the guard `pickContrast` already applies
+            // in the middle of the day, finally reaching its end.
+            previousFamily === "table",
+          ),
+          item.window,
+        ),
         // The family licence: a dominant traveller's own texture counts as
         // fresh for the CLOSE, so the day may bookend on it — but only once
         // the day already holds its three textures. Everything else is
@@ -1017,6 +1028,13 @@ export function buildSkeleton(
 
     const primary = categories[0];
     usedFamilies.add(CATEGORY_FAMILY[primary]);
+    /**
+     * The family of the step just placed, so the NEXT step can ask what it
+     * follows (XXX-43 CP4 defect 3). `usedFamilies` cannot answer this: it is
+     * a set of everything the day has touched, and "did we just eat" is a
+     * question about ORDER, not membership.
+     */
+    previousFamily = CATEGORY_FAMILY[primary];
     /**
      * A COMPOSITE BLOCK is sized by its own curated range (XXX-38, the ruled
      * owner-swap) and takes as much of its window as the day allows, up to

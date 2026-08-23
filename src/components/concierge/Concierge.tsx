@@ -17,6 +17,7 @@
 
 import { useState } from "react";
 import { Button, Chip, Field, Label } from "@/components/ui/primitives";
+import { composeSentence } from "./compose-sentence";
 import { Interview } from "./Interview";
 import { Workshop } from "./Workshop";
 import { DayView } from "./DayView";
@@ -38,13 +39,22 @@ type Screen =
   | { name: "working" }
   | { name: "day"; outcome: TastingOutcome };
 
-/** The chip rail — the common moves, in the founder's words, not ours. */
-const QUICK: { label: string; text: string }[] = [
-  { label: "Today", text: "a day out today" },
-  { label: "This weekend", text: "a day out this weekend" },
-  { label: "Outdoors", text: "somewhere outdoors" },
-  { label: "Something easy", text: "an easy day, nothing packed" },
-  { label: "You pick", text: "surprise me" },
+/**
+ * The chip rail — the common moves, in the founder's words, not ours.
+ *
+ * A chip contributes a PHRASE that composes into the sentence, rather than
+ * replacing it (XXX-43 CP4 defect 2). The first build called
+ * `readIt(chip.text)`, which discarded whatever had been typed and parsed the
+ * canned string alone — so tapping a chip after typing threw the typed words
+ * away, and tapping two chips kept only the second. Chips must add signals,
+ * never swap them.
+ */
+const QUICK: { label: string; phrase: string }[] = [
+  { label: "Today", phrase: "today" },
+  { label: "This weekend", phrase: "this weekend" },
+  { label: "Outdoors", phrase: "somewhere outdoors" },
+  { label: "Something easy", phrase: "an easy day, nothing packed" },
+  { label: "You pick", phrase: "surprise me" },
 ];
 
 const todayIso = () => {
@@ -57,6 +67,8 @@ export function Concierge() {
   const [screen, setScreen] = useState<Screen>({ name: "gate" });
   const [secret, setSecret] = useState("");
   const [text, setText] = useState("");
+  /** Chips currently contributing to the sentence, in tap order. */
+  const [chips, setChips] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<TasteProfile>(EMPTY_PROFILE);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -177,6 +189,7 @@ export function Concierge() {
           useProfile: request !== null,
           excludedCategories: request?.excludedCategories ?? [],
           lovedCuisines: request?.lovedCuisines ?? [],
+          wants: request?.wants ?? [],
           theme: themeFor(request?.theme ?? themeKey),
           lodging: lodgingOn ? { lat: 43.6517, lng: -79.3817 } : null,
         }),
@@ -288,19 +301,46 @@ export function Concierge() {
           <Field
             value={text}
             onChange={setText}
-            onSubmit={() => text.trim() && void readIt(text)}
+            onSubmit={() => {
+              const sentence = composeSentence(text, chips);
+              if (sentence.length > 0) void readIt(sentence);
+            }}
             placeholder="Park day with friends Saturday if the weather's good, I don't drink, love Thai…"
           />
           <div className="flex flex-wrap gap-2">
-            {QUICK.map((q) => (
-              <Chip key={q.label} onClick={() => void readIt(q.text)}>
-                {q.label}
-              </Chip>
-            ))}
+            {QUICK.map((q) => {
+              const on = chips.includes(q.phrase);
+              return (
+                <Chip
+                  key={q.label}
+                  on={on}
+                  onClick={() =>
+                    setChips((cur) =>
+                      on
+                        ? cur.filter((c) => c !== q.phrase)
+                        : [...cur, q.phrase],
+                    )
+                  }
+                >
+                  {q.label}
+                </Chip>
+              );
+            })}
           </div>
+          {/* What will actually be read, shown before it is read. A chip that
+              silently rewrote the sentence is how the founder's words went
+              missing. */}
+          {chips.length > 0 && (
+            <p className="text-muted text-[0.8rem] font-light">
+              I&apos;ll read: {composeSentence(text, chips)}
+            </p>
+          )}
           <Button
-            onClick={() => text.trim() && void readIt(text)}
-            disabled={text.trim().length === 0}
+            onClick={() => {
+              const sentence = composeSentence(text, chips);
+              if (sentence.length > 0) void readIt(sentence);
+            }}
+            disabled={composeSentence(text, chips).length === 0}
           >
             Plan it
           </Button>
@@ -392,6 +432,17 @@ function ConfirmChips({
         Drop anything I got wrong.
       </p>
       <div className="flex flex-wrap gap-2">
+        {request.wants.map((w) => (
+          <Chip
+            key={w}
+            on
+            onRemove={() =>
+              drop({ wants: request.wants.filter((x) => x !== w) })
+            }
+          >
+            {w.replace("_", " ")}
+          </Chip>
+        ))}
         {request.date !== null && (
           <Chip on onRemove={() => drop({ date: null })}>
             {request.date}

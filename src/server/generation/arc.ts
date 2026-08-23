@@ -619,6 +619,34 @@ export function warmupCategories(
 export function closeCategories(
   persona: Persona,
   dice: () => number,
+  /**
+   * Is the step immediately before the close already a FOOD stop? (XXX-43,
+   * Session 15 CP4 defect 3.)
+   *
+   * THE DEFECT, from the founder's own day: dinner at Simpl Things 18:45,
+   * then Tibet Kitchen 20:25 as the close — food after food, ending the day
+   * on the texture it had just served.
+   *
+   * Nothing caught it, and the reason is a PREDICATE-REACH asymmetry rather
+   * than a missing rule. `pickContrast` (below) filters out food categories
+   * AND families already used. `closeCategories` did neither: it appended
+   * `restaurants` unconditionally as the ranked tail. So the same guard that
+   * protects the middle of the day was absent at its end.
+   *
+   * Why the two grammar rules that might have caught it did not, measured on
+   * that day: the food cap counts TOTALS (3 food stops against a `classic`
+   * allowance of 4 — under the cap), and the texture rule counts DISTINCT
+   * FAMILIES over four consecutive stops (markets, historic_sites,
+   * restaurants, restaurants = 3 distinct, meeting `minTextureFamilies`).
+   * Neither looks at ADJACENCY, so two table stops back to back are
+   * invisible to both. That gap is real and reported separately; this fix
+   * stops composition producing the day in the first place.
+   *
+   * Narrow on purpose: closing on a restaurant is often exactly right — a
+   * late dinner IS a landing. The defect is only ever a food close that
+   * FOLLOWS food.
+   */
+  previousIsFood = false,
 ): PlaceCategory[] {
   /**
    * `scenic_viewpoints` joins the CLOSE list (XXX-37), and it is the most
@@ -659,7 +687,12 @@ export function closeCategories(
     dice,
     COMPOSE_PARAMS.dice.close,
   );
-  return [...drawn, "restaurants"];
+  /**
+   * The table tail is offered only when the day did not just eat. Dropping
+   * it leaves five experience categories, so the close is never starved —
+   * it simply cannot be a second dinner.
+   */
+  return previousIsFood ? [...drawn] : [...drawn, "restaurants"];
 }
 
 export type { CategoryFamily };

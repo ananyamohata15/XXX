@@ -17,6 +17,7 @@
 
 import type { CuisineTag } from "./cuisine";
 import type { DietaryTag } from "./dietary";
+import type { InterestTag } from "./persona";
 import type { PlaceCategory } from "./vocabulary";
 
 /** Who the day is for. Shapes pacing and party-size judgement, nothing more. */
@@ -32,6 +33,28 @@ export type PartyKind = (typeof PARTY_KINDS)[number];
  * as "Saturday, keep it cheap" with the budget later removed.
  */
 export interface ParsedDayRequest {
+  /**
+   * What the traveller asked to DO (XXX-43, Session 15 CP4 defect 1).
+   *
+   * THE HOLE THIS FILLS, and it was mine. The first contract had fields for
+   * what a sentence REFUSES, when it happens, who it is for, and what it
+   * costs — and none for what it WANTS. So when the founder typed *"shopping,
+   * pub hopping and food for today"*, the parser had nowhere to put
+   * "shopping" or "pub hopping". Only "for today" survived, as a date.
+   *
+   * The trace proves it rather than suggesting it: his day recorded
+   * `theme: "venue"`, `theme_origin: "derived"` — no request — and an anchor
+   * elected on `markets` because *"food is this traveller's first
+   * interest"*, which is his stored PROFILE speaking, not his sentence. The
+   * words were not overwritten downstream; they were dropped at the contract,
+   * because there was no field to hold them.
+   *
+   * Expressed as INTEREST TAGS rather than categories, because that is the
+   * vocabulary the engine already reasons in: gravity → `categoryAffinity` →
+   * the palette. A per-day `wants` overrides the profile's standing gravity
+   * for that day, which is exactly what "today I want to do X" means.
+   */
+  wants: InterestTag[];
   /** A theme key the vocabulary knows, or null for concierge's choice. */
   theme: string | null;
   /** "YYYY-MM-DD", already resolved against today by the engine. */
@@ -51,6 +74,7 @@ export interface ParsedDayRequest {
 }
 
 export const EMPTY_REQUEST: ParsedDayRequest = {
+  wants: [],
   theme: null,
   date: null,
   budgetMax: null,
@@ -113,4 +137,36 @@ export function conflictsWithProfile(
   requestedCategories: readonly PlaceCategory[],
 ): PlaceCategory[] {
   return requestedCategories.filter((c) => profileExcluded.includes(c));
+}
+
+/**
+ * Categories a stated INTEREST implies, for the conflict check.
+ *
+ * This is what finally lets `conflictsWithProfile` fire. It was written at
+ * CP1, tested, and could never run — the contract had nothing to compare
+ * against a standing exclusion, which the parse route recorded honestly as a
+ * dead branch rather than wiring a guard that could not trip. With `wants` it
+ * has an input: a traveller who says "pub hopping" while their profile
+ * excludes bars is asking a question only they can answer.
+ */
+export const INTEREST_IMPLIES: Partial<Record<InterestTag, PlaceCategory[]>> = {
+  nightlife: ["nightlife_bars"],
+  shopping: ["shopping"],
+  markets: ["markets"],
+  art: ["museums_galleries"],
+  history: ["historic_sites"],
+  nature: ["parks"],
+  views: ["scenic_viewpoints"],
+  food: ["restaurants"],
+};
+
+/** The categories a set of stated wants asks for. */
+export function categoriesWanted(
+  wants: readonly InterestTag[],
+): PlaceCategory[] {
+  const out: PlaceCategory[] = [];
+  for (const w of wants) {
+    for (const c of INTEREST_IMPLIES[w] ?? []) if (!out.includes(c)) out.push(c);
+  }
+  return out;
 }

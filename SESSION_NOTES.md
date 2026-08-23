@@ -1101,6 +1101,122 @@ ask, because there was no way to tell the app anything.
 **Spend before this evening: $1.5237 of the $15 gate.** A generation is about
 $0.50, so ten days is about $5 and leaves room.
 
+### 4.4 CP4 founder findings — traced, and one root was not what we suspected
+
+Three defects. The trace of the founder's own day (`f5b8d4cf`, 2026-08-23
+13:09, $0.5152) is the evidence for all of it.
+
+**His day:** Rise Up Foods (markets) → Thai Barn Na (restaurants) → Popbox
+MicroMrkt (markets) → Culturas Mural (historic_sites) → Simpl Things
+(restaurants) → Tibet Kitchen (restaurants).
+
+#### Defect 1 — the parse never reached generation, and the reason was mine
+
+The suspicion was *"chip state overwrites parsed state before the request is
+built"*. **The trace says otherwise, and the real cause is worse.**
+
+Recorded on that day: `theme: "venue"`, `theme_origin: "derived"` — i.e. NO
+theme was requested — and `elected_anchor: {category: "markets", reason:
+"food is this traveller's first interest"}`. That reason is his stored
+PROFILE speaking. The persona identity (`3670177346`) matches neither
+`day-1-jays` nor his current profile, because he edited the profile after
+generating — so the profile path DID work.
+
+**The words were not overwritten downstream. They were dropped at the
+contract, because there was no field to hold them.** `ParsedDayRequest` had
+`excludedCategories` for what a sentence REFUSES and **nothing for what it
+WANTS**. So "shopping" and "pub hopping" had nowhere to go; only "for today"
+survived, as a date. "Food" appeared to survive purely by coincidence — his
+profile's first interest is food.
+
+I had recorded exactly this hole in the parse route's own comment — *"the
+parse contract has a field for what a sentence REFUSES and none for what it
+WANTS"* — while treating it as a limitation of the conflict check. It was
+not. It was the whole positive half of the product, missing.
+
+**Fixed**: `wants: InterestTag[]` on the contract, expressed as interest tags
+because that is the vocabulary the engine already reasons in (gravity →
+`categoryAffinity` → palette). A per-day `wants` **overrides** the profile's
+standing gravity rather than merging — *"today I want shopping and pubs"* is
+a statement about today, and a default that outranked an explicit request
+would make the request decorative.
+
+**Side effect worth having:** `conflictsWithProfile` was written at CP1,
+tested, and could never fire for want of an input. With `wants` it has one —
+"pub hopping" against a no-alcohol profile is now detectable as the question
+only the traveller can answer.
+
+#### Defect 2 — chips replaced the sentence instead of composing
+
+Real, separate, and exactly as reported. The rail called
+`readIt(chip.text)` — parsing the canned string ALONE. Tapping a chip after
+typing discarded the typed words; tapping two kept only the second.
+
+**Fixed**: chips are now toggles contributing a PHRASE, and
+`composeSentence(typed, chips)` joins them into the one sentence the parser
+reads. Extracted to its own module so the fix is testable without mounting
+the client — a composition bug verifiable only by clicking is a bug that
+comes back. The landing screen now also SHOWS the composed sentence before
+it is read.
+
+*Test, as asked:* typed text + two chips → all three signals present in the
+parsed request, and the parser demonstrably receives all three fragments.
+
+#### Defect 3 — food after dinner: a predicate-reach asymmetry
+
+Tibet Kitchen (restaurants) seated as the ACTIVITY close at 20:25, straight
+after dinner at Simpl Things 18:45–20:15.
+
+**The food predicate DOES reach** — Session 11 already fixed
+`pacing.food-stops-exceeded` to count food venues seated as activities (*"a
+food venue is a food stop wherever it sits"*). It did not fire because the
+day had **3 food stops against `classic`'s `maxFoodStops: 4`** — under the
+cap.
+
+**The texture rule also passed**, and legitimately: it counts DISTINCT
+FAMILIES over four consecutive stops, and markets → historic_sites →
+restaurants → restaurants is 3 distinct, meeting `minTextureFamilies: 3`.
+
+**So the mechanism is: neither rule looks at ADJACENCY.** The cap counts
+totals; the texture rule counts variety in a window. Two table-family stops
+back to back are invisible to both.
+
+**The reachable fix, and it IS predicate reach.** `pickContrast` filters out
+food categories AND already-used families. `closeCategories` did **neither** —
+it appended `restaurants` unconditionally as the ranked tail. The same guard
+that protects the middle of the day was simply absent at its end.
+`closeCategories` now takes `previousIsFood` and drops the table tail when the
+step before was food; five experience categories remain, so the close is
+never starved. Composition stops producing the day.
+
+**Still owed, and reported rather than smuggled in:** no grammar rule
+forbids consecutive same-family stops. The composition fix prevents the
+common case; a day that reaches that shape another way would still validate
+clean. A `rhythm.consecutive-same-family` rule is proposable but is a new
+blocking rule over every golden day, which is a ruling, not a patch.
+
+#### Defect 4 (mine, found while tracing) — the trace named the wrong persona
+
+The metadata recorded `persona_key: "day-1-jays"` — the unused Workshop
+default — on a day built from the founder's profile. A reader mining "which
+persona produced this day" would have got a confident wrong answer. This is
+**Session 12's seed defect wearing new clothes**: the record naming something
+that did not build the day. Now records `"profile"` plus a `persona_source`
+and the day's `wants`.
+
+### 4.5 For the founder-facing notes
+
+**Five of six stops carried `hours.unknown` + `validity.status-unverified`.**
+That is the honesty layer working exactly as designed — the day said what it
+could not confirm rather than implying it had checked. It is also the
+clearest possible evidence for prioritising **link coverage**: only one stop
+(Rise Up Foods) had verified hours and business status, because only linked
+venues get Google Details.
+
+**The Sep 1–3 re-discovery is nine days out** and now carries the vocabulary
+v2 cells and the islands cells — so the run that lifts this coverage is
+already scheduled and already scoped wider than the last one.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:

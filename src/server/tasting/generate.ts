@@ -51,6 +51,16 @@ export interface TastingRequest {
   /** Per-day constraints from the parsed chat request, merged with the profile's. */
   excludedCategories?: PlaceCategory[];
   lovedCuisines?: CuisineTag[];
+  /**
+   * What the traveller asked to DO today (XXX-43 CP4 defect 1).
+   *
+   * OVERRIDES the profile's standing gravity for this day rather than merging
+   * with it, and that is the point: "today I want shopping and pubs" is a
+   * statement about today, not an amendment to who they are. The profile is
+   * what they want WHEN THEY HAVE NOT SAID — a default, and a default that
+   * outranked an explicit request would make the request decorative.
+   */
+  wants?: InterestTag[];
   date: string;
   budgetMax: number | null;
   seed: number | null;
@@ -72,7 +82,8 @@ export interface TastingRequest {
 export type { TastingMeter, TastingOutcome } from "@/shared/tasting";
 import type { TastingMeter, TastingOutcome } from "@/shared/tasting";
 import { readProfile } from "@/server/profile/repo";
-import { personaFromProfile } from "@/shared/profile";
+import { MAX_INTERESTS, personaFromProfile } from "@/shared/profile";
+import type { InterestTag } from "@/shared/persona";
 import { mergeConstraints } from "@/shared/intent";
 import type { CuisineTag } from "@/shared/cuisine";
 import type { PlaceCategory } from "@/shared/vocabulary";
@@ -283,10 +294,20 @@ export async function runTastingGeneration(
     ...new Set([...(profile?.lovedCuisines ?? []), ...(input.lovedCuisines ?? [])]),
   ];
 
+  const basePersona = profile === null ? persona : personaFromProfile(profile);
+  /**
+   * A stated want beats a standing profile for the day it was stated. Capped
+   * at the three positions `GRAVITY_WEIGHTS` defines — a fourth would weigh
+   * zero and read as "recorded but ignored".
+   */
+  const wants = (input.wants ?? []).slice(0, MAX_INTERESTS);
+  const dayPersona =
+    wants.length > 0 ? { ...basePersona, gravity: wants } : basePersona;
+
   const request: GenerationRequest = {
     city: "toronto",
     date: input.date,
-    persona: profile === null ? persona : personaFromProfile(profile),
+    persona: dayPersona,
     budgetBand:
       input.budgetMax === null
         ? null
@@ -360,7 +381,17 @@ export async function runTastingGeneration(
   const context = buildTastingContext({
     day: outcome.day,
     findings: outcome.findings,
-    personaKey: input.personaKey,
+    /**
+     * WHICH PERSONA BUILT THE DAY (XXX-43 CP4 finding).
+     *
+     * This recorded `input.personaKey` unconditionally — so the founder's own
+     * day, generated from his profile, still logged `day-1-jays`: the unused
+     * Workshop default. A reader mining "which persona produced this day"
+     * would have got a confident wrong answer, which is Session 12's seed
+     * defect wearing new clothes — a record naming something that did not
+     * build the day.
+     */
+    personaKey: input.useProfile ? "profile" : input.personaKey,
   });
   const { data: traceRow, error: traceError } = await supabase
     .from("traces")

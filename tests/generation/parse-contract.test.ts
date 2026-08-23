@@ -9,10 +9,12 @@ import {
 import { UsageRecorder } from "@/server/generation/llm";
 import {
   EMPTY_REQUEST,
+  categoriesWanted,
   conflictsWithProfile,
   mergeConstraints,
   type ParsedDayRequest,
 } from "@/shared/intent";
+import { composeSentence } from "@/components/concierge/compose-sentence";
 import { CUISINE_TAGS } from "@/shared/cuisine";
 import { PLACE_CATEGORIES } from "@/shared/vocabulary";
 
@@ -46,6 +48,7 @@ function fakeClient(replies: unknown[]) {
 }
 
 const reply = (over: Record<string, unknown> = {}) => ({
+  wants: [],
   theme: null,
   date: null,
   budgetMax: null,
@@ -270,5 +273,82 @@ describe("the contract's vocabularies are the real ones", () => {
     // If these drift, the parser can accept a value the engine cannot use.
     expect(PLACE_CATEGORIES).toContain("nightlife_bars");
     expect(CUISINE_TAGS).toContain("thai");
+  });
+});
+
+/**
+ * DEFECT 1 & 2, from the founder's CP4 session (XXX-43).
+ *
+ * He typed "shopping, pub hopping and food for today" and got a day with no
+ * shopping and no pubs. The trace showed why: `theme: "venue"`,
+ * `theme_origin: "derived"`, anchor elected on `markets` because "food is
+ * this traveller's first interest" — his stored PROFILE, not his sentence.
+ *
+ * The words were not overwritten downstream. **There was no field to put them
+ * in.** The contract had `excludedCategories` for what a sentence refuses and
+ * nothing for what it wants, so two of his three signals died at the
+ * boundary and the third ("food") coincidentally matched his profile.
+ */
+describe("what the traveller ASKED FOR reaches the request", () => {
+  it("carries every want in the founder's own sentence", async () => {
+    const { outcome } = await run(
+      [reply({ wants: ["shopping", "nightlife", "food"], date: "2026-08-23" })],
+      "shopping, pub hopping and food for today",
+    );
+    expect(outcome.status).toBe("parsed");
+    if (outcome.status !== "parsed") return;
+    // All three. The defect was that two of them had nowhere to go.
+    expect(outcome.request.wants).toEqual(["shopping", "nightlife", "food"]);
+  });
+
+  it("composes typed text with two chips — all three signals survive", async () => {
+    // The founder's defect 2, at the layer that decides what gets parsed.
+    // Chips used to REPLACE the sentence: tapping one discarded the typed
+    // words, and tapping two kept only the second.
+    const sentence = composeSentence("shopping and pub hopping", [
+      "today",
+      "somewhere outdoors",
+    ]);
+    expect(sentence).toBe("shopping and pub hopping, today, somewhere outdoors");
+
+    const { outcome, calls } = await run(
+      [reply({ wants: ["shopping", "nightlife", "nature"], date: "2026-08-23" })],
+      sentence,
+    );
+    // The parser is handed everything, not the last thing tapped.
+    expect(calls[0]).toContain("shopping and pub hopping");
+    expect(calls[0]).toContain("today");
+    expect(calls[0]).toContain("somewhere outdoors");
+    if (outcome.status !== "parsed") throw new Error("expected a parse");
+    expect(outcome.request.wants).toHaveLength(3);
+  });
+
+  it("keeps typed text when no chip is tapped, and chips alone when nothing is typed", () => {
+    expect(composeSentence("just this", [])).toBe("just this");
+    expect(composeSentence("", ["today"])).toBe("today");
+    expect(composeSentence("  ", [])).toBe("");
+  });
+
+  it("cannot invent an interest outside the vocabulary", async () => {
+    const { outcome } = await run([reply({ wants: ["stargazing"] })], "stargazing");
+    expect(outcome.status).toBe("needs-clarification");
+  });
+});
+
+describe("a want that contradicts a standing constraint is a QUESTION", () => {
+  it("detects pub-hopping against a no-alcohol profile", () => {
+    // `conflictsWithProfile` was written at CP1 and could never fire, because
+    // nothing expressed what a sentence WANTED. With `wants` it has an input.
+    const wanted = categoriesWanted(["nightlife", "shopping"]);
+    expect(wanted).toContain("nightlife_bars");
+    expect(conflictsWithProfile(["nightlife_bars"], wanted)).toEqual([
+      "nightlife_bars",
+    ]);
+  });
+
+  it("stays silent when the want and the profile agree", () => {
+    expect(
+      conflictsWithProfile(["museums_galleries"], categoriesWanted(["shopping"])),
+    ).toEqual([]);
   });
 });
