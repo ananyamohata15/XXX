@@ -358,3 +358,21 @@ export function themeZoneSlugs(theme: DayTheme): readonly string[] {
       return experienceSpec(theme.experienceId).zones;
   }
 }
+
+/**
+ * A theme's name, for a person (XXX-43, Session 15).
+ *
+ * The surface used to print `Theme: toronto-islands (derived)` in monospace.
+ * That is an engine word and an engine concept ("derived" means the traveller
+ * did not ask for a theme) on the product surface. The id keeps its home in
+ * the Workshop; this is what a day is called out loud.
+ */
+export function themeLabel(id: string): string {
+  const thread = THREAD_SPECS.find((t) => t.id === id);
+  if (thread !== undefined) return thread.label;
+  const experience = EXPERIENCE_SPECS.find((e) => e.id === id);
+  if (experience !== undefined) return experience.label;
+  // `venue` and anything unnamed: a day built around one place has no title
+  // beyond the place, and inventing one would be decoration.
+  return "A day in Toronto";
+}

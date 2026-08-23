@@ -34,7 +34,23 @@ import {
 export const NARRATION_SOURCE = "anthropic:claude-sonnet-5";
 
 export interface TastingRequest {
+  /**
+   * A golden persona, for regression. The Workshop sends one; the product
+   * surface does not (XXX-43).
+   */
   personaKey: string;
+  /**
+   * Generate for the TRAVELLER rather than a persona (XXX-43).
+   *
+   * When true the persona is derived from the stored profile and the
+   * profile's constraints ride the request. This is the product path; the
+   * `personaKey` path is kept intact and byte-identical for regression, so
+   * the two never contend for the same field.
+   */
+  useProfile?: boolean;
+  /** Per-day constraints from the parsed chat request, merged with the profile's. */
+  excludedCategories?: PlaceCategory[];
+  lovedCuisines?: CuisineTag[];
   date: string;
   budgetMax: number | null;
   seed: number | null;
@@ -55,6 +71,11 @@ export interface TastingRequest {
 
 export type { TastingMeter, TastingOutcome } from "@/shared/tasting";
 import type { TastingMeter, TastingOutcome } from "@/shared/tasting";
+import { readProfile } from "@/server/profile/repo";
+import { personaFromProfile } from "@/shared/profile";
+import { mergeConstraints } from "@/shared/intent";
+import type { CuisineTag } from "@/shared/cuisine";
+import type { PlaceCategory } from "@/shared/vocabulary";
 
 /**
  * The preview path. Same mapping, same components, same verdict
@@ -243,10 +264,29 @@ export async function runTastingGeneration(
     llmUsage: usage,
   };
 
+  /**
+   * The traveller's standing facts, when the product surface asked for them.
+   *
+   * Constraints compose MONOTONICALLY: the profile's exclusions union the
+   * day's, and the day can only add. A per-day request cannot lift a standing
+   * tier-1 constraint — that ruling is enforced here, at the boundary, rather
+   * than trusted to each caller.
+   */
+  const profile = input.useProfile
+    ? (await readProfile(deps.supabase)).profile
+    : null;
+  const excluded = mergeConstraints(
+    profile?.excludedCategories ?? [],
+    input.excludedCategories ?? [],
+  );
+  const loved = [
+    ...new Set([...(profile?.lovedCuisines ?? []), ...(input.lovedCuisines ?? [])]),
+  ];
+
   const request: GenerationRequest = {
     city: "toronto",
     date: input.date,
-    persona,
+    persona: profile === null ? persona : personaFromProfile(profile),
     budgetBand:
       input.budgetMax === null
         ? null
@@ -259,6 +299,10 @@ export async function runTastingGeneration(
     ...(input.lodging === undefined || input.lodging === null
       ? {}
       : { lodging: input.lodging }),
+    // Optional-and-absent: a request with no constraints must be identical
+    // to one from before these fields existed.
+    ...(excluded.length === 0 ? {} : { excludedCategories: excluded }),
+    ...(loved.length === 0 ? {} : { lovedCuisines: loved }),
   };
 
   const outcome = await generateDay(deps, request);
