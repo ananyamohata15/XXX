@@ -655,6 +655,19 @@ export async function generateDay(
         dusk,
         repair,
         request.lovedCuisines ?? [],
+        // Seeded rotation, so a two-cuisine traveller is not shown the same
+        // one every day. Reproducible from the trace's recorded seed.
+        (request.lovedCuisines ?? []).length > 0
+          ? diceIndex(
+              {
+                seed,
+                identity: personaIdentity(request.persona),
+                site: "cuisine-lead",
+                context: request.date,
+              },
+              (request.lovedCuisines ?? []).length,
+            )
+          : 0,
       );
 
       /**
@@ -1167,6 +1180,15 @@ export function allocateMenu(
    * to be chosen.
    */
   lovedCuisines: readonly CuisineTag[] = [],
+  /**
+   * Which named cuisine LEADS the reservation today (XXX-43, CP3 ruling).
+   *
+   * Seeded, so the lead rotates across days and a traveller who named two
+   * cuisines is not shown the same one every time. Rotation is structural
+   * fairness, not weighting: nothing about Italian outranks Thai, so nothing
+   * should make Italian arrive first three days running.
+   */
+  cuisineLeadOffset = 0,
 ): Candidate[] {
   const byCategory = new Map<PlaceCategory, Candidate[]>();
   for (const candidate of kept) {
@@ -1183,14 +1205,65 @@ export function allocateMenu(
   const spent = new Set<string>();
 
   if (lovedCuisines.length > 0) {
-    const loved = kept
-      .filter((c) => c.cuisines.some((x) => lovedCuisines.includes(x)))
-      .sort((a, b) => b.score - a.score || a.place.id.localeCompare(b.place.id));
-    const take = Math.min(CUISINE_MENU_DEPTH, loved.length, size);
-    for (let i = 0; i < take; i += 1) {
-      out.push(loved[i]!);
-      spent.add(loved[i]!.place.id);
+    /**
+     * ROUND-ROBIN ACROSS THE NAMED CUISINES (CP3 ruling), not top-N overall.
+     *
+     * The first build took the two highest-scoring loved-cuisine venues,
+     * whichever cuisine they came from — and the live proof showed what that
+     * costs: a profile naming Thai AND Italian got Italian on all three days,
+     * because Italian has 754 pooled places to Thai's 398 and simply wins on
+     * volume. Nothing was broken; the traveller had just named two things and
+     * been shown one, which reads as not listening.
+     *
+     * So the reservation deals ONE PER CUISINE before it deals a second of
+     * any, and the lead rotates by seed. Structural fairness: the mechanism
+     * cannot prefer the deeper cuisine, rather than a weight tuned to hide
+     * that it does.
+     */
+    const rotated = lovedCuisines.map(
+      (_, i) =>
+        lovedCuisines[
+          (i + cuisineLeadOffset) % lovedCuisines.length
+        ]!,
+    );
+
+    /**
+     * A venue matching several named cuisines belongs to the FIRST it matches
+     * in today's rotation — a Thai place is also `asian`, and counting it
+     * under both would let one venue satisfy two cuisines' shares.
+     */
+    const byCuisine = new Map<CuisineTag, Candidate[]>();
+    for (const tag of rotated) byCuisine.set(tag, []);
+    const claimed = new Set<string>();
+    for (const candidate of kept) {
+      for (const tag of rotated) {
+        if (claimed.has(candidate.place.id)) break;
+        if (candidate.cuisines.includes(tag)) {
+          byCuisine.get(tag)!.push(candidate);
+          claimed.add(candidate.place.id);
+        }
+      }
     }
+    for (const list of byCuisine.values()) {
+      list.sort((a, b) => b.score - a.score || a.place.id.localeCompare(b.place.id));
+    }
+
+    const cursors = new Map<CuisineTag, number>();
+    let dealt = true;
+    while (out.length < Math.min(CUISINE_MENU_DEPTH, size) && dealt) {
+      dealt = false;
+      for (const tag of rotated) {
+        if (out.length >= Math.min(CUISINE_MENU_DEPTH, size)) break;
+        const list = byCuisine.get(tag)!;
+        const at = cursors.get(tag) ?? 0;
+        if (at >= list.length) continue;
+        out.push(list[at]!);
+        spent.add(list[at]!.place.id);
+        cursors.set(tag, at + 1);
+        dealt = true;
+      }
+    }
+
     // Drop the reserved picks from their categories' rotation lists.
     for (const [category, list] of byCategory) {
       byCategory.set(
@@ -1275,6 +1348,12 @@ export function buildMenus(
    * the engine and the fidelity harness both pass the request's own value.
    */
   lovedCuisines: readonly CuisineTag[] = [],
+  /**
+   * Which named cuisine leads today's reservations (CP3 ruling). Derived from
+   * the day's RESOLVED seed by the caller, so the rotation is reproducible
+   * from the trace like every other diced choice in this engine.
+   */
+  cuisineLeadOffset = 0,
 ): Menu[] {
   return skeleton.intents.map((intent) => {
     const struck = repair?.strikes.get(`s-${intent.id}`) ?? new Set<string>();
@@ -1370,6 +1449,7 @@ export function buildMenus(
         size,
         intent.licensedCategory,
         lovedCuisines,
+        cuisineLeadOffset,
       ),
     };
   });
