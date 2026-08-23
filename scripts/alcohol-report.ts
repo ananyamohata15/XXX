@@ -55,13 +55,20 @@ interface CategoriesFact {
 }
 
 /**
- * Leaves the source taxonomy files under Restaurant that are pubs by any
- * honest reading, and that `DRINKING_LABEL_PREFIXES` deliberately does NOT
- * claim. Counted every run so the exclusion is re-decided against a number
- * rather than forgotten — the failure mode is a limitation that quietly stops
- * being small.
+ * What the Gastropub ruling COSTS, printed every run (founder ruling,
+ * Session 16 CP1).
+ *
+ * These two leaves are filed by FSQ under Restaurant and are now inside the
+ * no-alcohol exclusion set, on the ground that the word's meaning is *pub*
+ * and that the two errors are not equal in size: one lost restaurant out of
+ * 19,286 against a teetotaller seated in a pub they refused.
+ *
+ * The ruling carries a REVISIT TRIGGER — a founder verdict naming a venue
+ * this wrongly excludes — so the count is kept in front of the reader rather
+ * than buried in the prefix table. A ruling whose price nobody can see is a
+ * preference.
  */
-const DECLINED_LEAVES = [
+const RULED_IN_LEAVES = [
   "Dining and Drinking > Restaurant > Gastropub",
   "Dining and Drinking > Restaurant > German Restaurant > Apple Wine Pub",
 ];
@@ -112,8 +119,8 @@ async function main() {
   let malformed = 0;
   const perPrefix = new Map<string, number>();
   for (const p of DRINKING_LABEL_PREFIXES) perPrefix.set(p, 0);
-  const declined = new Map<string, number>();
-  for (const l of DECLINED_LEAVES) declined.set(l, 0);
+  const ruledIn = new Map<string, number>();
+  for (const l of RULED_IN_LEAVES) ruledIn.set(l, 0);
   const perCategory = new Map<
     PlaceCategory,
     { total: number; focused: number; unknown: number; samples: string[] }
@@ -139,9 +146,9 @@ async function main() {
         perPrefix.set(prefix, (perPrefix.get(prefix) ?? 0) + 1);
       }
     }
-    for (const leaf of DECLINED_LEAVES) {
+    for (const leaf of RULED_IN_LEAVES) {
       if (labels.some((l) => l === leaf || l.startsWith(leaf + " > "))) {
-        declined.set(leaf, (declined.get(leaf) ?? 0) + 1);
+        ruledIn.set(leaf, (ruledIn.get(leaf) ?? 0) + 1);
       }
     }
     for (const m of mapped) {
@@ -223,15 +230,21 @@ async function main() {
   line("  DEAD RULE  = matches nothing in the pinned taxonomy. A defect.");
   line("  unused here = the branch exists; no Toronto venue is filed under it.");
 
-  head("declined on purpose — restaurant leaves that are pubs");
-  for (const leaf of DECLINED_LEAVES) {
-    line(`  ${String(declined.get(leaf) ?? 0).padStart(6)}  ${leaf}`);
+  head("what the Gastropub ruling costs — restaurant leaves ruled IN");
+  let ruledInTotal = 0;
+  for (const leaf of RULED_IN_LEAVES) {
+    const n = ruledIn.get(leaf) ?? 0;
+    ruledInTotal += n;
+    line(`  ${String(n).padStart(6)}  ${leaf}`);
   }
   line();
-  line("  These stay INSIDE a no-alcohol day. Including them means overriding");
-  line("  the source taxonomy with a private opinion about which restaurant");
-  line("  leaves are really bars — the call `CUISINE_PREFIXES` refused for");
-  line("  `Pizzeria`. Re-decide here, against these counts, not from memory.");
+  line(`  ${ruledInTotal} venues leave a no-alcohol day because of this ruling.`);
+  line("  Founder ruling, Session 16 CP1, overturning my argument to leave them");
+  line("  in: the word's meaning is pub, and one lost restaurant out of 19,286");
+  line("  is not the same size of error as a teetotaller seated in a pub they");
+  line("  refused. REVISIT TRIGGER: a founder verdict naming a venue this");
+  line("  wrongly excludes. The number above is what that verdict costs to");
+  line("  overturn, and it is printed here so it arrives with the verdict.");
 
   head("reconciliation with the number of record");
   line("  Session 15 recorded 742 of 19,286 pooled restaurants (3.85%) as");

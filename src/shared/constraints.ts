@@ -91,9 +91,9 @@ export function isFullyExcluded(
  * WHAT IS ACTUALLY LEFT, which is what this sentence must say. Our evidence
  * is what a directory FILED, not what a bar licence says. A restaurant whose
  * FSQ record carries no drinking label but which pours all evening is
- * invisible to every seam we have — and so, deliberately, are `Gastropub`
- * and `Apple Wine Pub`, two leaves the source taxonomy files under
- * Restaurant and we declined to override (see `DRINKING_LABEL_PREFIXES`).
+ * invisible to every seam we have. `Gastropub` and `Apple Wine Pub` were
+ * part of that gap too, until Session 16 CP1 ruled them into the exclusion
+ * set; what is left is the venue whose listing says nothing at all.
  *
  * The founder’s ruling stands and is why the sentence exists at all: say
  * so in-product rather than let him discover it. **Honest limits beat silent
@@ -178,15 +178,35 @@ export function owesLimitationNotice(
  *    `movement.ts`'s causality clause). A no-alcohol traveller provisioned at
  *    a liquor store is the same defect as one seated in a wine bar.
  *
- * DELIBERATELY OUT, and this is the residual gap the limitation line names:
- * `Dining and Drinking > Restaurant > Gastropub` and `… > German Restaurant >
- * Apple Wine Pub`. Both are pubs by any honest reading and both are filed by
- * FSQ under Restaurant. They are excluded because including them means
- * overriding the source taxonomy with a private opinion about which
- * restaurant leaves are really bars — the judgment call `CUISINE_PREFIXES`
- * refused for `Pizzeria`, and the argument is the same. One line each to
- * reverse; `scripts/alcohol-report.ts` prints their live counts every run so
- * the decision is re-made against numbers rather than forgotten.
+ * THE TWO RESTAURANT LEAVES THAT ARE PUBS — founder ruling, Session 16 CP1.
+ *
+ * `Gastropub` (85 in Toronto) and `… > German Restaurant > Apple Wine Pub`
+ * (0) are filed by FSQ under Restaurant. I argued them OUT, on the ground
+ * that including them means overriding the source taxonomy with a private
+ * opinion about which restaurant leaves are really bars — the judgment call
+ * `CUISINE_PREFIXES` refused for `Pizzeria`.
+ *
+ * **OVERRULED, and the reasoning of record is better than mine.** The word's
+ * meaning is *pub*. And on a HARD constraint the stakes are asymmetric: one
+ * lost restaurant out of 19,286 against a teetotaller seated in a pub they
+ * refused. That is the same logic as `closed_permanently` carrying no expiry
+ * — where the two errors are that unequal, the taxonomy's filing is not the
+ * question worth being precise about.
+ *
+ * The `Pizzeria` analogy fails on exactly that point, which is why my
+ * argument was wrong rather than merely outvoted: a pizzeria misfiled out of
+ * `italian` costs a traveller a PREFERENCE, and a preference is a weight. A
+ * pub misfiled out of the drinking set costs them a PROMISE.
+ *
+ * `Apple Wine Pub` is included under the same ruling rather than held for a
+ * separate one: the reasoning is word-for-word identical, it costs zero
+ * Toronto venues today, and leaving a known pub outside a set just widened
+ * for being-a-pub is the twin-drift shape again.
+ *
+ * **REVISIT TRIGGER, recorded so this is a ruling and not a preference:** a
+ * founder verdict naming a venue this wrongly excludes.
+ * `scripts/alcohol-report.ts` prints what the ruling COSTS on every run, so
+ * that verdict arrives with a number attached.
  */
 export const DRINKING_LABEL_PREFIXES: readonly string[] = [
   "Dining and Drinking > Bar",
@@ -212,6 +232,10 @@ export const DRINKING_LABEL_PREFIXES: readonly string[] = [
   "Retail > Food and Beverage Retail > Liquor Store",
   "Retail > Food and Beverage Retail > Beer Store",
   "Retail > Food and Beverage Retail > Wine Store",
+  // Founder ruling, Session 16 CP1 — see the note above. Filed under
+  // Restaurant by FSQ; a pub by the word's own meaning.
+  "Dining and Drinking > Restaurant > Gastropub",
+  "Dining and Drinking > Restaurant > German Restaurant > Apple Wine Pub",
 ];
 
 /**
