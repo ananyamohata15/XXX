@@ -903,6 +903,81 @@ persona matrix, determinism.
 gated before any interface code is written; the spec is published as its own
 checkpoint artifact.
 
+### 2.8 The screens — built
+
+`src/components/concierge/` (Concierge, Interview, DayView, Refusal,
+ProfileSheet, Workshop, Advisories), `src/components/ui/primitives.tsx`, the
+`/api/tasting/profile`, `/parse` and `/personas` routes, Jost via `next/font`,
+and a token set in `globals.css` carrying both themes.
+
+**On the stack, stated precisely rather than as advertised.** CP1 named
+"shadcn/ui on Radix". What shipped is **Radix + Vaul for behaviour** — focus
+management, dismissal, dialog semantics, drag physics — with the LOOK written
+here. shadcn is a copy-paste library whose value is its default styling, and
+its stock look is the opposite of the visual identity the founder asked for.
+Taking the primitives and not the theme is the honest version of that
+decision; recorded because it differs from what CP1 said.
+
+**One lint rule earned its keep.** `react-hooks/set-state-in-effect` caught a
+`useEffect` that loaded the profile on every screen change. It was also
+redundant — `enter()` already loads it — so the fix deleted the effect rather
+than silencing the rule.
+
+### 2.9 CHECKPOINT 3 — the live proof
+
+Three generations, **$1.5237** total, against the real pool, the real
+selector and the real narrator.
+
+| # | date | outcome | zero bars | backstop silent | cuisine cited |
+|---|---|---|---|---|---|
+| 1 | 2026-08-29 | ok, $0.4935 | ✓ | ✓ | italian |
+| 2 | 2026-09-05 | ok, $0.5213 | ✓ | ✓ | italian |
+| 3 | 2026-09-12 (islands) | ok, $0.5089 | ✓ | ✓ | italian |
+
+**The backstop stayed silent on all three, which is the result we wanted.**
+A day that ships means the palette narrowed upstream; the rule exists to make
+that provable rather than hoped for, not to do the work.
+
+**The ferry annotation FIRES LIVE.** Day 3 produced two named crossings —
+`FERRY — Jack Layton Ferry Terminal ⇄ Hanlan's Point · last boat 23:00`.
+Finding #4 is paid and proven against real data, not merely green in
+fixtures. Worth stating plainly because Session 14's rest stop was green in
+five tests and fired zero times.
+
+### 2.10 FINDING — the constraint is honoured, and a wine bar still reached the day
+
+Day 2 seated **Clandestino Wine Bar**. The constraint was not violated: the
+venue is mapped `restaurants`, `nightlife_bars` was excluded, and every seam
+did exactly what it was built to do.
+
+**The gap is the design's, not the plumbing's.** `excludedCategories` operates
+on our ten-category vocabulary, and *category* is a coarse proxy for *serves
+alcohol*. A traveller who says "I don't drink" is not asking us to avoid a
+taxonomy branch; they are asking not to be sat in a bar.
+
+Measured, so the size is known rather than feared: **130 of 19,286 mapped
+restaurants (0.67%) carry a name that reads as a drinking venue** — Mullins
+Irish Pub, Ten Restaurant & Wine Bar, Sushi Moto Sake & Wine Bar. Small, and
+not zero, and the founder would have met one on his second day.
+
+Deliberately NOT fixed by name-matching in this session. A regex over venue
+names would be a tier-3 guess wearing a tier-1 constraint's clothes, and it
+would fail in both directions — "Salad Bar" is not a bar, and a quiet room
+that serves cocktails is. **Proposed as its own ticket**: an
+alcohol-served FACT, from a source that knows, so the constraint reads a fact
+instead of inferring from a category. Recorded here with its measurement so
+the next session inherits the number, not the anecdote.
+
+### 2.11 Observation — Italian won all three days; Thai never surfaced
+
+The profile named both. Every day cited Italian. Not a defect — the
+reservation takes the highest-scoring loved-cuisine venues, Italian has 754
+pooled places against Thai's 398, and nothing promises rotation between two
+loved cuisines. But a traveller who names two and is shown one three times
+running will read it as not listening. Recorded as an open question for CP4's
+eye rather than tuned blind: does a stated set of cuisines deserve rotation
+across days, and if so, is that the die's job or the menu's?
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
