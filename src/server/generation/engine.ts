@@ -64,7 +64,14 @@ import {
 import { applyFounderGroundtruth } from "./groundtruth";
 import { environmentIsFair, selectTheme } from "./theme-select";
 import { readFerryTimetable } from "../city-facts/repo";
-import { EXPERIENCE_SPECS, themeId, themeZoneSlugs } from "@/shared/theme";
+import type { FerryTimetable } from "@/shared/city-facts";
+import { annotateFerryLegs } from "./ferry-legs";
+import {
+  EXPERIENCE_SPECS,
+  experienceSpec,
+  themeId,
+  themeZoneSlugs,
+} from "@/shared/theme";
 import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
@@ -320,6 +327,7 @@ export async function generateDay(
      * traveller must be told that rather than handed a day without the boat.
      */
     const runningRoutes = new Set<string>();
+    const ferryTimetables = new Map<string, FerryTimetable>();
     for (const spec of EXPERIENCE_SPECS) {
       if (spec.legs === undefined) continue;
       const timetable = await readFerryTimetable(
@@ -328,7 +336,14 @@ export async function generateDay(
         spec.legs.routeKey,
         request.date,
       );
-      if (timetable !== null) runningRoutes.add(spec.legs.routeKey);
+      if (timetable !== null) {
+        runningRoutes.add(spec.legs.routeKey);
+        // Kept, not discarded: the same read that answers "does the boat run"
+        // also carries the label and the last departure the pill needs
+        // (XXX-43). Re-reading it later would be a second query for a fact
+        // already in hand.
+        ferryTimetables.set(spec.legs.routeKey, timetable.value);
+      }
     }
 
     // -- theme selection ---------------------------------------------------
@@ -739,7 +754,30 @@ export async function generateDay(
         }
         transitFetched = true;
       }
-      legs = composed.legs;
+      /**
+       * Name the crossings (XXX-43, Session 14 finding #4). The theme
+       * declares its own route; the legs into and out of the composite block
+       * are the ones that cross. A day without a ferry-borne experience is
+       * returned untouched.
+       */
+      const themeSpec =
+        theme.mode === "experience" ? experienceSpec(theme.experienceId) : null;
+      const crossingTimetable =
+        themeSpec?.legs !== undefined
+          ? (ferryTimetables.get(themeSpec.legs.routeKey) ?? null)
+          : null;
+      legs = annotateFerryLegs(
+        composed.legs,
+        composed.day.slots.map((slot) => ({
+          id: slot.id,
+          placeId: slot.placeId,
+          startTime: slot.startTime,
+          ...(slot.compositeDwell === undefined
+            ? {}
+            : { compositeDwell: slot.compositeDwell }),
+        })),
+        crossingTimetable,
+      );
       timings.composeMs += now().getTime() - tCompose;
 
       // An intent can miss the day two ways: no legal option left to

@@ -305,6 +305,7 @@ export async function runTastingGeneration(
       violations: outcome.narrated.violations.map((v) => ({
         ruleId: v.ruleId,
         text: v.text,
+        slotIds: [...v.slotIds],
       })),
       meter,
     };
@@ -368,6 +369,8 @@ export async function runTastingGeneration(
     advisories: outcome.narrated.advisories.map((a) => ({
       ruleId: a.ruleId,
       text: a.text,
+      // Carried, not dropped — see `NarratedLineView.slotIds`.
+      slotIds: [...a.slotIds],
     })),
     dayNotes: outcome.dayNotes,
     unfilled: outcome.stats.unfilled.map((u) => ({

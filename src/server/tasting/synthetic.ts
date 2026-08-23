@@ -112,7 +112,7 @@ export interface SyntheticDay {
   legs: ComposedLeg[];
   reasons: Map<string, string>;
   dayNotes: string[];
-  advisories: { ruleId: string; text: string }[];
+  advisories: { ruleId: string; text: string; slotIds: string[] }[];
   headline: string;
 }
 
@@ -220,6 +220,7 @@ export async function buildSyntheticDay(
       {
         ruleId: "hours.unknown",
         text: "One stop's hours were never fetched — it is shown as not recorded, not as open.",
+        slotIds: [],
       },
     ],
     headline: "Synthetic preview — four stops, no generation behind them.",

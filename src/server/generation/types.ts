@@ -20,7 +20,7 @@ import type {
 } from "@/shared/day-grammar/types";
 import type { Span } from "@/shared/day-grammar/predicates";
 import type { Persona } from "@/shared/persona";
-import type { PriceRange } from "@/shared/timeline";
+import type { LegService, PriceRange } from "@/shared/timeline";
 import type {
   City,
   PlaceCategory,
@@ -298,6 +298,11 @@ export interface ComposedLeg {
   mode: TransportMode;
   source: string;
   tier: Tier;
+  /**
+   * The named scheduled service this leg rides (XXX-43). Present only for a
+   * crossing the theme itself declared — see `annotateFerryLegs`.
+   */
+  via?: LegService;
   /**
    * Present when the composer took the traveller off an over-cap walk
    * (XXX-35 item 1). It exists so the narration can be DETERMINISTIC: the

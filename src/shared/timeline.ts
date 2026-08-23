@@ -124,9 +124,40 @@ export const slotViewSchema = z
   .refine((s) => s.endTime > s.startTime, "endTime must be after startTime");
 export type SlotView = z.infer<typeof slotViewSchema>;
 
+/**
+ * A named scheduled service a leg actually rides (XXX-43, Session 15).
+ *
+ * WHY AN ANNOTATION AND NOT A TRANSPORT MODE. `TransportMode` is the set of
+ * ways the TRAVELLER elects to get around — it is on the request as
+ * `transport: TransportMode[]`, a preference they state. A ferry is not
+ * something anyone elects; it is what a particular leg IS. Widening the mode
+ * enum would put "ferry" on a list of choices nobody makes, and would blast
+ * every exhaustive `Record<TransportMode, …>` for a fact that is per-leg.
+ *
+ * What this fixes (Session 14 finding #4): the boat to Hanlan's Point
+ * rendered as "🚇 Transit · 13 min", indistinguishable from a streetcar,
+ * while the good label sat unused in `ferry-seed.ts`. The day's entire
+ * feasibility hangs on a timetable the surface never mentioned.
+ */
+export const legServiceSchema = z.strictObject({
+  kind: z.literal("ferry"),
+  /** "Jack Layton Ferry Terminal ⇄ Hanlan's Point". */
+  label: z.string().min(1),
+  /**
+   * The last departure of the day, city-local "HH:MM", when known.
+   *
+   * This is the fact the whole day hangs on, so it rides with the leg rather
+   * than being derivable only by someone who thinks to look.
+   */
+  lastDeparture: z.string().nullable(),
+});
+export type LegService = z.infer<typeof legServiceSchema>;
+
 export const travelLegSchema = z.strictObject({
   mode: z.enum(TRANSPORT_MODES),
   minutes: z.number().int().positive(),
+  /** The named service this leg rides, when it rides one. */
+  via: legServiceSchema.optional(),
   /**
    * Why this is not a walk (XXX-35 item 1). Present only when the composer
    * moved the traveller off an over-cap walk, and it carries the
