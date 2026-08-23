@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { drinkingFocusOf } from "@/shared/constraints";
 import { cuisinesFromLabels } from "@/shared/cuisine";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
@@ -361,6 +362,34 @@ export async function retrieveCandidates(
         tier: 2,
         fetchedAt: row.fetched_at,
       };
+      /**
+       * The drinking-focus fact, read from the SAME labels the category and
+       * the cuisine already come from (XXX-44, Session 16). One join, three
+       * derivations — no new query, no re-ingest, no Google call.
+       *
+       * `domain/schemas.ts` types `source_labels` as `.nonempty()`, so a
+       * pooled row that reached here has labels and the fact is present. The
+       * `absent` branch is not dead defensiveness: `sourceLabelsOf` returns
+       * `[]` for a malformed `value` too, and a malformed record is exactly
+       * the case that must say "we do not know" rather than "not a bar".
+       */
+      const labels = sourceLabelsOf(row);
+      const focus = drinkingFocusOf(labels);
+      const drinkingFact: GrammarFact<boolean> =
+        focus === "unknown"
+          ? {
+              status: "absent",
+              source: row.source,
+              tier: 2,
+              fetchedAt: row.fetched_at,
+            }
+          : {
+              status: "present",
+              value: focus === "focused",
+              source: row.source,
+              tier: 2,
+              fetchedAt: row.fetched_at,
+            };
       candidates.push({
         place: {
           id: row.id,
@@ -381,6 +410,7 @@ export async function retrieveCandidates(
             highCrowd: false,
           },
           category: categoryFact,
+          drinkingFocused: drinkingFact,
         },
         category,
         /**
@@ -392,7 +422,7 @@ export async function retrieveCandidates(
          * A venue with no cuisine label gets `[]`, which scores neutral. We
          * are ignorant of its kitchen, and ignorance is not a demerit.
          */
-        cuisines: cuisinesFromLabels(sourceLabelsOf(row)),
+        cuisines: cuisinesFromLabels(labels),
         googlePlaceId: row.google_place_id,
         rating: null,
         userRatingCount: null,

@@ -110,8 +110,12 @@ export function DayView({
       )}
 
       {/* The edge of the promise, on the day where it could mislead (XXX-44).
-          A traveller who knows the limit can work around it; one who finds it
-          by sitting down in a wine bar was told something untrue by omission. */}
+          The wine bar this line used to apologise for is now filtered by its
+          own directory labels; what the line names is what is genuinely left,
+          which is a restaurant that simply pours and says nothing about it.
+          A traveller who knows the limit can work around it — and a limit that
+          has stopped being true is a silent one, so the sentence moved with
+          the fix rather than outliving it. */}
       {constrained && (
         <p className="text-muted text-[0.8rem] font-light">
           {CATEGORY_CONSTRAINT_LIMITATION}

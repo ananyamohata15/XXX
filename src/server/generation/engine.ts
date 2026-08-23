@@ -76,7 +76,12 @@ import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
-import { isCategoryPermitted } from "@/shared/constraints";
+import {
+  excludesAlcohol,
+  isCategoryPermitted,
+  isVenuePermitted,
+  type DrinkingFocus,
+} from "@/shared/constraints";
 import type { CuisineTag } from "@/shared/cuisine";
 import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
@@ -510,8 +515,39 @@ export async function generateDay(
     );
     timings.retrieveMs = now().getTime() - tRetrieve;
 
+    // -- the traveller's refusals, at venue level (XXX-44) ------------------
+    const excluded = request.excludedCategories ?? [];
+    const permitted = excludeRefusedVenues(pool, excluded);
+    if (excluded.length > 0) {
+      const byAttribute = permitted.dropped.filter((d) =>
+        isCategoryPermitted(d.category, excluded),
+      );
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "constraints",
+        endpoint: "venues_refused",
+        estCostUsd: 0,
+        metadata: {
+          excluded_categories: [...excluded],
+          retrieved: pool.length,
+          dropped_total: permitted.dropped.length,
+          /**
+           * The number this ticket exists for: venues the CATEGORY gate would
+           * have let through and the LABEL gate caught. Zero here on a
+           * no-alcohol day means the fix did nothing, and the trace says so
+           * rather than letting a green test imply otherwise.
+           */
+          dropped_by_drinking_label: byAttribute.length,
+          alcohol_excluded: excludesAlcohol(excluded),
+          sample: byAttribute
+            .slice(0, 5)
+            .map((d) => `${d.name} (${d.category})`),
+        },
+      });
+    }
+    const permittedPool = permitted.kept;
+
     // -- pre-score + shortlist --------------------------------------------
-    let scored = scoreAll(pool, request.persona, request.budgetBand, seed);
+    let scored = scoreAll(permittedPool, request.persona, request.budgetBand, seed);
     const shortlist = pickShortlist(scored, skeleton);
 
     // -- link-on-demand + request-time facts (in-memory only) --------------
@@ -1314,6 +1350,70 @@ export function allocateMenu(
  * `SHORTLIST_NOMINAL` still caps the whole thing, so the spend bound is
  * unchanged by the wider discretionary menus.
  */
+/**
+ * The venue-level constraint seam (XXX-44, Session 16) — the tenth.
+ *
+ * Session 15 counted nine places the founder's *"I don't drink"* has to
+ * reach, every one of them a CATEGORY gate. This is the first that reads an
+ * ATTRIBUTE, and it sits here — immediately after retrieval, before scoring
+ * and the shortlist — for one reason: it is the earliest point at which a
+ * venue exists as a venue. Every seam downstream (shortlist, details, menu,
+ * selection, composition, the grammar backstop) then works on a pool that
+ * cannot offer a refused venue, so none of them needs its own copy of this
+ * question. One gate, upstream of all of them.
+ *
+ * It returns the drops rather than swallowing them because a constraint that
+ * fires invisibly is a constraint nobody can prove fired. Session 14's rest
+ * stop fired ZERO times across eight personas with five green tests around
+ * it; the lesson was that a feature's first proof is its FIRE-RATE against
+ * real data. The count and a sample go into the trace on every constrained
+ * generation.
+ */
+export function excludeRefusedVenues(
+  candidates: Candidate[],
+  excluded: readonly PlaceCategory[],
+): {
+  kept: Candidate[];
+  dropped: { placeId: string; name: string; category: PlaceCategory; focus: DrinkingFocus }[];
+} {
+  // The unconstrained request is the overwhelmingly common one and must stay
+  // byte-identical to a request from before this function existed.
+  if (excluded.length === 0) return { kept: candidates, dropped: [] };
+  const kept: Candidate[] = [];
+  const dropped: {
+    placeId: string;
+    name: string;
+    category: PlaceCategory;
+    focus: DrinkingFocus;
+  }[] = [];
+  for (const candidate of candidates) {
+    const fact = candidate.place.drinkingFocused;
+    /**
+     * A candidate with no fact reads `unknown`, and `isVenuePermitted`
+     * permits it. The asymmetry is argued at that function; the short version
+     * is that `unknown` here means "no `categories` fact at all", which is a
+     * population the constraint was never meant to govern.
+     */
+    const focus: DrinkingFocus =
+      fact === undefined || fact.status === "absent"
+        ? "unknown"
+        : fact.value
+          ? "focused"
+          : "not-focused";
+    if (isVenuePermitted(candidate.category, focus, excluded)) {
+      kept.push(candidate);
+      continue;
+    }
+    dropped.push({
+      placeId: candidate.place.id,
+      name: candidate.place.name,
+      category: candidate.category,
+      focus,
+    });
+  }
+  return { kept, dropped };
+}
+
 const SHORTLIST_SPARE = 2;
 export function pickShortlist(
   scored: Candidate[],

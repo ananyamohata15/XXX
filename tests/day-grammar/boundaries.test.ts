@@ -658,3 +658,4 @@ describe("an outdoor viewpoint is subject to the daylight rules", () => {
     expect(ruleIds(day, ctxOf())).not.toContain("daylight.outdoor-after-dark");
   });
 });
+

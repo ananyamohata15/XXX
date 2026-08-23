@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { buildSkeleton, composeDay } from "@/server/generation/compose";
-import { buildMenus } from "@/server/generation/engine";
+import { buildMenus, excludeRefusedVenues } from "@/server/generation/engine";
 import { hardFilter } from "@/server/generation/filters";
 import {
   POOL_WINDOWS,
@@ -72,6 +72,12 @@ async function main(): Promise<void> {
   const catSeq = new Map<string, string[]>();
   const venues = new Map<string, Set<string>>();
   const templateHasClose = new Map<string, boolean>();
+  /**
+   * The retrieved pool per persona, kept for the no-alcohol fire-rate below.
+   * Kept rather than re-queried: the constraint's whole claim is about the
+   * pool THIS day was built from, and a second query would be a second pool.
+   */
+  const pools = new Map<string, Candidate[]>();
 
   for (const key of keys) {
     const persona = GOLDEN_PERSONAS[key];
@@ -102,6 +108,7 @@ async function main(): Promise<void> {
           POOL_WINDOWS.length,
         ),
     );
+    pools.set(key, pool);
     // FIDELITY (Session 12 CP1, ruled as doctrine): the harness CALLS the
     // engine's selection path and MIRRORS ITS SEQUENCE — it never
     // re-implements either.
@@ -463,6 +470,33 @@ async function main(): Promise<void> {
   for (const k of keys) console.log(`    ${k.padEnd(17)}${roleSeq.get(k)!.join(">")}`);
   console.log(`  category sequences:`);
   for (const k of keys) console.log(`    ${k.padEnd(17)}${catSeq.get(k)!.join(">")}`);
+
+  /**
+   * DRINKING-FOCUS FIRE RATE (XXX-44, Session 16) — against each persona's
+   * REAL retrieved pool, not a fixture.
+   *
+   * The number that matters is the third column: venues the CATEGORY gate
+   * would have admitted and the LABEL gate refuses. A zero there means the
+   * ticket shipped nothing, and this line says so out loud rather than
+   * letting a suite of green tests imply otherwise — Session 14's rest stop
+   * fired zero times behind five passing tests.
+   */
+  console.log(`  no-alcohol fire-rate [per persona's own retrieved pool]:`);
+  console.log(
+    `    persona            pool   refused   of those, CATEGORY-permitted`,
+  );
+  for (const k of keys) {
+    const personaPool = pools.get(k) ?? [];
+    const { dropped } = excludeRefusedVenues(personaPool, ["nightlife_bars"]);
+    const byLabelOnly = dropped.filter((d) => d.category !== "nightlife_bars");
+    console.log(
+      `    ${k.padEnd(17)}${String(personaPool.length).padStart(5)}${String(dropped.length).padStart(10)}${String(byLabelOnly.length).padStart(12)}   ${byLabelOnly
+        .slice(0, 2)
+        .map((d) => `${d.name} (${d.category})`)
+        .join(", ")}`,
+    );
+  }
+
   // How much of the overlap is the MEAL PATTERN alone? Every scheduler day
   // owes restaurants at lunch and at dinner to `classic`, before the arc
   // has any say. That is the metric's structural floor.

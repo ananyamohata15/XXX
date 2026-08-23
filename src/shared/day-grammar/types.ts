@@ -131,6 +131,23 @@ export interface GrammarPlace {
   coords: LatLng | null;
   tags: PlaceTags;
   category?: GrammarFact<PlaceCategory>;
+  /**
+   * Does the venue's own directory record file it under a drinking branch?
+   * (XXX-44, Session 16.)
+   *
+   * A FACT, with provenance, rather than a `PlaceTags` boolean — and the
+   * distinction is the fifth-constant lesson applied before it bites.
+   * `PlaceTags.outdoor` is a bare boolean, so when `scenic_viewpoints` joined
+   * the outdoor family a stale `false` was indistinguishable from "we looked
+   * and it is indoors", and the category vanished from every daylight rule in
+   * silence. A `GrammarFact` cannot do that: absent is a state the reader has
+   * to handle, so a place we know nothing about announces itself instead of
+   * defaulting to innocent.
+   *
+   * Source is the directory (`fsq_os_places`), tier 2 Observed. It is not a
+   * claim that the venue serves alcohol — nothing we hold answers that.
+   */
+  drinkingFocused?: GrammarFact<boolean>;
   hours?: GrammarFact<HoursByWeekday>;
   businessStatus?: GrammarFact<BusinessStatus>;
   seasonal?: GrammarFact<SeasonalRange>;
@@ -381,6 +398,7 @@ export const RULE_IDS = [
   "route.detour-avoidable",
   // constraints — the traveller's own word about where they will not go
   "constraint.excluded-category",
+  "constraint.drinking-focused-venue",
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 

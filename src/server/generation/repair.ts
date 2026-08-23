@@ -43,6 +43,13 @@ const PLACE_CAUSED: ReadonlySet<RuleId> = new Set<RuleId>([
    * part of a vocabulary and goes stale when the vocabulary grows.
    */
   "constraint.excluded-category",
+  /**
+   * XXX-44. Same argument, one level finer: a wine bar on a no-alcohol day is
+   * fixed by picking a different venue for that slot, so the repair loop can
+   * route it. Left out, the rule would be correct and the generation would
+   * still die — which is the failure mode the note above this list records.
+   */
+  "constraint.drinking-focused-venue",
 ]);
 
 export interface RepairPlan {
