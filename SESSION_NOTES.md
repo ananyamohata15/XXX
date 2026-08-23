@@ -978,6 +978,69 @@ running will read it as not listening. Recorded as an open question for CP4's
 eye rather than tuned blind: does a stated set of cuisines deserve rotation
 across days, and if so, is that the die's job or the menu's?
 
+**RULED (founder, post-CP3): rotation, and it is the MENU's job.** The
+reserved slots now deal **one per named cuisine** before a second of any, and
+the lead rotates by seed. Structural fairness, not weighting: the mechanism
+cannot prefer the deeper cuisine, rather than a weight tuned to hide that it
+does. A venue matching several named cuisines is claimed by the first in
+today's rotation — a Thai place is also `asian`, and letting it fill both
+shares would mean a traveller who named two gets one venue and is told it is
+two. Verified offline at the founder's own bar: a two-cuisine profile surfaces
+**both within three days**, and the lead demonstrably rotates.
+
+### 2.12 XXX-44 — and the measurement that made it bigger and cheaper
+
+The wine-bar gap is ticketed as **XXX-44** (attribute constraints need
+provenanced facts; name-regex explicitly rejected as tier-3-wearing-tier-1).
+
+*Process note:* I filed **XXX-45** as an accidental duplicate before seeing
+XXX-44 existed — the PO had created it minutes earlier. Marked duplicate,
+labelled, and its unique content folded into XXX-44 as a comment. Recorded
+rather than quietly deleted.
+
+**XXX-44 asked a question that was free to answer, so I answered it.** Its
+candidate source (a) was: do FSQ's stored `source_labels` already encode
+bar-ness? Measured over the live pool, $0:
+
+**742 of 19,286 mapped restaurants (3.85%) already carry a
+`Dining and Drinking > Bar` label** — Bar (301), Sports Bar (122), Gastropub
+(85), Beer Garden (81), Lounge (54), Pub (41), Cocktail Bar (33), Wine Bar
+(33), Brewery (17).
+
+**Two consequences, and the first is uncomfortable.**
+
+1. **The gap is ~6× what my name-regex estimated** — 742 (3.85%) against 130
+   (0.67%). The regex was not merely a tier-3 guess; it **understated the
+   problem**, which is the more dangerous failure mode for a measurement used
+   to size a risk. Standing lesson: *an instrument built from the wrong
+   signal can make a gap look tolerable.* It joins the sampler lesson and the
+   apostrophe lesson as a third way an instrument can mislead — not by lying
+   about absence, but by measuring a proxy and reporting it as the thing.
+2. **The fix is free and already-proven machinery.** It is exactly
+   `cuisinesFromLabels`: a pure prefix view over `source_labels`, tier 2,
+   `fsq_os_places`, no re-ingest, no Google, no new I/O, and `retrieve.ts`
+   already joins the fact.
+
+**Deliberately NOT implemented in this session.** It changes which venues
+reach a day, and CP4 — where the founder judges *"does this feel like
+mine"* — was minutes away. Changing composition immediately before that vet
+without a ruling is precisely the move this project's process exists to
+prevent. Recommended as the next session's first commit.
+
+**Shipped instead: the honest limit, in-product.**
+`CATEGORY_CONSTRAINT_LIMITATION` lives in `shared/constraints.ts` as a single
+owned sentence, shown on the profile sheet where the constraint is set and on
+any day where one is in force:
+
+> *"I filter bars and drinking-focused venues by category. A restaurant that
+> also serves wine can slip through until we have per-venue drink facts."*
+
+It is a constant so that removing it is a deliberate act — it comes out only
+when XXX-44 lands a fact that actually backs the constraint. **Honest limits
+beat silent ones:** a traveller who knows the edge of a promise can work
+around it; one who finds it by sitting down in a wine bar has been told
+something untrue by omission.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:

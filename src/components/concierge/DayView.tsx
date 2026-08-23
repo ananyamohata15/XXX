@@ -21,16 +21,20 @@ import type { TastingOutcome } from "@/shared/tasting";
 import { CATEGORY_LABELS, type PlaceCategory } from "@/shared/vocabulary";
 import { themeLabel } from "@/shared/theme";
 import { DIETARY_ABSENCE_NOTE } from "@/shared/dietary";
+import { CATEGORY_CONSTRAINT_LIMITATION } from "@/shared/constraints";
 import { useState } from "react";
 
 export function DayView({
   outcome,
   onNew,
   dietaryStated = false,
+  constrained = false,
 }: {
   outcome: Extract<TastingOutcome, { status: "ok" }>;
   onNew: () => void;
   dietaryStated?: boolean;
+  /** A hard category constraint is in force, so the day owes its limitation. */
+  constrained?: boolean;
 }) {
   const [verdict, setVerdict] = useState("");
   const [sent, setSent] = useState(false);
@@ -102,6 +106,15 @@ export function DayView({
       {dietaryStated && (
         <p className="text-muted text-[0.8rem] font-light">
           {DIETARY_ABSENCE_NOTE}
+        </p>
+      )}
+
+      {/* The edge of the promise, on the day where it could mislead (XXX-44).
+          A traveller who knows the limit can work around it; one who finds it
+          by sitting down in a wine bar was told something untrue by omission. */}
+      {constrained && (
+        <p className="text-muted text-[0.8rem] font-light">
+          {CATEGORY_CONSTRAINT_LIMITATION}
         </p>
       )}
 

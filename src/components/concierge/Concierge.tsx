@@ -27,6 +27,7 @@ import { CUISINE_LABELS, type CuisineTag } from "@/shared/cuisine";
 import type { ParsedDayRequest } from "@/shared/intent";
 import type { TastingOutcome } from "@/shared/tasting";
 import { categoryLabel, type PlaceCategory } from "@/shared/vocabulary";
+import { owesLimitationNotice } from "@/shared/constraints";
 
 type Screen =
   | { name: "gate" }
@@ -347,7 +348,12 @@ export function Concierge() {
       )}
 
       {screen.name === "day" && screen.outcome.status === "ok" && (
-        <DayView outcome={screen.outcome} onNew={() => setScreen({ name: "landing" })} />
+        <DayView
+          outcome={screen.outcome}
+          onNew={() => setScreen({ name: "landing" })}
+          dietaryStated={profile.dietary.length > 0}
+          constrained={owesLimitationNotice(profile.excludedCategories)}
+        />
       )}
 
       {screen.name === "day" && screen.outcome.status !== "ok" && (

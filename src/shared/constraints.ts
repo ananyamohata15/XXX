@@ -71,3 +71,37 @@ export function isFullyExcluded(
     categories.every((c) => !isCategoryPermitted(c, excluded))
   );
 }
+
+/**
+ * The v1 limitation a hard category constraint owes the traveller (XXX-44).
+ *
+ * WHY THIS STRING EXISTS. `excludedCategories` filters by our ten-category
+ * vocabulary, and category is a coarse proxy for an ATTRIBUTE like "serves
+ * alcohol". Session 15's live proof seated Clandestino Wine Bar on a
+ * no-alcohol day — no constraint was violated, because the venue is mapped
+ * `restaurants`, and every seam did its job. Measured afterwards: 742 of
+ * 19,286 pooled restaurants (3.85%) carry a `Dining and Drinking > Bar`
+ * label despite mapping to `restaurants`.
+ *
+ * The founder's ruling: say so in-product rather than let him discover it.
+ * **Honest limits beat silent ones.** A traveller who knows the edge of a
+ * promise can work around it; one who finds it by sitting down in a wine bar
+ * has been told something untrue by omission.
+ *
+ * It is a CONSTANT in `shared/` so the sentence has one owner and one
+ * wording, and so deleting it is a deliberate act — it comes out only when
+ * XXX-44 lands a per-venue drink fact that actually backs the constraint.
+ */
+export const CATEGORY_CONSTRAINT_LIMITATION =
+  "I filter bars and drinking-focused venues by category. A restaurant that also serves wine can slip through until we have per-venue drink facts.";
+
+/**
+ * Should the limitation be shown? Only when a hard constraint is actually
+ * set — an unconstrained traveller does not need a caveat about a promise
+ * nobody made them.
+ */
+export function owesLimitationNotice(
+  excluded: readonly PlaceCategory[],
+): boolean {
+  return excluded.length > 0;
+}

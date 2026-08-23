@@ -19,6 +19,10 @@ import { CUISINE_LABELS, CUISINE_TAGS, type CuisineTag } from "@/shared/cuisine"
 import { DIETARY_LABELS, type DietaryTag } from "@/shared/dietary";
 import { unansweredDimensions, type TasteProfile } from "@/shared/profile";
 import { categoryLabel, type PlaceCategory } from "@/shared/vocabulary";
+import {
+  CATEGORY_CONSTRAINT_LIMITATION,
+  owesLimitationNotice,
+} from "@/shared/constraints";
 
 export function ProfileSheet({
   open,
@@ -69,13 +73,22 @@ export function ProfileSheet({
                 {profile.excludedCategories.length === 0 ? (
                   <Empty>Nothing ruled out.</Empty>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {profile.excludedCategories.map((c) => (
-                      <Chip key={c} on onRemove={() => removeCategory(c)}>
-                        No {categoryLabel(c)}
-                      </Chip>
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.excludedCategories.map((c) => (
+                        <Chip key={c} on onRemove={() => removeCategory(c)}>
+                          No {categoryLabel(c)}
+                        </Chip>
+                      ))}
+                    </div>
+                    {/* The edge of the promise, stated where the promise is
+                        made. Honest limits beat silent ones (XXX-44). */}
+                    {owesLimitationNotice(profile.excludedCategories) && (
+                      <p className="text-muted mt-3 text-[0.78rem] font-light">
+                        {CATEGORY_CONSTRAINT_LIMITATION}
+                      </p>
+                    )}
+                  </>
                 )}
               </Section>
 
