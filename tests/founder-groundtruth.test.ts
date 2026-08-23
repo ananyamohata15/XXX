@@ -229,6 +229,7 @@ describe("the override reaching the hard filters", () => {
     googlePlaceId: "g1",
     rating: 4.5,
     userRatingCount: 100,
+    cuisines: [],
     detailsFetched: true,
     score: 1,
   });

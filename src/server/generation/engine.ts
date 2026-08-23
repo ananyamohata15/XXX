@@ -64,11 +64,20 @@ import {
 import { applyFounderGroundtruth } from "./groundtruth";
 import { environmentIsFair, selectTheme } from "./theme-select";
 import { readFerryTimetable } from "../city-facts/repo";
-import { EXPERIENCE_SPECS, themeId, themeZoneSlugs } from "@/shared/theme";
+import type { FerryTimetable } from "@/shared/city-facts";
+import { annotateFerryLegs } from "./ferry-legs";
+import {
+  EXPERIENCE_SPECS,
+  experienceSpec,
+  themeId,
+  themeZoneSlugs,
+} from "@/shared/theme";
 import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
+import { isCategoryPermitted } from "@/shared/constraints";
+import type { CuisineTag } from "@/shared/cuisine";
 import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
 import type {
@@ -318,6 +327,7 @@ export async function generateDay(
      * traveller must be told that rather than handed a day without the boat.
      */
     const runningRoutes = new Set<string>();
+    const ferryTimetables = new Map<string, FerryTimetable>();
     for (const spec of EXPERIENCE_SPECS) {
       if (spec.legs === undefined) continue;
       const timetable = await readFerryTimetable(
@@ -326,7 +336,14 @@ export async function generateDay(
         spec.legs.routeKey,
         request.date,
       );
-      if (timetable !== null) runningRoutes.add(spec.legs.routeKey);
+      if (timetable !== null) {
+        runningRoutes.add(spec.legs.routeKey);
+        // Kept, not discarded: the same read that answers "does the boat run"
+        // also carries the label and the last departure the pill needs
+        // (XXX-43). Re-reading it later would be a second query for a fact
+        // already in hand.
+        ferryTimetables.set(spec.legs.routeKey, timetable.value);
+      }
     }
 
     // -- theme selection ---------------------------------------------------
@@ -337,6 +354,8 @@ export async function generateDay(
         persona: request.persona,
         routeRuns: (routeKey) => runningRoutes.has(routeKey),
         goodWeather: environmentIsFair(environment),
+        excludes: (category) =>
+          !isCategoryPermitted(category, request.excludedCategories ?? []),
         canHold: (theme) =>
           theme.mode === "venue" ||
           templatesHolding(
@@ -629,7 +648,27 @@ export async function generateDay(
 
     while (passes < MAX_VALIDATION_PASSES) {
       passes++;
-      const menus = buildMenus(skeleton, scored, request.date, dusk, repair);
+      const menus = buildMenus(
+        skeleton,
+        scored,
+        request.date,
+        dusk,
+        repair,
+        request.lovedCuisines ?? [],
+        // Seeded rotation, so a two-cuisine traveller is not shown the same
+        // one every day. Reproducible from the trace's recorded seed.
+        (request.lovedCuisines ?? []).length > 0
+          ? diceIndex(
+              {
+                seed,
+                identity: personaIdentity(request.persona),
+                site: "cuisine-lead",
+                context: request.date,
+              },
+              (request.lovedCuisines ?? []).length,
+            )
+          : 0,
+      );
 
       /**
        * Did the anchor's menu contain anything fit to BE an anchor?
@@ -672,6 +711,7 @@ export async function generateDay(
         request.persona,
         seed,
         feedback,
+        request.lovedCuisines ?? [],
       );
       timings.selectMs += now().getTime() - tSelect;
       await drainLlmUsage();
@@ -727,7 +767,30 @@ export async function generateDay(
         }
         transitFetched = true;
       }
-      legs = composed.legs;
+      /**
+       * Name the crossings (XXX-43, Session 14 finding #4). The theme
+       * declares its own route; the legs into and out of the composite block
+       * are the ones that cross. A day without a ferry-borne experience is
+       * returned untouched.
+       */
+      const themeSpec =
+        theme.mode === "experience" ? experienceSpec(theme.experienceId) : null;
+      const crossingTimetable =
+        themeSpec?.legs !== undefined
+          ? (ferryTimetables.get(themeSpec.legs.routeKey) ?? null)
+          : null;
+      legs = annotateFerryLegs(
+        composed.legs,
+        composed.day.slots.map((slot) => ({
+          id: slot.id,
+          placeId: slot.placeId,
+          startTime: slot.startTime,
+          ...(slot.compositeDwell === undefined
+            ? {}
+            : { compositeDwell: slot.compositeDwell }),
+        })),
+        crossingTimetable,
+      );
       timings.composeMs += now().getTime() - tCompose;
 
       // An intent can miss the day two ways: no legal option left to
@@ -1019,6 +1082,20 @@ export async function generateDay(
  */
 export const LICENSED_MENU_DEPTH = 2;
 
+/**
+ * How many venues of a NAMED CUISINE lead its menu (XXX-43).
+ *
+ * Two, and borrowed deliberately from `LICENSED_MENU_DEPTH` rather than
+ * chosen fresh — the two constants answer the same question ("how much menu
+ * does a stated preference get to reserve before it stops being a preference
+ * and becomes a takeover?") and Session 14 already argued it through. One is
+ * too few: the single best Thai place may already be seated elsewhere in the
+ * day, which is exactly the failure the licensed-close ruling was written
+ * for. More than two starts crowding out the textures the rest of the menu
+ * exists to offer.
+ */
+export const CUISINE_MENU_DEPTH = 2;
+
 export function menuSizeFor(intent: SlotIntent): number {
   return intent.kind === "meal" ? MENU_SIZE : MENU_SIZE_DISCRETIONARY;
 }
@@ -1078,6 +1155,40 @@ export function allocateMenu(
    * exactly what those two need in order to reach one.
    */
   priorityCategory?: PlaceCategory,
+  /**
+   * Cuisines the traveller named (XXX-43). Reserves up to
+   * `CUISINE_MENU_DEPTH` places at the head of the menu for venues serving
+   * one of them.
+   *
+   * THIS IS THE MENU'S JOB, NOT THE SCORE'S, and that division was settled by
+   * measurement rather than argument. A flat bonus inside `scoreCandidate`
+   * was tried first and abandoned: swept over 20,000 seeds, ANY additive
+   * value large enough to survive the exploration jitter also inverted the
+   * icons-vs-corners axis a large fraction of the time (0.03 → 6%, 0.10 →
+   * 70%), because the corners margin's floor approaches zero. There is no
+   * safe constant; the mechanism was wrong.
+   *
+   * So the labour divides the way this codebase already divides it — *"the
+   * palette offers, affinity weights, the die orders"*. Code GUARANTEES a
+   * loved cuisine is on the menu; the taste layer decides whether it wins.
+   * Scoring is untouched, so a traveller who named no cuisine scores exactly
+   * as they did before this existed.
+   *
+   * Bounded for the same reason the family licence is bounded: a reserved
+   * pair is a guarantee of representation, not a takeover. The rest of the
+   * menu stays lens-ordered, so the resident's non-Thai pick is still there
+   * to be chosen.
+   */
+  lovedCuisines: readonly CuisineTag[] = [],
+  /**
+   * Which named cuisine LEADS the reservation today (XXX-43, CP3 ruling).
+   *
+   * Seeded, so the lead rotates across days and a traveller who named two
+   * cuisines is not shown the same one every time. Rotation is structural
+   * fairness, not weighting: nothing about Italian outranks Thai, so nothing
+   * should make Italian arrive first three days running.
+   */
+  cuisineLeadOffset = 0,
 ): Candidate[] {
   const byCategory = new Map<PlaceCategory, Candidate[]>();
   for (const candidate of kept) {
@@ -1090,6 +1201,77 @@ export function allocateMenu(
 
   const cursor = new Map<PlaceCategory, number>();
   const out: Candidate[] = [];
+  /** Reserved cuisine picks, so the round-robin cannot offer them twice. */
+  const spent = new Set<string>();
+
+  if (lovedCuisines.length > 0) {
+    /**
+     * ROUND-ROBIN ACROSS THE NAMED CUISINES (CP3 ruling), not top-N overall.
+     *
+     * The first build took the two highest-scoring loved-cuisine venues,
+     * whichever cuisine they came from — and the live proof showed what that
+     * costs: a profile naming Thai AND Italian got Italian on all three days,
+     * because Italian has 754 pooled places to Thai's 398 and simply wins on
+     * volume. Nothing was broken; the traveller had just named two things and
+     * been shown one, which reads as not listening.
+     *
+     * So the reservation deals ONE PER CUISINE before it deals a second of
+     * any, and the lead rotates by seed. Structural fairness: the mechanism
+     * cannot prefer the deeper cuisine, rather than a weight tuned to hide
+     * that it does.
+     */
+    const rotated = lovedCuisines.map(
+      (_, i) =>
+        lovedCuisines[
+          (i + cuisineLeadOffset) % lovedCuisines.length
+        ]!,
+    );
+
+    /**
+     * A venue matching several named cuisines belongs to the FIRST it matches
+     * in today's rotation — a Thai place is also `asian`, and counting it
+     * under both would let one venue satisfy two cuisines' shares.
+     */
+    const byCuisine = new Map<CuisineTag, Candidate[]>();
+    for (const tag of rotated) byCuisine.set(tag, []);
+    const claimed = new Set<string>();
+    for (const candidate of kept) {
+      for (const tag of rotated) {
+        if (claimed.has(candidate.place.id)) break;
+        if (candidate.cuisines.includes(tag)) {
+          byCuisine.get(tag)!.push(candidate);
+          claimed.add(candidate.place.id);
+        }
+      }
+    }
+    for (const list of byCuisine.values()) {
+      list.sort((a, b) => b.score - a.score || a.place.id.localeCompare(b.place.id));
+    }
+
+    const cursors = new Map<CuisineTag, number>();
+    let dealt = true;
+    while (out.length < Math.min(CUISINE_MENU_DEPTH, size) && dealt) {
+      dealt = false;
+      for (const tag of rotated) {
+        if (out.length >= Math.min(CUISINE_MENU_DEPTH, size)) break;
+        const list = byCuisine.get(tag)!;
+        const at = cursors.get(tag) ?? 0;
+        if (at >= list.length) continue;
+        out.push(list[at]!);
+        spent.add(list[at]!.place.id);
+        cursors.set(tag, at + 1);
+        dealt = true;
+      }
+    }
+
+    // Drop the reserved picks from their categories' rotation lists.
+    for (const [category, list] of byCategory) {
+      byCategory.set(
+        category,
+        list.filter((c) => !spent.has(c.place.id)),
+      );
+    }
+  }
 
   if (priorityCategory !== undefined) {
     const list = byCategory.get(priorityCategory) ?? [];
@@ -1160,6 +1342,18 @@ export function buildMenus(
   date: string,
   dusk: number,
   repair: RepairPlan | undefined,
+  /**
+   * Cuisines the traveller named (XXX-43). Defaulted so the offline
+   * diagnostics that call `buildMenus` directly keep meaning what they meant;
+   * the engine and the fidelity harness both pass the request's own value.
+   */
+  lovedCuisines: readonly CuisineTag[] = [],
+  /**
+   * Which named cuisine leads today's reservations (CP3 ruling). Derived from
+   * the day's RESOLVED seed by the caller, so the rotation is reproducible
+   * from the trace like every other diced choice in this engine.
+   */
+  cuisineLeadOffset = 0,
 ): Menu[] {
   return skeleton.intents.map((intent) => {
     const struck = repair?.strikes.get(`s-${intent.id}`) ?? new Set<string>();
@@ -1240,6 +1434,9 @@ export function buildMenus(
       if (worthy.length > 0) {
         return {
           intent,
+          // No cuisine reservation on the ANCHOR: a day's centrepiece is
+          // chosen for calibre, and a restaurant is rarely the centre. Meals
+          // are where a stated cuisine belongs.
           options: allocateMenu(worthy, intent.categories, size),
         };
       }
@@ -1251,6 +1448,8 @@ export function buildMenus(
         intent.categories,
         size,
         intent.licensedCategory,
+        lovedCuisines,
+        cuisineLeadOffset,
       ),
     };
   });

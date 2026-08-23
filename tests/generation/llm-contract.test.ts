@@ -31,6 +31,7 @@ function candidate(id: string, name: string): Candidate {
     googlePlaceId: null,
     rating: 4.2,
     userRatingCount: 120,
+    cuisines: [],
     detailsFetched: true,
     score: 0.7,
   };

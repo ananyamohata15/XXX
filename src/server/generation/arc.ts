@@ -464,6 +464,23 @@ export function electAnchor(
      */
     exclude?: readonly PlaceCategory[];
     /**
+     * Categories the TRAVELLER refused (XXX-43) — a different fact from
+     * `exclude`, and kept separate deliberately.
+     *
+     * The first build folded these into `exclude` on the reasoning that both
+     * mean "do not elect this". They do — but `exclude` also STAMPS A REASON,
+     * and the reason it stamps is *"re-elected after X could not be seated"*.
+     * Routed through it, a day for someone who does not drink recorded that
+     * we had TRIED to seat a bar and failed. That is a lie in the trace, and
+     * a trace that lies about why is worse than one that says nothing:
+     * "the pool failed us" and "the traveller said no" are different facts
+     * and a later reader mining either would draw the wrong conclusion.
+     *
+     * So: same filtering, no narrative. A refusal needs no explanation
+     * beyond itself.
+     */
+    refused?: readonly PlaceCategory[];
+    /**
      * The seeded stream for site "anchor". Required — an un-diced elector is
      * how `historic_sites` won every tie against `museums_galleries` for
      * every persona forever (the alphabet was the tie-break).
@@ -472,6 +489,7 @@ export function electAnchor(
   },
 ): ElectedAnchor | null {
   const exclude = options.exclude ?? [];
+  const refused = options.refused ?? [];
   const eligible = PLACE_CATEGORIES.filter(
     (c) =>
       !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
@@ -480,7 +498,8 @@ export function electAnchor(
       // categories because a provisioning stop is not a meal — folding it in
       // would trip `pacing.food-stops-exceeded` on a day that bought bread.
       !NON_ANCHOR_CATEGORIES.includes(c) &&
-      !exclude.includes(c),
+      !exclude.includes(c) &&
+      !refused.includes(c),
   );
   // τ is deliberately near zero: the anchor MOSTLY FOLLOWS GRAVITY. It is the
   // persona's first interest made concrete, and a die that could move it
@@ -600,6 +619,34 @@ export function warmupCategories(
 export function closeCategories(
   persona: Persona,
   dice: () => number,
+  /**
+   * Is the step immediately before the close already a FOOD stop? (XXX-43,
+   * Session 15 CP4 defect 3.)
+   *
+   * THE DEFECT, from the founder's own day: dinner at Simpl Things 18:45,
+   * then Tibet Kitchen 20:25 as the close — food after food, ending the day
+   * on the texture it had just served.
+   *
+   * Nothing caught it, and the reason is a PREDICATE-REACH asymmetry rather
+   * than a missing rule. `pickContrast` (below) filters out food categories
+   * AND families already used. `closeCategories` did neither: it appended
+   * `restaurants` unconditionally as the ranked tail. So the same guard that
+   * protects the middle of the day was absent at its end.
+   *
+   * Why the two grammar rules that might have caught it did not, measured on
+   * that day: the food cap counts TOTALS (3 food stops against a `classic`
+   * allowance of 4 — under the cap), and the texture rule counts DISTINCT
+   * FAMILIES over four consecutive stops (markets, historic_sites,
+   * restaurants, restaurants = 3 distinct, meeting `minTextureFamilies`).
+   * Neither looks at ADJACENCY, so two table stops back to back are
+   * invisible to both. That gap is real and reported separately; this fix
+   * stops composition producing the day in the first place.
+   *
+   * Narrow on purpose: closing on a restaurant is often exactly right — a
+   * late dinner IS a landing. The defect is only ever a food close that
+   * FOLLOWS food.
+   */
+  previousIsFood = false,
 ): PlaceCategory[] {
   /**
    * `scenic_viewpoints` joins the CLOSE list (XXX-37), and it is the most
@@ -640,7 +687,12 @@ export function closeCategories(
     dice,
     COMPOSE_PARAMS.dice.close,
   );
-  return [...drawn, "restaurants"];
+  /**
+   * The table tail is offered only when the day did not just eat. Dropping
+   * it leaves five experience categories, so the close is never starved —
+   * it simply cannot be a second dinner.
+   */
+  return previousIsFood ? [...drawn] : [...drawn, "restaurants"];
 }
 
 export type { CategoryFamily };

@@ -294,6 +294,24 @@ export interface GrammarContext {
   transport: TransportMode[] | null;
   /** null = no baseline supplied; anchor-mutation checking is skipped. */
   anchorBaseline: Record<string, AnchorBaseline> | null;
+  /**
+   * Categories this traveller refused (XXX-43). The founder's *"I don't
+   * drink"* arrives as `["nightlife_bars"]`.
+   *
+   * `null` means UNKNOWN, following the `transport` precedent above and the
+   * convention it set: a rule that does not know cannot claim. A context
+   * built without this field validates as it always did rather than
+   * asserting the traveller refused nothing — the difference between "no
+   * constraints" and "constraints not supplied" is exactly the kind of
+   * silence this codebase has been bitten by.
+   *
+   * Upstream is supposed to make this rule unreachable: the palette, the
+   * anchor election, retrieval and the menu all narrow first. That is the
+   * point. This is the BACKSTOP that turns "we filtered carefully" into
+   * "a day seating one cannot reach a user", and it is the only one of the
+   * nine seams that can prove the other eight.
+   */
+  excludedCategories: readonly PlaceCategory[] | null;
   travel: TravelTimeProvider;
   params: GrammarParams;
 }
@@ -361,6 +379,8 @@ export const RULE_IDS = [
   "structure.reset-gap-without-lodging",
   "reservability.walk-in-only",
   "route.detour-avoidable",
+  // constraints — the traveller's own word about where they will not go
+  "constraint.excluded-category",
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 

@@ -45,6 +45,17 @@ export interface TastingMeter {
 export interface NarratedLineView {
   ruleId: string;
   text: string;
+  /**
+   * The stops this note is about (XXX-43, Session 15).
+   *
+   * `NarratedLine` has carried `slotIds` all along and this boundary DROPPED
+   * it, which is why every per-stop note piled up in one wall above the day
+   * instead of sitting on the card it concerned. Restoring it is most of what
+   * collapses the wall: a note about slot 3 belongs on slot 3.
+   *
+   * Empty = a day-level note, which is the only kind that belongs at the foot.
+   */
+  slotIds: string[];
 }
 
 /**

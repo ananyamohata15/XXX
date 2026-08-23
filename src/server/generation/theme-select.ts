@@ -16,6 +16,7 @@
  */
 
 import { weightedOrderBy } from "@/shared/dice";
+import { categoryLabel, type PlaceCategory } from "@/shared/vocabulary";
 import { categoryAffinity, type Persona } from "@/shared/persona";
 import {
   EXPERIENCE_SPECS,
@@ -64,6 +65,39 @@ export interface ThemeFeasibilityInput {
   goodWeather: boolean | null;
   /** Can this traveller's template set hold the shape? */
   canHold: (theme: DayTheme) => boolean;
+  /**
+   * Did this traveller refuse this category? (XXX-43)
+   *
+   * A predicate rather than an array, mirroring `routeRuns` and `canHold`, so
+   * this function stays pure and testable without a request.
+   */
+  excludes: (category: PlaceCategory) => boolean;
+}
+
+/**
+ * The categories a theme's own SPINE depends on — the stops that make it
+ * that theme rather than a day that happens to pass nearby.
+ *
+ * Extracted so `themeInfeasibility` and `themeAffinity` cannot drift apart
+ * about what a theme is made of. They asked the same question in two places,
+ * which is the shape of every constant this project has been bitten by.
+ */
+export function themeSpineCategories(theme: DayTheme): PlaceCategory[] {
+  if (theme.mode === "thread") return [...threadSpec(theme.threadId).spine.categories];
+  if (theme.mode === "experience") {
+    const spec = experienceSpec(theme.experienceId);
+    return [
+      ...spec.anchor.categories,
+      /**
+       * Provisioning counts. The islands day buys its lunch before the ferry,
+       * and a traveller who excluded `grocery` cannot run that spine — a
+       * theme whose provisioning stop is refused is as infeasible as one
+       * whose anchor is, and checking only the anchor would miss it.
+       */
+      ...(spec.provisioning !== undefined ? [spec.provisioning.category] : []),
+    ];
+  }
+  return [];
 }
 
 /** Why this theme cannot be built today, or null if it can. */
@@ -97,6 +131,20 @@ export function themeInfeasibility(
         detail: `${spec.label} needs weather this date is not going to give it`,
       };
     }
+  }
+
+  /**
+   * The spine check runs LAST, after shape/route/weather, so the reported
+   * reason is the one the traveller can act on first: a day that also needs a
+   * ferry that is not running should say so rather than blaming a preference
+   * the traveller cannot change their mind about as easily.
+   */
+  const refused = themeSpineCategories(theme).filter(input.excludes);
+  if (refused.length > 0) {
+    return {
+      reason: "excluded-category",
+      detail: `it is built around ${refused.map(categoryLabel).join(" and ")}, which this traveller asked not to be sent to`,
+    };
   }
   return null;
 }

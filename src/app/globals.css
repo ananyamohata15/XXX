@@ -1,12 +1,100 @@
 @import "tailwindcss";
 
+/**
+ * The concierge's visual language (XXX-43, Session 15).
+ *
+ * Founder direction: "modern, minimalist, chic luxury" — and, after a first
+ * pass, "build without the italics font". So: ONE typeface doing all the
+ * work through weight, size and tracking, no serif, no italics. Jost is a
+ * geometric sans in the Futura line, which is the register luxury retail
+ * actually speaks; hierarchy comes from a light display weight at large
+ * sizes against wide-tracked capitals at small ones.
+ *
+ * Hairlines rather than boxes, and space rather than borders, wherever a
+ * separation can be made without drawing a line.
+ */
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jost), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Light — "gallery": bone paper, near-black ink, one deep pine accent. */
+  --color-paper: #fbfaf7;
+  --color-surface: #ffffff;
+  --color-sunk: #f4f2ec;
+  --color-ink: #121311;
+  --color-ink-2: #4a4c46;
+  --color-muted: #8e8e85;
+  --color-hair: #e7e5de;
+  --color-hair-2: #d6d3ca;
+  --color-accent: #2f4b3f;
+  --color-accent-soft: #edf1ee;
+  /* Semantic, and separate from the accent by design. */
+  --color-warn: #8a6a2f;
+  --color-warn-soft: #f7f0e2;
 }
 
+/**
+ * Dark — "nocturne". Redefined as TOKENS only, never as component rules, so
+ * every surface keeps taking its colour from the same set. The guard means
+ * an explicit light choice still beats a dark OS.
+ */
 @media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-paper: #0d0e0c;
+    --color-surface: #141613;
+    --color-sunk: #1b1e19;
+    --color-ink: #efeee7;
+    --color-ink-2: #bfc0b7;
+    --color-muted: #8b8d84;
+    --color-hair: #24261f;
+    --color-hair-2: #33362c;
+    --color-accent: #a9c4b2;
+    --color-accent-soft: #1a211c;
+    --color-warn: #d9b271;
+    --color-warn-soft: #2a2114;
+  }
   html {
     color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-paper: #0d0e0c;
+  --color-surface: #141613;
+  --color-sunk: #1b1e19;
+  --color-ink: #efeee7;
+  --color-ink-2: #bfc0b7;
+  --color-muted: #8b8d84;
+  --color-hair: #24261f;
+  --color-hair-2: #33362c;
+  --color-accent: #a9c4b2;
+  --color-accent-soft: #1a211c;
+  --color-warn: #d9b271;
+  --color-warn-soft: #2a2114;
+  color-scheme: dark;
+}
+
+/** The wide-tracked capital — the luxury register's smallest unit. */
+@utility label-xs {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+/** Large and light: hierarchy from weight and tracking, never from a serif. */
+@utility display {
+  font-weight: 300;
+  letter-spacing: -0.032em;
+  line-height: 1.1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

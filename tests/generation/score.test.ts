@@ -43,6 +43,7 @@ function candidate(
     googlePlaceId: null,
     rating: null,
     userRatingCount: null,
+    cuisines: [],
     detailsFetched: false,
     score: 0,
     ...over,

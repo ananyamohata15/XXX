@@ -385,6 +385,7 @@ describe("seating moves meals off the window edge (the A/B, on fixtures)", () =>
     googlePlaceId: null,
     rating: null,
     userRatingCount: null,
+    cuisines: [],
     detailsFetched: false,
     score: 1,
   });
@@ -512,6 +513,7 @@ describe("the elected anchor survives composition", () => {
     googlePlaceId: null,
     rating: null,
     userRatingCount: null,
+    cuisines: [],
     detailsFetched: false,
     score: 1,
   });
@@ -637,6 +639,7 @@ describe("an unseatable anchor is REPORTED, never silently absent", () => {
     googlePlaceId: null,
     rating: null,
     userRatingCount: null,
+    cuisines: [],
     detailsFetched: false,
     score: 1,
   });
@@ -813,6 +816,7 @@ describe("menu allocation preserves the diced order across categories", () => {
     googlePlaceId: null,
     rating: null,
     userRatingCount: null,
+    cuisines: [],
     detailsFetched: false,
     score,
   });

@@ -34,7 +34,33 @@ import {
 export const NARRATION_SOURCE = "anthropic:claude-sonnet-5";
 
 export interface TastingRequest {
+  /**
+   * A golden persona, for regression. The Workshop sends one; the product
+   * surface does not (XXX-43).
+   */
   personaKey: string;
+  /**
+   * Generate for the TRAVELLER rather than a persona (XXX-43).
+   *
+   * When true the persona is derived from the stored profile and the
+   * profile's constraints ride the request. This is the product path; the
+   * `personaKey` path is kept intact and byte-identical for regression, so
+   * the two never contend for the same field.
+   */
+  useProfile?: boolean;
+  /** Per-day constraints from the parsed chat request, merged with the profile's. */
+  excludedCategories?: PlaceCategory[];
+  lovedCuisines?: CuisineTag[];
+  /**
+   * What the traveller asked to DO today (XXX-43 CP4 defect 1).
+   *
+   * OVERRIDES the profile's standing gravity for this day rather than merging
+   * with it, and that is the point: "today I want shopping and pubs" is a
+   * statement about today, not an amendment to who they are. The profile is
+   * what they want WHEN THEY HAVE NOT SAID — a default, and a default that
+   * outranked an explicit request would make the request decorative.
+   */
+  wants?: InterestTag[];
   date: string;
   budgetMax: number | null;
   seed: number | null;
@@ -55,6 +81,12 @@ export interface TastingRequest {
 
 export type { TastingMeter, TastingOutcome } from "@/shared/tasting";
 import type { TastingMeter, TastingOutcome } from "@/shared/tasting";
+import { readProfile } from "@/server/profile/repo";
+import { MAX_INTERESTS, personaFromProfile } from "@/shared/profile";
+import type { InterestTag } from "@/shared/persona";
+import { mergeConstraints } from "@/shared/intent";
+import type { CuisineTag } from "@/shared/cuisine";
+import type { PlaceCategory } from "@/shared/vocabulary";
 
 /**
  * The preview path. Same mapping, same components, same verdict
@@ -243,10 +275,39 @@ export async function runTastingGeneration(
     llmUsage: usage,
   };
 
+  /**
+   * The traveller's standing facts, when the product surface asked for them.
+   *
+   * Constraints compose MONOTONICALLY: the profile's exclusions union the
+   * day's, and the day can only add. A per-day request cannot lift a standing
+   * tier-1 constraint — that ruling is enforced here, at the boundary, rather
+   * than trusted to each caller.
+   */
+  const profile = input.useProfile
+    ? (await readProfile(deps.supabase)).profile
+    : null;
+  const excluded = mergeConstraints(
+    profile?.excludedCategories ?? [],
+    input.excludedCategories ?? [],
+  );
+  const loved = [
+    ...new Set([...(profile?.lovedCuisines ?? []), ...(input.lovedCuisines ?? [])]),
+  ];
+
+  const basePersona = profile === null ? persona : personaFromProfile(profile);
+  /**
+   * A stated want beats a standing profile for the day it was stated. Capped
+   * at the three positions `GRAVITY_WEIGHTS` defines — a fourth would weigh
+   * zero and read as "recorded but ignored".
+   */
+  const wants = (input.wants ?? []).slice(0, MAX_INTERESTS);
+  const dayPersona =
+    wants.length > 0 ? { ...basePersona, gravity: wants } : basePersona;
+
   const request: GenerationRequest = {
     city: "toronto",
     date: input.date,
-    persona,
+    persona: dayPersona,
     budgetBand:
       input.budgetMax === null
         ? null
@@ -259,6 +320,10 @@ export async function runTastingGeneration(
     ...(input.lodging === undefined || input.lodging === null
       ? {}
       : { lodging: input.lodging }),
+    // Optional-and-absent: a request with no constraints must be identical
+    // to one from before these fields existed.
+    ...(excluded.length === 0 ? {} : { excludedCategories: excluded }),
+    ...(loved.length === 0 ? {} : { lovedCuisines: loved }),
   };
 
   const outcome = await generateDay(deps, request);
@@ -305,6 +370,7 @@ export async function runTastingGeneration(
       violations: outcome.narrated.violations.map((v) => ({
         ruleId: v.ruleId,
         text: v.text,
+        slotIds: [...v.slotIds],
       })),
       meter,
     };
@@ -315,7 +381,17 @@ export async function runTastingGeneration(
   const context = buildTastingContext({
     day: outcome.day,
     findings: outcome.findings,
-    personaKey: input.personaKey,
+    /**
+     * WHICH PERSONA BUILT THE DAY (XXX-43 CP4 finding).
+     *
+     * This recorded `input.personaKey` unconditionally — so the founder's own
+     * day, generated from his profile, still logged `day-1-jays`: the unused
+     * Workshop default. A reader mining "which persona produced this day"
+     * would have got a confident wrong answer, which is Session 12's seed
+     * defect wearing new clothes — a record naming something that did not
+     * build the day.
+     */
+    personaKey: input.useProfile ? "profile" : input.personaKey,
   });
   const { data: traceRow, error: traceError } = await supabase
     .from("traces")
@@ -368,6 +444,8 @@ export async function runTastingGeneration(
     advisories: outcome.narrated.advisories.map((a) => ({
       ruleId: a.ruleId,
       text: a.text,
+      // Carried, not dropped — see `NarratedLineView.slotIds`.
+      slotIds: [...a.slotIds],
     })),
     dayNotes: outcome.dayNotes,
     unfilled: outcome.stats.unfilled.map((u) => ({

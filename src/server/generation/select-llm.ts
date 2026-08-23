@@ -11,6 +11,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import type { CuisineTag } from "@/shared/cuisine";
 import type { Persona } from "@/shared/persona";
 import {
   costUsd,
@@ -50,6 +51,14 @@ Rules (absolute):
 - corners personas: prefer the option a resident would name, not the one
   a guidebook would — rating volume is fame, and fame is the wrong axis
   for them.
+- If the traveller states cuisines, prefer a MEAL option serving one when
+  the menu offers it — but never at the cost of the icons-vs-corners fit: a
+  corners traveller who loves Thai wants the resident's Thai place, not the
+  famous one. A stated cuisine decides WHICH option, not whether fame wins.
+- Only a menu line that PRINTS a cuisine has one. Never infer a cuisine from
+  a venue's name, and never state one for an option whose line does not show
+  it — most venues in this city carry no cuisine label at all, and saying
+  otherwise invents a fact.
 - reasonSeed states the persona-fact behind the pick in one clause,
   drawn from the menu line (never invented).`;
 
@@ -72,6 +81,7 @@ export class LlmSelector implements Selector {
     persona: Persona,
     seed: number,
     feedback?: string,
+    lovedCuisines: readonly CuisineTag[] = [],
   ): Promise<Selection[]> {
     const offered = menus.filter((m) => m.options.length > 0);
     if (offered.length === 0) return [];
@@ -100,13 +110,19 @@ export class LlmSelector implements Selector {
             i === 0 && this.options.injectionProbe !== undefined
               ? `${option.place.name} ${this.options.injectionProbe}`
               : option.place.name;
-          return `  [${id}] ${name} — ${option.category}, ${option.place.neighborhood}, ${rating}, ${price}, ${verified}`;
+          const cuisine =
+            option.cuisines.length > 0 ? `, ${option.cuisines.join("/")}` : "";
+          return `  [${id}] ${name} — ${option.category}${cuisine}, ${option.place.neighborhood}, ${rating}, ${price}, ${verified}`;
         });
         return `slot ${menu.intent.id} (${menu.intent.label}):\n${lines.join("\n")}`;
       })
       .join("\n");
 
-    const personaText = `persona: pace=${persona.pace}, gravity=${persona.gravity.join(">")}, foodCourage=${persona.foodCourage}, lens=${persona.lens}, structure=${persona.structure}`;
+    const loves =
+      lovedCuisines.length > 0
+        ? `\ntraveller's stated cuisines: ${lovedCuisines.join(", ")}`
+        : "";
+    const personaText = `persona: pace=${persona.pace}, gravity=${persona.gravity.join(">")}, foodCourage=${persona.foodCourage}, lens=${persona.lens}, structure=${persona.structure}${loves}`;
 
     let errorNote = "";
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -168,7 +184,13 @@ export class LlmSelector implements Selector {
     }
 
     // Contract exhausted: the deterministic selector is the honest floor.
-    return this.options.fallback.select(menus, persona, seed, feedback);
+    return this.options.fallback.select(
+      menus,
+      persona,
+      seed,
+      feedback,
+      lovedCuisines,
+    );
   }
 }
 

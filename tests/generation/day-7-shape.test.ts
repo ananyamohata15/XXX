@@ -301,7 +301,8 @@ describe("what the first good islands day surfaced", () => {
       transport: ["walk", "transit"],
       anchorBaseline: null,
       travel: new HaversineStubProvider(),
-      params: GRAMMAR_PARAMS,
+      excludedCategories: null,
+    params: GRAMMAR_PARAMS,
     });
     expect(found.map((f) => f.ruleId)).not.toContain("route.detour-avoidable");
   });

@@ -33,6 +33,10 @@ import {
   openIntervalsOn,
   type Span,
 } from "@/shared/day-grammar/predicates";
+import {
+  isCategoryPermitted,
+  permittedCategories,
+} from "@/shared/constraints";
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { diceStream, personaIdentity, weightedOrderBy } from "@/shared/dice";
 import {
@@ -351,6 +355,12 @@ export function buildSkeleton(
     theme?: DayTheme;
   },
 ): Skeleton {
+  /**
+   * The traveller's hard exclusions, read once (XXX-43). Empty for every
+   * request that states none, which is what keeps such a request
+   * byte-identical to one from before this field existed.
+   */
+  const excluded = request.excludedCategories ?? [];
   const persona = request.persona;
   const theme = options.theme ?? VENUE_THEME;
   const experience =
@@ -421,6 +431,14 @@ export function buildSkeleton(
     ? null
     : electAnchor(persona, {
         exclude: options.excludeAnchorCategories ?? [],
+        /**
+         * The traveller's refusals filter the SAME eligible set but carry no
+         * re-election narrative (XXX-43). See `electAnchor`'s own note: the
+         * first build routed them through `exclude` and the trace then
+         * claimed we had tried to seat a bar and failed, for a traveller who
+         * had simply said they do not drink.
+         */
+        refused: excluded,
         // Re-election must not redraw the same order it just drew, or the
         // engine retries its way through an identical list. The exclusions
         // are part of the context, so each re-election is a fresh draw.
@@ -737,6 +755,8 @@ export function buildSkeleton(
   // --- 3. choose categories, in time order --------------------------------
   const usedFamilies = new Set<CategoryFamily>();
   if (elected !== null) usedFamilies.add(CATEGORY_FAMILY[elected.category]);
+  /** The family of the step placed immediately before the current one. */
+  let previousFamily: CategoryFamily | null = null;
   /**
    * Evening viability now lives in ONE place — `arc.ts:EVENING_VIABLE`
    * (XXX-40, Session 14 CP0 census).
@@ -977,7 +997,16 @@ export function buildSkeleton(
        */
       licensedFamily = licensedFamilyFor(usedFamilies);
       categories = demoteRatherThanDrop(
-        forEvening(closeCategories(persona, rollFor("close", at)), item.window),
+        forEvening(
+          closeCategories(
+            persona,
+            rollFor("close", at),
+            // "Did we just eat?" — the guard `pickContrast` already applies
+            // in the middle of the day, finally reaching its end.
+            previousFamily === "table",
+          ),
+          item.window,
+        ),
         // The family licence: a dominant traveller's own texture counts as
         // fresh for the CLOSE, so the day may bookend on it — but only once
         // the day already holds its three textures. Everything else is
@@ -999,6 +1028,13 @@ export function buildSkeleton(
 
     const primary = categories[0];
     usedFamilies.add(CATEGORY_FAMILY[primary]);
+    /**
+     * The family of the step just placed, so the NEXT step can ask what it
+     * follows (XXX-43 CP4 defect 3). `usedFamilies` cannot answer this: it is
+     * a set of everything the day has touched, and "did we just eat" is a
+     * question about ORDER, not membership.
+     */
+    previousFamily = CATEGORY_FAMILY[primary];
     /**
      * A COMPOSITE BLOCK is sized by its own curated range (XXX-38, the ruled
      * owner-swap) and takes as much of its window as the day allows, up to
@@ -1116,8 +1152,53 @@ export function buildSkeleton(
     (a, b) => a.window.start - b.window.start || a.id.localeCompare(b.id),
   );
   const keptIds = new Set(ordered.map((i) => i.id));
+  /**
+   * THE CONSTRAINT CHOKE POINT (XXX-43).
+   *
+   * Every slot intent's palette is narrowed here, once, whichever picker
+   * built it — meal windows, the contrast picker, `closeCategories`, the
+   * theme's spine, the anchor. Nine seams were inventoried at CP0; this is
+   * the single place they all pass through, and filtering here rather than
+   * in each picker is what stops the nine from drifting apart.
+   *
+   * Two things fall out for free. Retrieval derives its category set from
+   * `skeleton.intents`, so an excluded category is never even QUERIED — the
+   * constraint saves a Supabase round trip as well as honouring itself. And
+   * the family licence cannot promote an excluded category, because
+   * `licensedCategory` is cleared below when the palette no longer offers it.
+   *
+   * An intent whose whole palette is excluded keeps its empty list rather
+   * than being deleted: the engine's existing `unfilled` accounting then
+   * reports it as a thinner day said out loud, which is the honest outcome
+   * and one the surface already knows how to render.
+   */
+  const constrained =
+    excluded.length === 0
+      ? ordered
+      : ordered.map((intent) => {
+          const categories = permittedCategories(intent.categories, excluded);
+          const licensed =
+            intent.licensedCategory !== undefined &&
+            isCategoryPermitted(intent.licensedCategory, excluded)
+              ? intent.licensedCategory
+              : undefined;
+          /**
+           * `licensedCategory` is DESTRUCTURED OUT before the spread, not
+           * conditionally re-added after it. Spreading `...intent` and then
+           * declining to set the key leaves the original in place — the
+           * licence survived its own removal, and the exam caught a day still
+           * promoting a category the traveller had refused.
+           */
+          const { licensedCategory: _dropped, ...rest } = intent;
+          void _dropped;
+          return {
+            ...rest,
+            categories,
+            ...(licensed === undefined ? {} : { licensedCategory: licensed }),
+          };
+        });
   return {
-    intents: ordered,
+    intents: constrained,
     opens: opens.filter(
       (o) => o.afterIntentId === null || keptIds.has(o.afterIntentId),
     ),

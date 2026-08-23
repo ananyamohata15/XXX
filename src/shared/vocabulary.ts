@@ -151,6 +151,36 @@ export type SlotRole = (typeof SLOT_ROLES)[number];
  * same". "meal, gallery, meal, gallery" and "Food Park Food Park" — the
  * founder's own two verdicts — are the same defect in this vocabulary.
  */
+/**
+ * How a category is written for a person (XXX-43, Session 15).
+ *
+ * The vocabulary's slugs are engine words — `nightlife_bars`,
+ * `museums_galleries` — and the founder's ruling is that engine words never
+ * reach the product surface. Refusals, chips and constraint messages all need
+ * the same human noun, so it has ONE owner rather than a phrasing each
+ * surface invents.
+ *
+ * Exhaustive `Record<PlaceCategory, string>`: a category added to the
+ * vocabulary does not compile until someone says how to say it out loud.
+ */
+export const CATEGORY_LABELS = {
+  restaurants: "restaurants",
+  cafes: "cafés",
+  museums_galleries: "museums and galleries",
+  historic_sites: "historic sites",
+  markets: "markets",
+  nightlife_bars: "bars",
+  parks: "parks",
+  shopping: "shops",
+  scenic_viewpoints: "viewpoints",
+  grocery: "grocery stops",
+} as const satisfies Record<PlaceCategory, string>;
+
+/** The human noun for a category — never the slug. */
+export function categoryLabel(category: PlaceCategory): string {
+  return CATEGORY_LABELS[category];
+}
+
 export const CATEGORY_FAMILIES = [
   "table",
   "culture",

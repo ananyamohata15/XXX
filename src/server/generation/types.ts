@@ -8,6 +8,7 @@
  * There is no second fact shape to drift.
  */
 
+import type { CuisineTag } from "@/shared/cuisine";
 import type { NarratedDay } from "@/shared/day-grammar/describe";
 import type { DayTheme, ThemeInfeasibility, ThemeSelection } from "@/shared/theme";
 import type {
@@ -19,7 +20,7 @@ import type {
 } from "@/shared/day-grammar/types";
 import type { Span } from "@/shared/day-grammar/predicates";
 import type { Persona } from "@/shared/persona";
-import type { PriceRange } from "@/shared/timeline";
+import type { LegService, PriceRange } from "@/shared/timeline";
 import type {
   City,
   PlaceCategory,
@@ -65,6 +66,24 @@ export interface GenerationRequest {
    * theme — not a fourth mode.
    */
   theme?: DayTheme | null;
+  /**
+   * Categories this traveller will not be sent to (XXX-43). The founder's
+   * *"I don't drink"* arrives here as `["nightlife_bars"]`.
+   *
+   * A HARD constraint, not a weight: absent from the palette, absent from the
+   * close list, unreachable by the family licence, never retrieved, and — the
+   * part that makes it provable rather than hopeful — a day that seats one
+   * anyway is REJECTED by the grammar before anyone sees it.
+   *
+   * Optional-and-absent (never `undefined` written) so a request that states
+   * no constraint is byte-identical to one from before this field existed.
+   */
+  excludedCategories?: PlaceCategory[];
+  /**
+   * Cuisines the traveller named (XXX-43). Weighs selection; constrains
+   * nothing. A day cannot fail for want of Thai — it can only prefer it.
+   */
+  lovedCuisines?: CuisineTag[];
 }
 
 /** One pool row plus everything learned about it during this request. */
@@ -77,6 +96,16 @@ export interface Candidate {
   /** Rating rides the candidate, not the place — no grammar rule reads it. */
   rating: number | null;
   userRatingCount: number | null;
+  /**
+   * Cuisines this venue denotes, derived from the stored FSQ taxonomy labels
+   * (XXX-43). Rides the candidate for exactly the reason `rating` does: it
+   * informs scoring and the selection menu, and no grammar rule reads it.
+   *
+   * Empty means we do not know — never that the venue is disliked. 15.1% of
+   * pooled restaurants carry no cuisine leaf at all, and a further 44.1%
+   * carry one we do not offer as a chip; both score neutral.
+   */
+  cuisines: CuisineTag[];
   /** Whether request-time Details facts were fetched for this candidate. */
   detailsFetched: boolean;
   score: number;
@@ -201,6 +230,14 @@ export interface Selector {
     persona: Persona,
     seed: number,
     feedback?: string,
+    /**
+     * Cuisines the traveller named (XXX-43). Optional because the
+     * deterministic floor does not read it: the menu has already reserved a
+     * pair of loved-cuisine options at its head, so the floor honours the
+     * preference structurally by taking `options[0]` — without a second
+     * mechanism that could disagree with the first.
+     */
+    lovedCuisines?: readonly CuisineTag[],
   ): Promise<Selection[]>;
 }
 
@@ -261,6 +298,11 @@ export interface ComposedLeg {
   mode: TransportMode;
   source: string;
   tier: Tier;
+  /**
+   * The named scheduled service this leg rides (XXX-43). Present only for a
+   * crossing the theme itself declared — see `annotateFerryLegs`.
+   */
+  via?: LegService;
   /**
    * Present when the composer took the traveller off an over-cap walk
    * (XXX-35 item 1). It exists so the narration can be DETERMINISTIC: the

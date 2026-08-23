@@ -43,6 +43,7 @@ import {
   type Tier,
   type TransportMode,
   type Weekday,
+  type PlaceCategory,
 } from "../../vocabulary";
 
 /** One timestamp for the whole golden set, as the E2 fixture does. */
@@ -209,6 +210,15 @@ export interface GoldenDay {
    * gets an advisory rather than a rejection.
    */
   transport?: TransportMode[];
+  /**
+   * Categories the fixture's traveller refused (XXX-43). Absent → `null`,
+   * so every existing golden day and trap validates exactly as before.
+   *
+   * This field exists because the constraint has TWO context builders — the
+   * engine's and this one — and a constraint added only to the engine's would
+   * leave the golden exam and all 27 traps validating blind to it.
+   */
+  excludedCategories?: readonly PlaceCategory[];
 }
 
 /** Builds the validator context for a golden day. Stub travel by default. */
@@ -226,6 +236,7 @@ export function contextFor(
     anchorBaseline: golden.anchorBaseline,
     travel,
     transport: golden.transport ?? null,
+    excludedCategories: golden.excludedCategories ?? null,
     params: GRAMMAR_PARAMS,
   };
 }

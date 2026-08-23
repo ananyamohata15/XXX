@@ -175,6 +175,7 @@ function ctxOf(over: Partial<GrammarContext> = {}): GrammarContext {
     anchorBaseline: null,
     travel: new HaversineStubProvider(),
     transport: ["walk", "transit"],
+    excludedCategories: null,
     params: GRAMMAR_PARAMS,
     ...over,
   };

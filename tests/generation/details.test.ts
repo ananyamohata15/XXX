@@ -14,6 +14,7 @@ const base: Candidate = {
   googlePlaceId: "gp1",
   rating: null,
   userRatingCount: null,
+  cuisines: [],
   detailsFetched: false,
   score: 0,
 };

@@ -26,7 +26,7 @@ import type {
   HoursByWeekday,
   OpenInterval,
 } from "./day-grammar/types";
-import type {
+import type { LegService,
   FactView,
   PlaceView,
   PriceRange,
@@ -52,6 +52,8 @@ export interface MappedLeg {
     exposedMinutes: number;
     apparentTempC: number;
   } | null;
+  /** The named scheduled service this leg rides (XXX-43). */
+  via?: LegService;
 }
 
 export interface MappingInput {
@@ -157,6 +159,7 @@ export function toTimelineDay(input: MappingInput): TimelineDay {
       minutes: leg.minutes,
       source: leg.source,
       tier: leg.tier,
+      ...(leg.via === undefined ? {} : { via: leg.via }),
       ...(leg.exposureSwap
         ? {
             exposureSwap: {

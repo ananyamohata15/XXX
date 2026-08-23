@@ -29,6 +29,7 @@ const feasibility = (
   routeRuns: () => true,
   goodWeather: true,
   canHold: () => true,
+  excludes: () => false,
   ...over,
 });
 

@@ -28,6 +28,21 @@ const PLACE_CAUSED: ReadonlySet<RuleId> = new Set<RuleId>([
   "dwell.understay",
   "weather.outdoor-in-adverse-window",
   "daylight.outdoor-after-dark",
+  /**
+   * XXX-43. A day seating a category the traveller refused is fixed by
+   * choosing a DIFFERENT VENUE, so it belongs in this set.
+   *
+   * Adding it here is not optional bookkeeping. `planRepair` routes anything
+   * not listed to `plan.unroutable`, which burns all three validation passes
+   * without progress and FAILS the day. The rule would be perfectly correct
+   * and the generation would still die — the constraint would read as "your
+   * day cannot be built" rather than "not that bar, this one".
+   *
+   * This set is a closed `ReadonlySet<RuleId>`: the fifth instance of the
+   * pattern that has cost this project four sessions — a list that enumerates
+   * part of a vocabulary and goes stale when the vocabulary grows.
+   */
+  "constraint.excluded-category",
 ]);
 
 export interface RepairPlan {
