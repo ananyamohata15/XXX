@@ -66,6 +66,24 @@ export interface GenerationRequest {
    * theme — not a fourth mode.
    */
   theme?: DayTheme | null;
+  /**
+   * Categories this traveller will not be sent to (XXX-43). The founder's
+   * *"I don't drink"* arrives here as `["nightlife_bars"]`.
+   *
+   * A HARD constraint, not a weight: absent from the palette, absent from the
+   * close list, unreachable by the family licence, never retrieved, and — the
+   * part that makes it provable rather than hopeful — a day that seats one
+   * anyway is REJECTED by the grammar before anyone sees it.
+   *
+   * Optional-and-absent (never `undefined` written) so a request that states
+   * no constraint is byte-identical to one from before this field existed.
+   */
+  excludedCategories?: PlaceCategory[];
+  /**
+   * Cuisines the traveller named (XXX-43). Weighs selection; constrains
+   * nothing. A day cannot fail for want of Thai — it can only prefer it.
+   */
+  lovedCuisines?: CuisineTag[];
 }
 
 /** One pool row plus everything learned about it during this request. */
@@ -212,6 +230,14 @@ export interface Selector {
     persona: Persona,
     seed: number,
     feedback?: string,
+    /**
+     * Cuisines the traveller named (XXX-43). Optional because the
+     * deterministic floor does not read it: the menu has already reserved a
+     * pair of loved-cuisine options at its head, so the floor honours the
+     * preference structurally by taking `options[0]` — without a second
+     * mechanism that could disagree with the first.
+     */
+    lovedCuisines?: readonly CuisineTag[],
   ): Promise<Selection[]>;
 }
 

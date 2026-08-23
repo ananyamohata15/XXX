@@ -69,6 +69,7 @@ import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
+import type { CuisineTag } from "@/shared/cuisine";
 import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
 import type {
@@ -629,7 +630,14 @@ export async function generateDay(
 
     while (passes < MAX_VALIDATION_PASSES) {
       passes++;
-      const menus = buildMenus(skeleton, scored, request.date, dusk, repair);
+      const menus = buildMenus(
+        skeleton,
+        scored,
+        request.date,
+        dusk,
+        repair,
+        request.lovedCuisines ?? [],
+      );
 
       /**
        * Did the anchor's menu contain anything fit to BE an anchor?
@@ -672,6 +680,7 @@ export async function generateDay(
         request.persona,
         seed,
         feedback,
+        request.lovedCuisines ?? [],
       );
       timings.selectMs += now().getTime() - tSelect;
       await drainLlmUsage();
@@ -1019,6 +1028,20 @@ export async function generateDay(
  */
 export const LICENSED_MENU_DEPTH = 2;
 
+/**
+ * How many venues of a NAMED CUISINE lead its menu (XXX-43).
+ *
+ * Two, and borrowed deliberately from `LICENSED_MENU_DEPTH` rather than
+ * chosen fresh — the two constants answer the same question ("how much menu
+ * does a stated preference get to reserve before it stops being a preference
+ * and becomes a takeover?") and Session 14 already argued it through. One is
+ * too few: the single best Thai place may already be seated elsewhere in the
+ * day, which is exactly the failure the licensed-close ruling was written
+ * for. More than two starts crowding out the textures the rest of the menu
+ * exists to offer.
+ */
+export const CUISINE_MENU_DEPTH = 2;
+
 export function menuSizeFor(intent: SlotIntent): number {
   return intent.kind === "meal" ? MENU_SIZE : MENU_SIZE_DISCRETIONARY;
 }
@@ -1078,6 +1101,31 @@ export function allocateMenu(
    * exactly what those two need in order to reach one.
    */
   priorityCategory?: PlaceCategory,
+  /**
+   * Cuisines the traveller named (XXX-43). Reserves up to
+   * `CUISINE_MENU_DEPTH` places at the head of the menu for venues serving
+   * one of them.
+   *
+   * THIS IS THE MENU'S JOB, NOT THE SCORE'S, and that division was settled by
+   * measurement rather than argument. A flat bonus inside `scoreCandidate`
+   * was tried first and abandoned: swept over 20,000 seeds, ANY additive
+   * value large enough to survive the exploration jitter also inverted the
+   * icons-vs-corners axis a large fraction of the time (0.03 → 6%, 0.10 →
+   * 70%), because the corners margin's floor approaches zero. There is no
+   * safe constant; the mechanism was wrong.
+   *
+   * So the labour divides the way this codebase already divides it — *"the
+   * palette offers, affinity weights, the die orders"*. Code GUARANTEES a
+   * loved cuisine is on the menu; the taste layer decides whether it wins.
+   * Scoring is untouched, so a traveller who named no cuisine scores exactly
+   * as they did before this existed.
+   *
+   * Bounded for the same reason the family licence is bounded: a reserved
+   * pair is a guarantee of representation, not a takeover. The rest of the
+   * menu stays lens-ordered, so the resident's non-Thai pick is still there
+   * to be chosen.
+   */
+  lovedCuisines: readonly CuisineTag[] = [],
 ): Candidate[] {
   const byCategory = new Map<PlaceCategory, Candidate[]>();
   for (const candidate of kept) {
@@ -1090,6 +1138,26 @@ export function allocateMenu(
 
   const cursor = new Map<PlaceCategory, number>();
   const out: Candidate[] = [];
+  /** Reserved cuisine picks, so the round-robin cannot offer them twice. */
+  const spent = new Set<string>();
+
+  if (lovedCuisines.length > 0) {
+    const loved = kept
+      .filter((c) => c.cuisines.some((x) => lovedCuisines.includes(x)))
+      .sort((a, b) => b.score - a.score || a.place.id.localeCompare(b.place.id));
+    const take = Math.min(CUISINE_MENU_DEPTH, loved.length, size);
+    for (let i = 0; i < take; i += 1) {
+      out.push(loved[i]!);
+      spent.add(loved[i]!.place.id);
+    }
+    // Drop the reserved picks from their categories' rotation lists.
+    for (const [category, list] of byCategory) {
+      byCategory.set(
+        category,
+        list.filter((c) => !spent.has(c.place.id)),
+      );
+    }
+  }
 
   if (priorityCategory !== undefined) {
     const list = byCategory.get(priorityCategory) ?? [];
@@ -1160,6 +1228,12 @@ export function buildMenus(
   date: string,
   dusk: number,
   repair: RepairPlan | undefined,
+  /**
+   * Cuisines the traveller named (XXX-43). Defaulted so the offline
+   * diagnostics that call `buildMenus` directly keep meaning what they meant;
+   * the engine and the fidelity harness both pass the request's own value.
+   */
+  lovedCuisines: readonly CuisineTag[] = [],
 ): Menu[] {
   return skeleton.intents.map((intent) => {
     const struck = repair?.strikes.get(`s-${intent.id}`) ?? new Set<string>();
@@ -1240,6 +1314,9 @@ export function buildMenus(
       if (worthy.length > 0) {
         return {
           intent,
+          // No cuisine reservation on the ANCHOR: a day's centrepiece is
+          // chosen for calibre, and a restaurant is rarely the centre. Meals
+          // are where a stated cuisine belongs.
           options: allocateMenu(worthy, intent.categories, size),
         };
       }
@@ -1251,6 +1328,7 @@ export function buildMenus(
         intent.categories,
         size,
         intent.licensedCategory,
+        lovedCuisines,
       ),
     };
   });
