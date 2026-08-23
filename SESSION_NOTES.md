@@ -1217,6 +1217,57 @@ venues get Google Details.
 v2 cells and the islands cells — so the run that lifts this coverage is
 already scheduled and already scoped wider than the last one.
 
+### 4.6 CP4 rulings — of record
+
+**PRINCIPLE OF RECORD (defect 1): an explicit request outranks a standing
+default.** A profile, a persona, a preference are what a traveller wants WHEN
+THEY HAVE NOT SAID. The moment they say, the saying wins for that day — *a
+default that outranked an explicit request would make the request
+decorative.* Promoted to CLAUDE.md.
+
+**LEDGER (defect 1): a gap that is documented but MISCLASSIFIED is still an
+unrecorded assumption — one layer up from a constant.** The constant lessons
+concern behaviour nobody wrote down. This one concerns behaviour that WAS
+written down, under the wrong heading, so nobody acted on it: the parse
+route's own comment named the missing `wants` field and filed it as a
+limitation of the *conflict check*. It was the entire positive half of the
+product, and it shipped to a founder vet. The standing instruction: **when
+recording a limitation, record what it LIMITS** — name the feature it
+disables, not just the check it inconveniences. Promoted to CLAUDE.md.
+
+**LEDGER (defect 3): twin drift is not only two copies of a list — it is two
+places asking the same question with different rigour.** `pickContrast`
+filtered food categories and used families; `closeCategories`, answering the
+sibling question one step later in the same day, filtered neither. The middle
+of the day was guarded and its end was not. Same shape as the `eveningOk`
+twin, recorded on that lesson in CLAUDE.md.
+
+**COMMENDED (defect 4): a profile-built day stamping a persona key would have
+poisoned every future mining pass with confident wrong attribution.** Fixed
+before any corpus depended on it.
+
+**FILED, NOT BUILT: XXX-46** — adjacency as a grammar rule
+(`rhythm.consecutive-same-family`), with the founder's own food-after-food
+day as its canonical trap. Founder ruling: **next session's first commit,
+alongside XXX-44's label-based bar fix.** Both change composition and both
+deserve a full golden re-run rather than a patch landed before a vet. The
+severity choice (blocking vs advisory) is the ruling that ticket owes, with
+`rhythm.ending-without-landing`'s advisory precedent as the argument to
+weigh.
+
+### 4.7 Gate at CP4 resume
+
+`tsc --noEmit` clean · **701 tests passing** (3 skipped) · `npm run build`
+clean · `eslint` clean. Standing exams untouched: golden 6/6, day-7, the
+persona matrix, determinism.
+
+**The room is live and serving the fixed surface** —
+`http://192.168.2.10:3000/tasting`, verified by fetching the served client
+bundle rather than assuming the dev server reloaded.
+
+Spend to date: **$1.5237** of the $15 gate. The founder's own CP4 generations
+are additional and recorded against their traces.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
