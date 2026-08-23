@@ -19,7 +19,12 @@ export const SONNET_INPUT_USD_PER_MTOK = 3;
 export const SONNET_OUTPUT_USD_PER_MTOK = 15;
 
 export interface LlmUsageEvent {
-  stage: "selection" | "narration";
+  /**
+   * Which LLM call this was. `intent-parse` joins the two generation stages
+   * in Session 15 (XXX-43) — the parser spends money like any other call and
+   * the instrument-everything constraint applies to it identically.
+   */
+  stage: "selection" | "narration" | "intent-parse";
   inputTokens: number;
   outputTokens: number;
   estCostUsd: number;
