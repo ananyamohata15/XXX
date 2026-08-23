@@ -8,6 +8,7 @@
  * There is no second fact shape to drift.
  */
 
+import type { CuisineTag } from "@/shared/cuisine";
 import type { NarratedDay } from "@/shared/day-grammar/describe";
 import type { DayTheme, ThemeInfeasibility, ThemeSelection } from "@/shared/theme";
 import type {
@@ -77,6 +78,16 @@ export interface Candidate {
   /** Rating rides the candidate, not the place — no grammar rule reads it. */
   rating: number | null;
   userRatingCount: number | null;
+  /**
+   * Cuisines this venue denotes, derived from the stored FSQ taxonomy labels
+   * (XXX-43). Rides the candidate for exactly the reason `rating` does: it
+   * informs scoring and the selection menu, and no grammar rule reads it.
+   *
+   * Empty means we do not know — never that the venue is disliked. 15.1% of
+   * pooled restaurants carry no cuisine leaf at all, and a further 44.1%
+   * carry one we do not offer as a chip; both score neutral.
+   */
+  cuisines: CuisineTag[];
   /** Whether request-time Details facts were fetched for this candidate. */
   detailsFetched: boolean;
   score: number;

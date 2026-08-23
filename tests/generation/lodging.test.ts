@@ -50,6 +50,7 @@ const candidate = (
   googlePlaceId: null,
   rating: 4.2,
   userRatingCount: 400,
+  cuisines: [],
   detailsFetched: true,
   score: 0.8,
 });

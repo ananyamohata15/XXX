@@ -84,6 +84,7 @@ function candidate(
     googlePlaceId: null,
     rating: 4.3,
     userRatingCount: 200,
+    cuisines: [],
     detailsFetched: true,
     score: 0.8,
   };

@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cuisinesFromLabels } from "@/shared/cuisine";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
@@ -220,6 +221,27 @@ function bboxOf(zones: RetrievalZone[]): {
   return { latMin, latMax, lngMin, lngMax };
 }
 
+/**
+ * The joined `categories` fact, as the row actually carries it.
+ *
+ * `value` is external input and typed as unknown-ish on purpose: it is
+ * whatever the database holds, and `sourceLabelsOf` narrows it rather than
+ * trusting it.
+ */
+interface PoolFactRow {
+  fact_key: string;
+  value: { mapped?: unknown; source_labels?: unknown } | null;
+}
+
+/**
+ * One pooled place, as `select()` above actually returns it.
+ *
+ * `facts` was MISSING from this interface until Session 15, while the query
+ * has always joined it — so `(data ?? []) as unknown as PoolRow[]` was a
+ * double assertion that erased a field the row really had. Nothing
+ * downstream could see `source_labels`, which is where every cuisine in the
+ * pool lives. The cast now asserts something true.
+ */
 interface PoolRow {
   id: string;
   name: string;
@@ -230,6 +252,22 @@ interface PoolRow {
   source: string;
   tier: number;
   fetched_at: string;
+  facts: PoolFactRow[] | null;
+}
+
+/**
+ * The raw taxonomy labels for a row, or none.
+ *
+ * Never throws: a malformed `value` means we do not know this venue's
+ * cuisine, which is honest absence, not a reason to fail a generation. A
+ * venue with no labels is simply never cuisine-matched and is never
+ * penalised for it.
+ */
+function sourceLabelsOf(row: PoolRow): string[] {
+  const fact = row.facts?.find((f) => f.fact_key === "categories");
+  const labels = fact?.value?.source_labels;
+  if (!Array.isArray(labels)) return [];
+  return labels.filter((l): l is string => typeof l === "string");
 }
 
 function nearestZone(
@@ -289,6 +327,9 @@ export async function retrieveCandidates(
         throw new Error(`candidate retrieval failed: ${error.message}`);
       }
       return { category, rows: (data ?? []) as unknown as PoolRow[] };
+      // NOTE: the assertion stays (Supabase's inferred join type is wider
+      // than the row we select), but `PoolRow` now describes every field the
+      // query returns, so it no longer erases one.
     }),
   );
 
@@ -342,6 +383,16 @@ export async function retrieveCandidates(
           category: categoryFact,
         },
         category,
+        /**
+         * Cuisine rides the CANDIDATE, not the place — the same division
+         * `rating` follows, and for the same reason: no grammar rule reads
+         * it. Cuisine is a preference input to scoring and to the selection
+         * menu, never a claim about the day's validity.
+         *
+         * A venue with no cuisine label gets `[]`, which scores neutral. We
+         * are ignorant of its kitchen, and ignorance is not a demerit.
+         */
+        cuisines: cuisinesFromLabels(sourceLabelsOf(row)),
         googlePlaceId: row.google_place_id,
         rating: null,
         userRatingCount: null,
