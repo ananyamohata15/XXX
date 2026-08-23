@@ -511,6 +511,111 @@ session total **~$7–8 against the $15 gate.**
 4. The advisory line's wording when several families fire at once: one
    sentence naming the two largest, or a bare count?
 
+### 1.7 The build map — seams, and the hazards found surveying them
+
+A full read of the request path and validator was taken before proposing the
+build. Two results are load-bearing.
+
+**GOOD NEWS, proven rather than assumed: a constraint on `GenerationRequest`
+survives every repair pass by construction.** `planRepair` never receives or
+returns the request; `RepairPlan` carries only strikes/slack/unroutable; the
+validation loop re-reads `request` fresh each pass and the object is never
+mutated (reads only, verified across `compose.ts`). Anchor re-election passes
+`request` intact too. So the constraint cannot be lost mid-repair — the
+failure mode that would have been hardest to detect live.
+
+**The threading map** (each is a required edit, not a nicety):
+
+| # | site | why |
+|---|---|---|
+| 1 | `types.ts:42` | the field |
+| 2 | `api/tasting/generate/route.ts:21` | **`z.strictObject` — an unlisted field is a 400, not an ignore** |
+| 3 | `server/tasting/generate.ts:36`,`:246` | the only production construction site |
+| 4 | `engine.ts:477` | drop excluded categories before retrieval — else we pay Supabase for a category we will never seat |
+| 5 | `engine.ts:632` `buildMenus` | **does not receive `request`** — signature change, 3 call sites (`engine.ts:632`, `offline-recompose.ts:140`, `discretionary-diagnosis.ts:71`) |
+| 6 | `context.ts:58` **and** `fixtures/golden/support.ts:215` | **two context builders**; miss the fixture one and the golden exam validates blind to the constraint |
+| 7 | `repair.ts:21` `PLACE_CAUSED` | see hazard below |
+| 8 | `engine.ts:1289` `traceSummary` | provability — the constraint belongs beside `persona_identity` |
+
+**HAZARD 1 — `PLACE_CAUSED` is a closed `ReadonlySet<RuleId>`, and it is the
+same shape of trap this project has been bitten by four times.** A new
+`constraint.excluded-category` rule not added there falls to
+`plan.unroutable`, which burns all three validation passes without progress
+and **fails the day instead of striking the offending venue**. The rule would
+be correct, the day would still die. Recorded as the first thing the build
+does, and as the fifth entry in the standing list of lists-that-enumerate.
+
+**HAZARD 2 — `retrieve.ts:291` discards `source_labels` behind a cast that
+lies.** The query at `:274` already joins the `categories` fact, but the
+return is `(data ?? []) as unknown as PoolRow[]`, and `PoolRow` (`:223`) has
+no `facts` member — so a double-assertion silently erases the very field this
+session needs. The cuisine work's first commit widens `PoolRow` and **stops
+the cast asserting something untrue**; that is a correctness fix in its own
+right, independent of cuisine.
+
+**HAZARD 3 — `SCORE_WEIGHTS` sums to exactly 1.00.** A sixth term forces an
+explicit rebalance ruling, and `score.test.ts:60` (spread ≤ `2 ×
+JITTER_BOUND`) will detect any drift. Proposal: the cuisine term rides
+**outside** the normalized five as a bounded bonus with ceiling < the lens
+signal, so it reorders within a category without inverting the identity axis
+— the same argument that set `JITTER_BOUND` at CP3. Ruling wanted at CP1.
+
+**HAZARD 4 — the validator's nullable-means-unknown convention.**
+`GrammarContext` uses `null` for *unknown* (the `transport` precedent), and a
+rule that does not know must not claim. So `excludedCategories: readonly
+PlaceCategory[] | null`, and the rule early-returns on `null` exactly as
+`money.ts:24` does for a null budget band.
+
+**The theme refusal extends cleanly, with a free asymmetry worth recording.**
+`themeInfeasibility` gains a fourth arm and an injected `excludes` predicate.
+A **requested** theme then refuses loudly; a **derived** theme is filtered out
+before the weighted draw and simply never offered. That asymmetry is correct
+and costs nothing. One catch found: `ExperienceSpec.provisioning.category`
+(`grocery`, for the islands) must be gated too — a theme whose provisioning
+stop is excluded is equally infeasible, and checking only the spine would
+miss it.
+
+**The byte-identity harness already exists** — `theme.test.ts:375` proves a
+venue day is byte-identical to a themeless day across all 8 personas at a
+fixed seed. Session 14 wrote it because the theme layer risked perturbing
+themeless days; this session has the identical risk and copies the shape
+verbatim. The per-rule fire proof also already exists: a `TrapFixture` in
+`traps.ts` with `expect: "constraint.excluded-category"` is automatically
+exercised per-rule by `golden-set.test.ts:79`.
+
+### 1.8 A finding on the mandate's own subject — meal rhythm is not personal
+
+The founder's S14 verdict was *"Food food one small park spot then Food
+food"*. Surveying the request path found the mechanism, and it is not a bug —
+it is a recorded limitation that this session is the first to be able to lift.
+
+```ts
+export function defaultMealPattern(persona: Persona): MealPatternId {
+  return persona.structure === "wanderer" ? "coffee_then_brunch" : "classic";
+}
+```
+
+**No caller anywhere sets `request.mealPattern`** — not the route, not the
+room, not one script. So every day ever generated has taken this default,
+which reads **one of the five persona dimensions** (`structure`) and ignores
+pace, gravity, foodCourage and lens entirely. There are exactly **two**
+patterns; a third (`grazing`) was deliberately removed in Session 11 with the
+note that *"comment 10290 selects grazing by CHRONOTYPE, and `Persona` carries
+no chronotype… it returns in one commit when E6 lands a chronotype dimension
+that can actually choose it."*
+
+So the day's most *felt* structure — how many meals and when — is chosen by a
+single boolean, and the missing selector is a taste dimension. **This session
+builds the interview that could ask for it.**
+
+**Recommendation: NOT in v1 scope**, and the reason is this session's own AC.
+Restoring `grazing` needs new grammar params and would move composition for
+everyone, which is precisely what the byte-identity gate forbids. It is E6's
+recorded home. But the front door is what unblocks it, so it is proposed as a
+**new ticket** rather than left as a comment: *add a chronotype dimension to
+the interview and restore `grazing`, with the meal-count cap it advertised.*
+Recorded here so the next session inherits the mechanism, not the symptom.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
