@@ -616,6 +616,74 @@ recorded home. But the front door is what unblocks it, so it is proposed as a
 the interview and restore `grazing`, with the meal-count cap it advertised.*
 Recorded here so the next session inherits the mechanism, not the symptom.
 
+### 1.9 CP1 rulings — of record
+
+**Ruling 1 (founder) — offer more cuisines, and say plainly when we can't.**
+Measured before building to it: **80 cuisines have ≥20 places** in the pool,
+72 sit below that floor. All 80 become chips; the tail is offered with its
+depth shown on the chip. A loved cuisine the city is thin on produces a
+stated absence on the day **and a recorded pool gap** — the founder's taste
+becomes a work order rather than a shrug. This is the honest-absence law
+pointed at our own coverage.
+
+**Ruling 2 (founder) — NO one-tap promotion from the day screen.** The
+profile sheet is the only door to a standing fact. §1.1's single-owner ruling
+stands as written; the chip-promotion nicety is dead, not deferred.
+
+**Ruling 3 (mine, and the measurement reversed it) — dietary SHIPS, as a
+leaning labelled for what it is.** I was going to recommend waiting on the
+assumption that only vegan/vegetarian had a fact basis. Measured:
+
+| dietary tag | places |
+|---|---|
+| Vegan and Vegetarian Restaurant | 253 |
+| **Halal Restaurant** | **116** |
+| Gluten-Free Restaurant | 31 |
+| Kosher Restaurant | 18 (+3 Kosher Store) |
+| allergy-aware, Jain | **no label exists** |
+
+Halal at 116 is a real signal, and refusing to use it would have been its own
+dishonesty — the recommendation I nearly gave was wrong on the facts. But a
+directory tag is not a certification, and for someone who keeps halal that
+gap is the entire point. So the tier system does the work it was built for:
+the tag rides at **tier 2 / Observed**, weights selection, and the day states
+in words that we cannot vouch for a kitchen. Allergy and Jain get nothing and
+claim nothing.
+
+*Process note, recorded because it is the third time this session:* the CP0
+cuisine answer, the meal-rhythm mechanism and now dietary were all settled by
+a cheap measurement that contradicted a confident prior. Measuring first cost
+minutes and changed the answer every time.
+
+**Ruling 4 (founder) — byte-identity confirmed as the bar**, and it is the
+whole reason the golden days remain a usable ruler. The founder asked for an
+elaboration; it is in the published spec in plain language.
+
+**Ruling 5 (founder) — the product gets a real UI stack and a luxury
+register.** Verified against the installed React 19.2.8 / Next 16.3.0 /
+Tailwind 4.3.3 by dry-run install — the set resolves with **no peer
+conflicts**:
+
+| concern | choice |
+|---|---|
+| components | shadcn/ui on Radix primitives (unstyled, ours to theme) |
+| sheets / drawers | Vaul — the reason sheet and the Workshop drawer |
+| motion | `motion` — already installed, already on the timeline |
+| type | **`next/font`** — self-hosted at build, no CDN, no layout shift, no CSP problem |
+| icons | Lucide |
+
+Typography of record: **Instrument Serif** for voice (greetings, venue names,
+the concierge speaking) + **Jost** for everything functional, with
+wide-tracked capitals for micro-labels. One accent (deep pine, pale sage in
+dark), hairlines rather than boxes, and air doing the separating. The
+published spec is set in those faces so the register is shown, not described.
+
+**Still open — the one thing CP2 waits on:** `SCORE_WEIGHTS` sums to exactly
+1.00, so the cuisine term forces a rebalance decision. Proposal on the table:
+it rides **outside** the normalized five as a bounded bonus with a ceiling
+below the lens signal — loving Thai should decide *which* restaurant, never
+override icons-vs-corners, which is the more central axis of how a day feels.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
