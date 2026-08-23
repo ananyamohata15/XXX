@@ -1,3 +1,273 @@
+# Session 16 — Geography and experiences (XXX-47, XXX-48, XXX-41, XXX-44, XXX-46)
+
+Branch: `session-16-geography-and-experiences`
+
+Mandate: Session 15's CP4 round-two diagnosis — *the engine composes stops
+but not geography, and not experiences beyond the islands template.*
+
+## Step 1 — The two ruled first commits (CHECKPOINT 1)
+
+Both landed, each with a golden re-run. Two atomic commits, each verified
+green on its own before the next was made.
+
+### XXX-44 — the alcohol constraint reads labels, not just categories
+
+`10d2ad1`
+
+**The gap.** Nine seams answered *"may this traveller be sent here?"* and
+every one asked a CATEGORY question. Clandestino Wine Bar reached a
+no-alcohol day because it is mapped `restaurants` and every seam did its
+job. The tenth seam is the first to read an ATTRIBUTE.
+
+**The signal, stated because the last measurement of it was wrong.** Raw
+FSQ breadcrumbs already stored on the `categories` fact, which
+`retrieveCandidates` already joins. One pure function, no new I/O, no
+re-ingest, no Google call. Session 15's name-regex read *names* and put the
+gap at 130 (0.67%); labels put it at 742 (3.85%). This reads labels.
+
+**RULING — the honest-absence asymmetry (the ticket's own question).** An
+unknown-alcohol venue is **RISKED, not excluded** — but not on
+`filters.ts`'s usual grounds. That rule ("unknown facts do not eliminate a
+candidate; only a known-bad fact is a hard no") is about facts about the
+world, and for alcohol the harm is lopsided enough that a general principle
+is not warrant enough: a traveller who does not drink, seated in a bar, has
+been ignored; a traveller denied one restaurant among thousands has lost
+nothing they can feel.
+
+The warrant is the measurement. `domain/schemas.ts` types `source_labels`
+as `.nonempty()`, so `unknown` **cannot** mean "a restaurant we did not
+check". It means *no `categories` fact at all* — a user's own anchor, a
+fixture place, a Google-only venue — which is precisely the population
+`checkConstraints` already declines to judge on the ground that *the user
+owns their own commitments*. The two principles do not collide. Verified
+live: **0 pooled rows are label-blind**, and `scripts/alcohol-report.ts`
+exits non-zero if that ever stops being true, because the ruling rests on
+it.
+
+Three states, not two: `focused` / `not-focused` / `unknown`. `not-focused`
+is a POSITIVE Tier-2 observation — a directory that filed this venue and
+did not file it under a drinking branch — not an absence. Collapsing the
+two is how an instrument starts lying about absence.
+
+**Derived, not a new field.** The constraint comes from the existing
+`nightlife_bars` exclusion, because `Interview.tsx`'s chip for that category
+reads **"No alcohol"** in those words and the parse prompt says the same. A
+`noAlcohol: boolean` beside `excludedCategories: ["nightlife_bars"]` would
+be two ways to say one thing, free to disagree, and every stored profile
+would need a migration to gain the second. Derived, the fix reaches every
+no-alcohol profile already in the database on its next generation.
+
+Cost, stated: someone who excludes bars because they are LOUD also loses the
+wine bar filed as a restaurant. A strictly smaller day, never a broken
+promise.
+
+**FIRE-RATE, against each exam persona's own retrieved pool** — the proof a
+green test cannot give:
+
+| persona | pool | refused | of those, CATEGORY-permitted |
+|---|---|---|---|
+| day-1-jays | 2274 | 376 | **69** |
+| day-2-old-town | 2818 | 448 | **98** |
+| day-3-winter | 2550 | 424 | **89** |
+| day-4-budget | 2453 | 411 | **93** |
+| day-5-wanderer | 2377 | 220 | **56** |
+| day-6-excursion | 2783 | 473 | **104** |
+| persona-shopper | 2712 | 475 | **97** |
+| persona-scenic | 2738 | 498 | **103** |
+
+Named examples, all mapped `restaurants`: Wylie's Neighbourhood Pub,
+Amsterdam Brewhouse, Top Deck Bar, Alto Basso Bar, Katipunan Resto-Bar.
+
+Plus **629 of 5,493 pooled `grocery` venues (11.45%)** — LCBO, Beer Store,
+wine shops. Not decoration: `grocery` is what an experience's
+`provisioning` stop draws from, and the first live islands day provisioned
+at an LCBO (recorded in `movement.ts`'s causality clause).
+
+**The in-product limitation line moved with the fix.** It apologised for
+wine bars slipping through; they no longer do. *An honest limit that has
+stopped being true is a silent one*, and the old sentence would have been a
+lie in the traveller's favour — the more dangerous direction, going on
+apologising for a closed hole while saying nothing about the open one. It
+now names what is genuinely left: a restaurant that simply pours and whose
+listing says nothing about it.
+
+Found while rewriting it: `owesLimitationNotice` returned
+`excluded.length > 0`, so a traveller who excluded only
+`museums_galleries` was shown a paragraph about bars — a caveat about a
+promise nobody made them. Narrowed to `excludesAlcohol`.
+
+**DELIBERATELY OUT, and counted every run so the decision is re-made against
+a number rather than forgotten:** `Dining and Drinking > Restaurant >
+Gastropub` (**85 in Toronto**) and `… > German Restaurant > Apple Wine Pub`
+(0). Both are pubs by any honest reading and both are filed by FSQ under
+Restaurant. Including them means overriding the source taxonomy with a
+private opinion about which restaurant leaves are really bars — the call
+`CUISINE_PREFIXES` refused for `Pizzeria`. **Founder ruling wanted on the
+85.**
+
+### The instrument caught two things on its first run
+
+`scripts/alcohol-report.ts` is the instrument of record.
+
+1. **`"Nightlife"` was a dead prefix.** It matches nothing under
+   node-boundary matching (`=== prefix` or `startsWith(prefix + " > ")`),
+   because the taxonomy's node is `Nightlife Spot`. Corrected to the label
+   that exists — the `Retail > Farmers Market` correction exactly.
+   *Reported, not fixed here:* `CATEGORY_BREADCRUMB_RULES.nightlife_bars`
+   still carries the bare `"Nightlife"`, which works only because that
+   matcher uses bare `startsWith` — the over-capture risk its own comment
+   names ("the comma is load-bearing"). Filed for XXX-37.
+2. **Its own first version conflated two different claims.** It printed
+   `Nightlife` as DEAD on zero *pooled* rows and exited non-zero. A rule
+   that matches nothing IN THE TAXONOMY is a defect; a rule that matches
+   nothing IN THIS CITY is a fact about Toronto. The report now separates
+   them — taxonomy is pass/fail, pool count is context. *An instrument that
+   always looks at the same part of its data will eventually accuse the
+   data.*
+
+### Session 15's 742 does not reproduce — recorded, not restated
+
+Denominator reproduces exactly (19,286 `restaurants`). Numerator does not:
+
+- **653** — strict `Dining and Drinking > Bar` prefix
+- **673** — every drinking prefix in this file
+- 699 — restaurants OR cafes with a Bar label
+- 757 — venues mapped `nightlife_bars` and something else
+
+None is 742. The pool has been re-ingested since, so a moved number is
+expected — but it is recorded as **unreconciled with the predicate stated**,
+because a figure nobody can re-derive is the shape of instrument this
+project has been burned by three times.
+
+**What did reconcile, and matters more:** of the 653, exactly **ZERO** are
+mapped `restaurants` without ALSO being mapped `nightlife_bars`. The
+`mapped` union already knew. Labels were chosen anyway, for two stated
+reasons: they reach the 629 grocery venues no category signal can see, and
+one owner beats two agreeing signals free to drift apart.
+
+### XXX-46 — adjacency as a grammar rule, narrowed by the measurement
+
+`302793a`
+
+**The ticket asked for a blanket rule and cannot have one.** Run *"no two
+consecutive stops of the same texture family"* over the six
+founder-verified golden days and **two of six fail, on three pairs:**
+
+| day | pair | family |
+|---|---|---|
+| day-1-jays | Harbourfront → Roundhouse Park | outdoor |
+| day-4-budget | Grange Park → Trinity Bellwoods | outdoor |
+| day-4-budget | Trinity Bellwoods → Harbourfront | outdoor |
+
+He authored every one. Park into park is a walk, not a repetition, and
+day-4 is the budget day whose whole shape is walking the city.
+
+Worse: **the blanket rule refuses something he asked for by name.** His own
+failed sentence this session is *"shopping, pub hopping and food for
+today"* — **pub hopping IS consecutive bars.** A rule forbidding it would
+make the request undeliverable in the very session that exists to deliver
+it.
+
+**Fixtures were not edited. The rule was.** Same shape as
+`minTextureFamilies`, which the golden set corrected at Session 7.
+
+**Then the offline recompose caught a second narrowing that no fixture
+could.** The live composer opens **day-2 and day-6 with `cafes` →
+`restaurants`** — coffee then brunch, and `coffee_then_brunch` is a **meal
+pattern this product ships by name**, sitting in the same params object as
+the rule. Blocking it would have been legislation against a feature two
+screens up. No founder-authored fixture happens to have that pair, so the
+green 6/6 said nothing.
+
+The near-miss underneath it: reusing `pacing.foodCategories` (which lists
+both `restaurants` and `cafes`) would have produced exactly that bug.
+That list is right for a CEILING — a pub with a kitchen ends a hungry
+stretch, four coffees are four food stops — and wrong for ADJACENCY. **A
+constant is suspect if its correctness depends on a behaviour nobody wrote
+down**, arriving on schedule.
+
+**So: two questions, two owners, neither standing in for the other** — the
+`EVENING_VIABLE` / `isCategoryPermitted` division:
+
+| owner | question | verdict |
+|---|---|---|
+| `pacing.mealGrade` | is a stop here a full sit-down meal? | two in a row → **BLOCKING** |
+| `pacing.consecutiveFamily` | are these two stops the same texture? | advisory at most |
+
+`mealGrade` is `Record<PlaceCategory, boolean>`; only `restaurants` is true,
+and **`cafes: false` is the entry the whole rule turns on** (`dwell.typical`
+agrees: 45 minutes against 90).
+
+`consecutiveFamily` is `Record<CategoryFamily, AdjacencyVerdict>`:
+
+- `table` → **permitted**, because everything worth blocking in it is
+  `mealGrade` and everything else is coffee-then-brunch.
+- `culture` → **advisory.** Cannot be blocking: a THREAD day's spine is
+  same-family BY CONSTRUCTION (`history-of-toronto` is 2–3 culture stops)
+  and `GrammarContext` does not carry the theme, so the rule cannot tell a
+  spine from a rut.
+- `market` → **advisory.** Session 14's family licence exists to put TWO
+  shopping venues in a shopper's day, and XXX-41 is about making Eaton
+  Centre → Yorkville reachable. Blocking would fight the feature next door.
+- `outdoor` → **permitted.** Three founder-verified pairs, measured.
+- `night` → **permitted.** Pub hopping, in his own words.
+
+Both exhaustive `Record`s rather than admit-lists: a category or family
+added to the vocabulary must SAY, instead of defaulting to a verdict in
+silence the way `eveningOk` did.
+
+**Mechanics.** Reported as PAIRS, not runs — three parks is two findings,
+because the repair is per-pair. Only the LATER slot goes into `slotIds`:
+`PLACE_CAUSED` strikes every id it is handed, and striking the first would
+re-draw a stop that is not the problem, quite possibly the anchor. Routed in
+`repair.ts`, without which the rule would be correct and the generation
+would still die at `plan.unroutable`.
+
+**Trap fixture** is the founder's own CP4 close, reproduced rather than
+paraphrased: a second restaurant seated as an ACTIVITY ten minutes after
+dinner ends — under the food cap (4 against `classic`'s 4) and inside
+`minTextureFamilies` (3 distinct), so neither existing rule has anything to
+say about it. That is what makes it the right trap.
+
+## CP1 gates — the golden re-run, both commits
+
+`tsc --noEmit` clean · **731 tests passing**, 3 skipped (was 701) ·
+`npm run build` clean · `eslint` clean.
+
+Offline recompose (`$0`, DB pool only, no Google, no Anthropic):
+
+```
+anchors seated                8/8    PASS
+closes                        7/7    PASS
+discretionary max             0.67   PASS (gate ≤0.67)
+venue overlap                 mean 0.014  max 0.20
+adjacency census              0 blocking, 0 advisory   PASS
+```
+
+Fixture exams: **golden 6/6 clean**, trap fixtures 27→**29** all caught
+(two added, one per ticket), **day-7 shape exam clean**, determinism
+unchanged, persona matrix unchanged, `alcohol-report` PASS.
+
+**Deviations from the mandate, both stated rather than smuggled:**
+
+1. **XXX-46 did not land the blanket rule the ticket drafted.** It fails two
+   founder-verified golden days and forbids pub hopping. The mandate says
+   *report any golden day it fails and stop for a ruling rather than editing
+   fixtures* — no fixture was edited, the three failing pairs are named
+   above, and the narrowed rule is **proposed as a ruling for
+   ratification**. It is landed rather than held because the narrowed form
+   is strictly safer than no rule at all and the golden set is green under
+   it; reverting is one line per verdict if the founder disagrees.
+2. **`Gastropub` (85 Toronto venues) stays inside a no-alcohol day.**
+   Declined on taxonomy-override grounds, counted every run, **founder
+   ruling wanted.**
+
+## Spend
+
+**$0.00** of the $15 gate so far. Every measurement this checkpoint is a
+Supabase read; no Google endpoint, no Anthropic call, no generation. The
+free tier resets **Sep 1**.
+
 # Session 15 — The taste front door: chat intent, profile, product UX (XXX-43)
 
 Branch: `session-15-taste-front-door`, cut from `main` at `057c922` (the
