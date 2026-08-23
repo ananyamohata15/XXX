@@ -698,4 +698,31 @@ export const TRAP_FIXTURES: readonly TrapFixture[] = [
       g.day.slots[4].endTime = "20:00";
     },
   ),
+  /**
+   * XXX-43. The no-alcohol trap: the backstop's fire proof.
+   *
+   * Day 1 closes at Ruby Soho, a `nightlife_bars` stop, and it is a perfectly
+   * good day — it validates clean today and must keep doing so. The trap
+   * changes NOTHING about the day; it changes what the traveller said. That
+   * is the whole point: the same day is legal for one person and refused for
+   * another, and the only difference is that one of them told us they do not
+   * drink.
+   *
+   * Eight seams upstream are supposed to make this unreachable. This asserts
+   * what happens when they do not.
+   */
+  broken(
+    goldenDay1,
+    {
+      key: "trap-excluded-category",
+      title: "A bar on the day of someone who does not drink",
+      expect: "constraint.excluded-category",
+      trapClass: null,
+      why: "The founder's own words opened Session 15: 'I don't drink'. Every upstream seam narrows the palette so this day is never built — but 'we filtered carefully' is not a promise, and this is the rule that turns it into one. BLOCKING rather than advisory: an unverified price is a gap in our knowledge and ships with a note; a bar on a teetotaller's day is us ignoring them.",
+    },
+    (g) => {
+      // The day is untouched. Only the traveller's stated constraint changes.
+      g.excludedCategories = ["nightlife_bars"];
+    },
+  ),
 ];

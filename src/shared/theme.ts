@@ -335,7 +335,17 @@ export type ThemeInfeasibility =
   /** A scheduled route the theme depends on does not run on this date. */
   | { reason: "route-out-of-season"; detail: string }
   /** The theme needs weather it is not going to get. */
-  | { reason: "weather"; detail: string };
+  | { reason: "weather"; detail: string }
+  /**
+   * The theme's own spine needs a category this traveller refused (XXX-43).
+   *
+   * A REFUSAL, never a substitution, and that is the ratified constraint law.
+   * Quietly swapping the excluded category for another would hand the
+   * traveller a day still called "a history of Toronto" that is no longer
+   * one — the silent-fallback failure this project banned in constraint 4.
+   * Honest absence applies to whole days, not only to facts.
+   */
+  | { reason: "excluded-category"; detail: string };
 
 /** The zones a theme draws from; empty = it has no geography of its own. */
 export function themeZoneSlugs(theme: DayTheme): readonly string[] {

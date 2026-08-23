@@ -69,6 +69,7 @@ import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
 import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
+import { isCategoryPermitted } from "@/shared/constraints";
 import type { CuisineTag } from "@/shared/cuisine";
 import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
@@ -338,6 +339,8 @@ export async function generateDay(
         persona: request.persona,
         routeRuns: (routeKey) => runningRoutes.has(routeKey),
         goodWeather: environmentIsFair(environment),
+        excludes: (category) =>
+          !isCategoryPermitted(category, request.excludedCategories ?? []),
         canHold: (theme) =>
           theme.mode === "venue" ||
           templatesHolding(

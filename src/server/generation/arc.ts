@@ -464,6 +464,23 @@ export function electAnchor(
      */
     exclude?: readonly PlaceCategory[];
     /**
+     * Categories the TRAVELLER refused (XXX-43) — a different fact from
+     * `exclude`, and kept separate deliberately.
+     *
+     * The first build folded these into `exclude` on the reasoning that both
+     * mean "do not elect this". They do — but `exclude` also STAMPS A REASON,
+     * and the reason it stamps is *"re-elected after X could not be seated"*.
+     * Routed through it, a day for someone who does not drink recorded that
+     * we had TRIED to seat a bar and failed. That is a lie in the trace, and
+     * a trace that lies about why is worse than one that says nothing:
+     * "the pool failed us" and "the traveller said no" are different facts
+     * and a later reader mining either would draw the wrong conclusion.
+     *
+     * So: same filtering, no narrative. A refusal needs no explanation
+     * beyond itself.
+     */
+    refused?: readonly PlaceCategory[];
+    /**
      * The seeded stream for site "anchor". Required — an un-diced elector is
      * how `historic_sites` won every tie against `museums_galleries` for
      * every persona forever (the alphabet was the tie-break).
@@ -472,6 +489,7 @@ export function electAnchor(
   },
 ): ElectedAnchor | null {
   const exclude = options.exclude ?? [];
+  const refused = options.refused ?? [];
   const eligible = PLACE_CATEGORIES.filter(
     (c) =>
       !GRAMMAR_PARAMS.pacing.foodCategories.includes(c) &&
@@ -480,7 +498,8 @@ export function electAnchor(
       // categories because a provisioning stop is not a meal — folding it in
       // would trip `pacing.food-stops-exceeded` on a day that bought bread.
       !NON_ANCHOR_CATEGORIES.includes(c) &&
-      !exclude.includes(c),
+      !exclude.includes(c) &&
+      !refused.includes(c),
   );
   // τ is deliberately near zero: the anchor MOSTLY FOLLOWS GRAVITY. It is the
   // persona's first interest made concrete, and a die that could move it

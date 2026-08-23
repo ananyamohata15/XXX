@@ -21,7 +21,7 @@ import {
   type SchedulingWindows,
 } from "@/shared/scheduling-windows";
 import type { PriceRange } from "@/shared/timeline";
-import type { City, TransportMode } from "@/shared/vocabulary";
+import type { PlaceCategory, City, TransportMode } from "@/shared/vocabulary";
 import { computeDaylight, type DaylightFact } from "../weather/ephemeris";
 import { getWeatherDay } from "../weather/repo";
 
@@ -65,6 +65,12 @@ export function buildGrammarContext(options: {
   travel: TravelTimeProvider;
   /** Trip circumstance — the leg-exposure rule needs it (XXX-35). */
   transport: TransportMode[];
+  /**
+   * The traveller's refused categories (XXX-43). Absent → `null` → the
+   * backstop rule stays silent, because a context that was not told the
+   * constraints must not assert there were none.
+   */
+  excludedCategories?: readonly PlaceCategory[];
 }): GrammarContext {
   return {
     daylight: options.environment.daylight,
@@ -76,6 +82,7 @@ export function buildGrammarContext(options: {
     anchorBaseline: options.anchorBaseline,
     travel: options.travel,
     transport: options.transport,
+    excludedCategories: options.excludedCategories ?? null,
     params: GRAMMAR_PARAMS,
   };
 }

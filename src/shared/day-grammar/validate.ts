@@ -14,6 +14,7 @@
 
 import { timeToMinutes } from "../time";
 import { orderedSlots } from "./internal";
+import { checkConstraints } from "./rules/constraints";
 import { checkDwell } from "./rules/dwell";
 import { checkEnvironment } from "./rules/environment";
 import { checkExposure } from "./rules/exposure";
@@ -36,6 +37,7 @@ const FAMILIES: RuleFamily[] = [
   checkMovement,
   checkRhythm,
   checkMoney,
+  checkConstraints,
 ];
 
 export function validateDay(
