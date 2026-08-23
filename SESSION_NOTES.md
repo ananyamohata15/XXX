@@ -684,6 +684,118 @@ it rides **outside** the normalized five as a bounded bonus with a ceiling
 below the lens signal — loving Thai should decide *which* restaurant, never
 override icons-vs-corners, which is the more central axis of how a day feels.
 
+> **SUPERSEDED AT BUILD — see §2.2.** The proposal above was approved and
+> then measured, and no constant satisfied both of its own constraints. The
+> mechanism moved to the menu. Left in place unedited because a design record
+> that quietly deletes its wrong turns teaches nothing.
+
+## Step 2 — Build + offline proof (CHECKPOINT 2)
+
+### 2.1 Cuisine — built, and the taxonomy did most of the work
+
+`src/shared/cuisine.ts` (pure), `tests/shared/cuisine.test.ts` (11),
+`scripts/cuisine-report.ts` (live fire proof), plus the retrieval and menu
+plumbing. Five cuisines per the founder's narrowing, with live pool depth:
+
+| cuisine | places |
+|---|---|
+| asian | 4,922 |
+| mediterranean | 1,338 |
+| indian | 934 |
+| italian | 754 |
+| thai | 398 |
+
+**The FSQ restaurant taxonomy is hierarchical**, which was not known at CP1
+and changed the design for the better: `Asian Restaurant > Thai Restaurant`,
+`Middle Eastern Restaurant > Shawarma Restaurant`, `Indian Restaurant > South
+Indian Restaurant`. So a cuisine tag is a **prefix view on the source's own
+tree**, matching the `startsWith` idiom `base-layer/categories.ts` already
+uses — we read the source's grouping instead of inventing one and arguing
+with it. Consequence stated plainly because it looks like a bug: **a Thai
+restaurant carries both `thai` and `asian`**, because it is both.
+
+**Two taxonomy judgments, ratified with their one-line reversals noted:**
+
+1. **Pizzeria (1,347) excluded from `italian`.** FSQ files it as its own
+   top-level node, not under Italian. Folding it in would be overriding the
+   source with a private opinion, and would point "loves Italian" at slice
+   counters. Reverse: add `"Pizzeria"` to `CUISINE_PREFIXES.italian`.
+2. **Middle Eastern (809) folded whole into `mediterranean`**, Persian and
+   Iraqi and Yemeni included, which are not Mediterranean geographically.
+   Splitting the subtree would mean inventing a coastline the taxonomy does
+   not encode and then maintaining it. Reverse: replace the
+   `"Middle Eastern Restaurant"` prefix with the specific leaves wanted.
+
+### 2.2 The mechanism switch — the session's best call, and it came from measuring
+
+CP1 approved a bounded cuisine bonus inside `scoreCandidate`, sized to two
+walls: **above** the exploration jitter's pairwise swing (0.08) so a stated
+love materially reorders, and **below** the icons-vs-corners signal (believed
+~0.12 from `score.ts`'s own comment) so it never overrides the lens.
+
+Built it, then measured before trusting it. **The walls are inverted.**
+Measured over 20,000 seeds on a famous-vs-hidden corners pair, the lens
+margin runs **0.0031 to 0.1623** — its floor is far *below* the jitter swing
+it was supposed to sit above. So every additive value large enough to survive
+jitter also inverted the lens a large share of the time:
+
+| bonus | lens inverted |
+|---|---|
+| 0.03 | 6.2% |
+| 0.04 | 11.3% |
+| 0.05 | 17.8% |
+| 0.08 | 47.5% |
+| **0.10 (the CP1 proposal)** | **69.8%** |
+
+**No constant was safe. The mechanism was wrong, not the number.**
+
+**Mechanism of record: cuisine reserves menu slots; it never touches the
+score.** `allocateMenu` gains `lovedCuisines` and reserves up to
+`CUISINE_MENU_DEPTH = 2` at the head — the constant borrowed deliberately
+from `LICENSED_MENU_DEPTH` because Session 14 already argued the same
+question ("how much menu does a stated preference reserve before it becomes a
+takeover?"). The labour then divides the way this codebase already divides
+it — *the palette offers, affinity weights, the die orders*: **code
+guarantees the OFFER, existing judgment decides the WIN.**
+
+Three things fall out for free:
+
+- **byte-identity is STRUCTURAL, not tuned.** Scoring is untouched, so a
+  cuisine-free request cannot differ. No constant to get wrong later.
+- the lens is fully preserved — the reserved pair is score-ordered internally,
+  so the corners traveller gets the resident's Thai place;
+- the deterministic fallback honours the preference by taking `options[0]`,
+  with no second mechanism that could disagree with the first.
+
+The selection prompt carries the stated cuisines and prints each option's,
+with an explicit rule that **a cuisine may only be named for a line that
+shows one** — most venues here carry no cuisine label, and inferring one from
+a venue's name is how a reason becomes a lie.
+
+### 2.3 Two findings promoted
+
+**FINDING — the lens calibration is measured sound, and is no longer Tier 3.**
+`JITTER_BOUND = 0.04` has been a Tier-3 judgment since S9. Measured: across
+**20,000 seeds, jitter alone inverted the famous-vs-local preference ZERO
+times** (minimum margin 0.0031 > 0). The calibration holds. Its comment's
+"~0.12 on a famous-vs-hidden pair" is loose — the true range is 0.003–0.162 —
+but the *conclusion* that comment draws is correct and now verified. Recorded
+as measured rather than believed.
+
+**FINDING — the retrieval cast defect, for the load-bearing-defect ledger.**
+`retrieve.ts:291` returned `(data ?? []) as unknown as PoolRow[]` while
+`PoolRow` had no `facts` member — a double assertion that **erased a field
+the row genuinely had**. The query has joined the `categories` fact since
+Session 5; `source_labels` sat behind that cast, invisible engine-wide, for
+ten sessions. Nothing failed, nothing warned: a cast that lies is silent by
+construction. Fixed by making `PoolRow` describe what the query selects.
+
+*The class, for the standing list:* the previous four load-bearing defects
+were **lists that enumerated a vocabulary** and went stale. This is a new
+class — **a type assertion standing in for a type**. `as unknown as X` is not
+a cast, it is an instruction to stop checking, and the compiler cannot warn
+about a field it was told to forget.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
