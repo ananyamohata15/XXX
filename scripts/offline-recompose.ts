@@ -1,6 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { ARC_TEMPLATES } from "@/server/generation/arc";
-import { buildSkeleton, composeDay } from "@/server/generation/compose";
+import {
+  buildSkeleton,
+  composeDay,
+  defaultMealPattern,
+} from "@/server/generation/compose";
+import { improveCoherence } from "@/server/generation/coherence";
+import { COMPOSE_PARAMS } from "@/server/generation/compose-params";
+import { buildGrammarContext, fetchEnvironment } from "@/server/generation/context";
 import { buildMenus, excludeRefusedVenues } from "@/server/generation/engine";
 import { hardFilter } from "@/server/generation/filters";
 import {
@@ -14,6 +21,7 @@ import type { Candidate, GenerationRequest, Selection } from "@/server/generatio
 import { GRAMMAR_PARAMS } from "@/shared/day-grammar/params";
 import { diceIndex, diceStream, personaIdentity } from "@/shared/dice";
 import { HaversineStubProvider } from "@/shared/day-grammar/travel";
+import { validateDay } from "@/shared/day-grammar/validate";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import { timeToMinutes } from "@/shared/time";
 import {
@@ -82,6 +90,10 @@ async function main(): Promise<void> {
    * pool THIS day was built from, and a second query would be a second pool.
    */
   const pools = new Map<string, Candidate[]>();
+  const coherenceMoves = new Map<string, number>();
+  /** placeId → name, so a shared-venue report can name the venue. */
+  const venueNames = new Map<string, string>();
+  const travelBefore = new Map<string, number>();
 
   for (const key of keys) {
     const persona = GOLDEN_PERSONAS[key];
@@ -188,7 +200,7 @@ async function main(): Promise<void> {
       // the metric is about; the lodging-unknown path is asserted in tests.
       lodging: { lat: 43.6517, lng: -79.3817 },
     };
-    const composed = composeDay({
+    const composeInput = {
       request: composedRequest,
       skeleton,
       selections,
@@ -198,7 +210,58 @@ async function main(): Promise<void> {
       alternates: new Map(
         menus.map((m) => [m.intent.id, m.options.map((o) => o.place.id)]),
       ),
+    };
+    let composed = composeDay(composeInput);
+
+    /**
+     * THE COHERENCE PASS (XXX-47, Session 16 CP2) — mirrored here because the
+     * engine runs it.
+     *
+     * Session 12 ruled the doctrine this obeys: the harness CALLS the engine's
+     * path and MIRRORS ITS SEQUENCE. A harness that skipped a stage the engine
+     * always runs would be measuring a different engine — which is precisely
+     * how the missing `alternates` made this script blind to menu allocation
+     * for a whole session.
+     *
+     * It matters more than usual here because the pass CHANGES VENUES, and
+     * this script's other metrics — venue overlap, discretionary-sequence
+     * distinctiveness — are about which venues a day holds. Running the gates
+     * against pre-pass days would report on days no traveller will see.
+     */
+    const environment = await fetchEnvironment(supabase, "toronto", date);
+    const coherenceContext = buildGrammarContext({
+      environment,
+      mealPattern: defaultMealPattern(persona),
+      persona,
+      budgetBand: composedRequest.budgetBand,
+      lodging: composedRequest.lodging ?? null,
+      anchorBaseline: composed.anchorBaseline,
+      travel: new HaversineStubProvider(),
+      transport: composedRequest.transport,
+      excludedCategories: composedRequest.excludedCategories ?? null,
     });
+    const coherence = improveCoherence({
+      selections,
+      menus,
+      protectedIntentIds: new Set(
+        skeleton.intents.filter((i) => i.role === "anchor").map((i) => i.id),
+      ),
+      params: COMPOSE_PARAMS.coherence,
+      evaluate: (candidate) => {
+        const trial = composeDay({ ...composeInput, selections: [...candidate] });
+        const found = validateDay(trial.day, coherenceContext);
+        return {
+          totalTravelMinutes: trial.legs.reduce((sum, l) => sum + l.minutes, 0),
+          valid: !found.some((f) => f.severity === "violation"),
+          unfilledCount: trial.unfilled.length,
+        };
+      },
+    });
+    if (coherence.moves.length > 0) {
+      composed = composeDay({ ...composeInput, selections: coherence.selections });
+    }
+    coherenceMoves.set(key, coherence.moves.length);
+    travelBefore.set(key, coherence.savedMinutes);
 
     restFired.set(
       key,
@@ -218,6 +281,9 @@ async function main(): Promise<void> {
       composed.day.slots.map((sl) => byId.get(sl.placeId)?.category ?? "?"),
     );
     venues.set(key, new Set(composed.day.slots.map((sl) => sl.placeId)));
+    for (const sl of composed.day.slots) {
+      venueNames.set(sl.placeId, composed.day.places[sl.placeId]?.name ?? sl.placeId);
+    }
     templateHasClose.set(
       key,
       (ARC_TEMPLATES.find((t) => t.id === skeleton.templateId)?.steps ?? []).includes(
@@ -371,6 +437,7 @@ async function main(): Promise<void> {
 
   let cmpSum = 0, cmpMax = 0, cmpN = 0, roleSum = 0, roleN = 0;
   let vSum = 0, vMax = 0, vN = 0;
+  let vWorst = "";
   let worst = "";
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
@@ -380,7 +447,16 @@ async function main(): Promise<void> {
       const vi = venues.get(keys[i])!, vj = venues.get(keys[j])!;
       const inter = [...vi].filter((v) => vj.has(v)).length;
       const vo = inter / Math.max(1, Math.min(vi.size, vj.size));
-      vSum += vo; vMax = Math.max(vMax, vo); vN++;
+      vSum += vo;
+      if (vo > vMax) {
+        vMax = vo;
+        // A max that MOVES deserves a name. The coherence pass pulls days
+        // toward geographically central venues, so venue overlap is the one
+        // metric it can be expected to worsen — and an unnamed worst pair is
+        // a number nobody can act on.
+        vWorst = `${keys[i]} vs ${keys[j]} (${[...vi].filter((v) => vj.has(v)).map((v) => venueNames.get(v) ?? v).join(", ")})`;
+      }
+      vN++;
       if (Math.abs(ci.length - cj.length) <= 1) {
         const so = overlap(ci, cj);
         cmpSum += so; cmpN++;
@@ -452,7 +528,9 @@ async function main(): Promise<void> {
       ` (the derivation the ≤${DISCRETIONARY_MAX_GATE} max gate came from)`,
   );
   console.log(`  role-sequence [n=${roleN}]: mean=${(roleSum / roleN).toFixed(3)} (non-gating)`);
-  console.log(`  venue overlap [n=${vN}]: mean=${(vSum / vN).toFixed(3)} max=${vMax.toFixed(2)}`);
+  console.log(
+    `  venue overlap [n=${vN}, REPORTED not gated]: mean=${(vSum / vN).toFixed(3)} max=${vMax.toFixed(2)}   worst=${vWorst || "(none shared)"}`,
+  );
   // Closes, RESTATED (Session 12 CP2 ruling 1): seated closes over the
   // templates that HAVE a close step. Three templates — `moderate-d`,
   // `packed-c`, `relaxed-d` — end on a meal by design, which was Session 11
@@ -556,6 +634,12 @@ async function main(): Promise<void> {
       );
     }
   }
+  const movedDays = [...coherenceMoves.values()].filter((n) => n > 0).length;
+  const savedTotal = [...travelBefore.values()].reduce((a, b) => a + b, 0);
+  console.log(
+    `  coherence pass [XXX-47]: ${movedDays}/${keys.length} days improved, ${savedTotal} min of travel removed` +
+      `   ${[...coherenceMoves.entries()].filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(" ") || "(no day needed it)"}`,
+  );
   console.log(
     `  adjacency census [rule tables over composed sequences]: ${blocking} blocking, ${advisories} advisory` +
       `${blocking === 0 ? "  → PASS (no recomposed day is refused)" : "  → FAIL"}`,

@@ -273,6 +273,41 @@ function checkDetour(
      */
     if (a.role === "provision") continue;
 
+    /**
+     * A SWAP MUST BE ONE THE DAY COULD ACTUALLY TAKE (XXX-47, Session 16 CP2).
+     *
+     * This rule permuted the slot array and re-priced it, keeping each slot's
+     * own times, and never asked whether the two venues could occupy each
+     * other's positions. Measured on `day-1-jays`: it proposed swapping the
+     * contrast (St. Michael's Cathedral, `historic_sites`) with the day's meal
+     * (El Rincon Guerrerense) to save 28 minutes — **which would seat a
+     * cathedral for lunch.** The founder was quoted a 74-minute saving on his
+     * own day by this rule; some part of that was a number he could not have.
+     *
+     * An advisory that quotes an unreachable saving is the instrument failure
+     * this project has now met three times in another form: not a wrong
+     * answer about the data, but a confident answer about the wrong thing.
+     * The number is only worth printing if the swap behind it is real.
+     *
+     * The guard is `kind`, and deliberately no more than that. A meal slot and
+     * an activity slot are not interchangeable positions — Session 11's ruling
+     * that *a food venue is a food stop wherever it sits* runs one way only,
+     * and the reverse (a non-food venue seated as a meal) is not something
+     * composition can produce and not something this rule should recommend.
+     * Two meals may still trade, and two activities may still trade; the
+     * grammar judges the result as it always did.
+     *
+     * REPORTED SEPARATELY, and not fixed here: **no rule requires a `meal`
+     * slot to hold a food venue.** `rhythm.ts`'s `isFood` returns true for
+     * `kind === "meal"` by assumption rather than by checking, so the swapped
+     * day above VALIDATES CLEAN. Composition cannot reach that state — meal
+     * intents carry food palettes — so with this guard the hole is
+     * unreachable rather than merely unlikely. It is still a hole, and it is
+     * filed rather than patched into a route rule that has no business
+     * owning it.
+     */
+    if (a.kind !== b.kind) continue;
+
     const swapped = [...slots];
     swapped[i] = b;
     swapped[i + 1] = a;

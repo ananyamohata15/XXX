@@ -11,6 +11,9 @@ import { personaFromProfile } from "../src/shared/profile";
 import { CUISINE_LABELS } from "../src/shared/cuisine";
 import { categoryLabel, type PlaceCategory } from "../src/shared/vocabulary";
 import type { GenerationRequest } from "../src/server/generation/types";
+import { validateDay } from "../src/shared/day-grammar/validate";
+import { contextFor } from "../src/shared/fixtures/golden/support";
+import { TRAP_FIXTURES } from "../src/shared/fixtures/golden/traps";
 
 /**
  * CP3 live constraint proof (XXX-43, Session 15).
@@ -22,9 +25,13 @@ import type { GenerationRequest } from "../src/server/generation/types";
  *
  * WHAT IT ASSERTS, and it exits non-zero on any of them:
  *   1. a day for a no-alcohol traveller seats ZERO bars;
- *   2. the grammar rule did not have to catch it — a day that reached the
- *      user means the palette narrowed correctly, which is the outcome the
- *      backstop exists to make provable rather than hoped for;
+ *   2. the grammar rule did not have to catch it, AND was in a position to —
+ *      silence alone is not evidence, because a disconnected rule is also
+ *      silent (see the note at the assertion; that is exactly how XXX-43's
+ *      backstop shipped dead and this proof said PASS every run);
+ *      a day that reached the user means the palette narrowed correctly,
+ *      which is the outcome the backstop exists to make provable rather than
+ *      hoped for;
  *   3. a named cuisine reaches the day, or the day says why it could not.
  *
  * Costs roughly $0.40–0.50 per generation.
@@ -173,8 +180,22 @@ async function main() {
     if (!ok) failures.push(`${seated} ${excluded} stop(s) reached the day`);
   }
 
-  // 2. The backstop did not have to fire. A day that SHIPPED proves the
-  //    palette narrowed upstream; the rule is the guarantee, not the mechanism.
+  // 2. The backstop did not have to fire — AND was in a position to.
+  //
+  //    THE ASSERTION THIS REPLACES WAS THE DEFECT (found at XXX-47, Session
+  //    16 CP2). It read "the grammar backstop did not need to catch
+  //    anything" and treated silence as PASS. The backstop was silent
+  //    because the engine's validation context never passed
+  //    `excludedCategories` — so the rule returned on its first line for
+  //    every generation this product has ever run, and this proof said ✓
+  //    every time.
+  //
+  //    **A rule whose success condition is SILENCE cannot tell "it worked"
+  //    from "it was never connected."** So the silence is now only half the
+  //    assertion. The other half is reachability: the same trap day the exam
+  //    uses, run through the constraint this profile actually set, must be
+  //    REJECTED. If that comes back clean the rule is disconnected again, and
+  //    this script says so instead of congratulating it.
   const backstopFired = outcome.findings.some(
     (f) => f.ruleId === "constraint.excluded-category",
   );
@@ -182,6 +203,25 @@ async function main() {
     `  ${backstopFired ? "✗" : "✓"} the grammar backstop did not need to catch anything`,
   );
   if (backstopFired) failures.push("the backstop fired — an upstream seam leaked");
+
+  const trap = TRAP_FIXTURES.find((t) => t.key === "trap-excluded-category");
+  const reachable =
+    trap !== undefined &&
+    profile.excludedCategories.length > 0 &&
+    validateDay(trap.golden.day, {
+      ...contextFor({
+        ...trap.golden,
+        excludedCategories: profile.excludedCategories,
+      }),
+    }).some((f) => f.ruleId === "constraint.excluded-category");
+  line(
+    `  ${reachable ? "✓" : "✗"} the backstop is REACHABLE — the trap day is still rejected under this profile's own constraints`,
+  );
+  if (!reachable) {
+    failures.push(
+      "the backstop could not reject the trap day — it is disconnected, and its silence above means nothing",
+    );
+  }
 
   // 3. A named cuisine reached the day, or is honestly absent.
   if (profile.lovedCuisines.length > 0) {

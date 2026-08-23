@@ -6,6 +6,8 @@ import {
   type ThemeFeasibilityInput,
 } from "@/server/generation/theme-select";
 import type { GenerationRequest } from "@/server/generation/types";
+import { buildGrammarContext } from "@/server/generation/context";
+import { computeDaylight } from "@/server/weather/ephemeris";
 import { excludeRefusedVenues } from "@/server/generation/engine";
 import type { Candidate } from "@/server/generation/types";
 import {
@@ -19,6 +21,10 @@ import {
   owesLimitationNotice,
   permittedCategories,
 } from "@/shared/constraints";
+import { HaversineStubProvider } from "@/shared/day-grammar/travel";
+import type { GrammarContext } from "@/shared/day-grammar/types";
+import { validateDay } from "@/shared/day-grammar/validate";
+import { TRAP_FIXTURES } from "@/shared/fixtures/golden/traps";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import type { DayTheme } from "@/shared/theme";
 import { PLACE_CATEGORIES, type PlaceCategory } from "@/shared/vocabulary";
@@ -404,5 +410,95 @@ describe("the venue-level seam drops what the category seam cannot", () => {
     const { kept, dropped } = excludeRefusedVenues(pool, []);
     expect(kept).toBe(pool);
     expect(dropped).toEqual([]);
+  });
+});
+
+/**
+ * XXX-47 (Session 16 CP2) — the backstop was never wired in.
+ *
+ * Session 15 shipped `constraint.excluded-category` described as *"the one
+ * place that cannot be forgotten, because it sits after all of them and
+ * rejects the day"*. The engine's only validation context never passed
+ * `excludedCategories`, so `ctx.excludedCategories` was `null` on every
+ * generation and the rule returned on its first line. It has never once been
+ * able to reject a day.
+ *
+ * The 27-trap exam did not catch it because `contextFor` — the FIXTURE
+ * context builder — does pass the field. Two context builders, one told and
+ * one not: `support.ts`'s own comment anticipated this exact divergence and
+ * named the opposite direction.
+ *
+ * `scripts/constraint-proof.ts` did not catch it either, and that is the
+ * sharper lesson. Its assertion reads *"the grammar backstop did not need to
+ * catch anything"* and treats silence as PASS. **A rule whose success
+ * condition is silence cannot tell "it worked" from "it was never
+ * connected."**
+ *
+ * These tests reproduce the defect at the seam, and the required parameter
+ * makes the class of it a compile error rather than a silence.
+ */
+describe("the backstop reaches the engine's own context", () => {
+  const barDay = () => {
+    const trap = TRAP_FIXTURES.find((t) => t.key === "trap-excluded-category");
+    if (trap === undefined) throw new Error("trap fixture missing");
+    return trap.golden;
+  };
+
+  const engineShapedContext = (
+    excludedCategories: readonly PlaceCategory[] | null,
+  ): GrammarContext =>
+    buildGrammarContext({
+      // The exact argument list `generateDay` assembles, so this test fails
+      // if the engine's call and this one ever drift apart in shape.
+      environment: {
+        // The real ephemeris, as the engine's own `fetchEnvironment` builds
+        // it — the fixture's `DaylightTimes` is a narrower shape, and using
+        // it here would make this context a different one from the engine's,
+        // which is the exact divergence the test exists to catch.
+        daylight: computeDaylight(barDay().day.city, barDay().day.date),
+        windows: barDay().windows,
+      },
+      mealPattern: barDay().mealPattern!,
+      persona: GOLDEN_PERSONAS["day-1-jays"]!,
+      budgetBand: barDay().budgetBand,
+      lodging: barDay().lodging,
+      anchorBaseline: barDay().anchorBaseline,
+      travel: new HaversineStubProvider(),
+      transport: ["walk", "transit"],
+      excludedCategories,
+    });
+
+  it("PREMISE: this day really does seat a bar", () => {
+    // Without the premise the test below proves nothing — it would pass just
+    // as well against a day with no bar in it.
+    const day = barDay().day;
+    const categories = Object.values(day.places).map((p) =>
+      p.category?.status === "present" ? p.category.value : null,
+    );
+    expect(categories).toContain("nightlife_bars");
+  });
+
+  it("REPRODUCES the defect: an untold context passes the bar day", () => {
+    const found = validateDay(barDay().day, engineShapedContext(null));
+    expect(
+      found.filter((v) => v.ruleId === "constraint.excluded-category"),
+    ).toEqual([]);
+  });
+
+  it("FIXED: told the constraint, the same context rejects it", () => {
+    const found = validateDay(
+      barDay().day,
+      engineShapedContext(["nightlife_bars"]),
+    );
+    const hit = found.find((v) => v.ruleId === "constraint.excluded-category");
+    expect(hit?.severity).toBe("violation");
+  });
+
+  it("null still means UNKNOWN, not 'no constraints' — the transport precedent", () => {
+    // The fix is that you can no longer reach `null` by saying nothing. The
+    // meaning of `null` itself is unchanged, and must stay unchanged: a
+    // context that was not told must not assert there were none.
+    expect(engineShapedContext(null).excludedCategories).toBeNull();
+    expect(engineShapedContext([]).excludedCategories).toEqual([]);
   });
 });

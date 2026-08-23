@@ -61,6 +61,11 @@ import {
   type ComposeInput,
   type Skeleton,
 } from "./compose";
+import {
+  describeMove,
+  improveCoherence,
+} from "./coherence";
+import { COMPOSE_PARAMS } from "./compose-params";
 import { applyFounderGroundtruth } from "./groundtruth";
 import { environmentIsFair, selectTheme } from "./theme-select";
 import { readFerryTimetable } from "../city-facts/repo";
@@ -92,6 +97,7 @@ import type {
   GenerationRequest,
   GenerationStats,
   Menu,
+  Selection,
   Selector,
   SlotIntent,
   StageTimings,
@@ -803,6 +809,98 @@ export async function generateDay(
         }
         transitFetched = true;
       }
+
+      /**
+       * -- ZONE COHERENCE (XXX-47, Session 16 CP2) -------------------------
+       *
+       * The missing stage, and it goes HERE for one reason: this is the first
+       * moment at which the whole sequence exists, is priced against the best
+       * travel numbers this request will ever have, and can still change.
+       *
+       * After the transit fetch, deliberately. Running it before would let it
+       * optimise against Haversine estimates and then discover, once real
+       * transit numbers arrived, that it had bought nothing — a pass that
+       * measured its own saving with the wrong instrument. Before validation,
+       * equally deliberately: a day this improves must be judged as the day it
+       * became, not as the one it replaced.
+       *
+       * It composes and validates each trial in memory. That is pure — no
+       * Google call, no Anthropic call, no query — so the whole pass costs
+       * some milliseconds and nothing else. `trials` is recorded anyway,
+       * because a cost nobody reports is a cost nobody notices growing.
+       */
+      const coherenceContext = buildGrammarContext({
+        environment,
+        mealPattern,
+        persona: request.persona,
+        budgetBand: request.budgetBand,
+        lodging: request.lodging ?? null,
+        anchorBaseline: composed.anchorBaseline,
+        travel: travelProvider,
+        transport: request.transport,
+        excludedCategories: request.excludedCategories ?? null,
+      });
+      const travelTotal = (legs: readonly ComposedLeg[]): number =>
+        legs.reduce((sum, leg) => sum + leg.minutes, 0);
+      const composeWith = (candidate: readonly Selection[]): ComposeInput => ({
+        ...composeInput,
+        travel: travelProvider,
+        selections: [...candidate],
+      });
+      /**
+       * The anchor does not move. It was elected for calibre and chosen for
+       * taste, and the day's geography should organise AROUND its centrepiece
+       * rather than trade it away for eleven minutes. Pinning it is also what
+       * makes the result anchor-relative: everything else is drawn toward the
+       * shortest tour through a fixed centre.
+       */
+      const protectedIntentIds = new Set(
+        skeleton.intents.filter((i) => i.role === "anchor").map((i) => i.id),
+      );
+      const coherence = improveCoherence({
+        selections,
+        menus,
+        protectedIntentIds,
+        params: COMPOSE_PARAMS.coherence,
+        evaluate: (candidate) => {
+          const trial = composeDay(composeWith(candidate));
+          const findings = validateDay(trial.day, coherenceContext);
+          return {
+            totalTravelMinutes: travelTotal(trial.legs),
+            valid: !hasViolations(findings),
+            unfilledCount: trial.unfilled.length,
+          };
+        },
+      });
+      if (coherence.moves.length > 0) {
+        composed = composeDay(composeWith(coherence.selections));
+      }
+      /**
+       * Logged on EVERY constrained-or-not generation, including the ones
+       * where it did nothing — `moves: 0` with a live `route.detour-avoidable`
+       * on the day is the signature of a MENU problem rather than a
+       * sequencing one, and that is the distinction the next session needs.
+       * A fire-rate that is only recorded when it fires is not a fire-rate.
+       */
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "coherence",
+        endpoint: "swap_pass",
+        estCostUsd: 0,
+        metadata: {
+          moves: coherence.moves.length,
+          saved_minutes: coherence.savedMinutes,
+          trials: coherence.trials,
+          rejected_by_grammar: coherence.rejectedByGrammar,
+          rejected_by_unfilled: coherence.rejectedByUnfilled,
+          detail: coherence.moves.map((m) =>
+            describeMove(
+              m,
+              (id) => composed.day.places[id]?.name ?? candidatesById.get(id)?.place.name ?? id,
+            ),
+          ),
+        },
+      });
+
       /**
        * Name the crossings (XXX-43, Session 14 finding #4). The theme
        * declares its own route; the legs into and out of the composite block
@@ -985,6 +1083,16 @@ export async function generateDay(
         anchorBaseline: composed.anchorBaseline,
         travel: travelProvider,
         transport: request.transport,
+        /**
+         * THIS LINE WAS MISSING (XXX-43 shipped without it; found at XXX-47,
+         * Session 16 CP2). Without it `ctx.excludedCategories` was `null` on
+         * every generation this product has ever run, and `checkConstraints`
+         * returned on its first line — so the backstop that was supposed to
+         * turn *"we filtered carefully"* into *"a day seating an excluded
+         * category cannot reach a user"* has never once been able to reject
+         * a day.
+         */
+        excludedCategories: request.excludedCategories ?? null,
       });
       const tValidate = now().getTime();
       const findings = validateDay(composed.day, context);
