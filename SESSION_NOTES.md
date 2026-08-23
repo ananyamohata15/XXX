@@ -796,6 +796,113 @@ class — **a type assertion standing in for a type**. `as unknown as X` is not
 a cast, it is an instruction to stop checking, and the compiler cannot warn
 about a field it was told to forget.
 
+### 2.4 The profile — built and proven live
+
+`profiles` migration applied to production; `src/shared/profile.ts` (pure),
+`src/shared/dietary.ts`, `src/server/profile/repo.ts`, 24 fixture tests.
+
+`personaFromProfile` collects the promise Session 9 made when it wrote
+`Persona` dependency-free: *"when E6 lands, it derives a Persona from the
+learned profile and `generateDay` does not change."* The engine contract is
+untouched by this session.
+
+**Every interview dimension is optional-and-absent**, because SKIPPING is a
+real answer and must stay distinguishable from choosing. A day built on a
+skipped dimension says "concierge's choice"; a day built on a *defaulted* one
+would claim the traveller picked something they never saw.
+
+**Caught before it shipped:** the first draft of the migration invented a
+`touch_updated_at()` that does not exist in this schema. Verified against the
+existing migrations and corrected to `extensions.moddatetime`. A migration is
+forward-only — there is no fixing it after the push.
+
+**Live proof** (not fixtures): a missing row reads as the empty profile
+rather than an error; write/read round-trips exactly; and injected junk
+values (`klingon`, `teleportation`) are **dropped with their names reported**
+rather than throwing. That reconciliation-on-read is what the absent SQL
+CHECK buys — a retired category costs the traveller one preference instead of
+making their profile unreadable.
+
+### 2.5 The nine constraint seams, and the backstop
+
+**One choke point.** Every intent's palette is narrowed at the end of
+`buildSkeleton`, whichever picker built it. Retrieval derives its category set
+from the intents, so an excluded category is **never even queried** — the
+constraint saves a Supabase round trip as well as honouring itself.
+
+**The grammar rule is the proof.** Eight seams upstream are meant to make it
+unreachable, and that is the argument FOR it: each of the eight is somewhere
+a future code path can forget, and this is the one place that cannot be,
+because it sits after all of them and rejects the day. **BLOCKING, not
+advisory** — an unverified price is a gap in our knowledge and ships with a
+note; a bar on the day of someone who told us they do not drink is us
+ignoring them.
+
+Added to `PLACE_CAUSED`, exactly as CP1's HAZARD 1 warned: without it the
+rule would be perfectly correct and still kill the day, because unrouted
+violations burn all three passes instead of striking the venue.
+
+**`trap-excluded-category`** joins the trap set (28 now). It changes NOTHING
+about golden day 1 — which closes at a bar and validates clean — and changes
+only what the traveller said. The same day is legal for one person and
+refused for another, and the only difference is that one of them told us.
+
+**Two bugs the exam caught, both mine:**
+
+1. **The trace lied about why.** Folding refusals into `excludeAnchorCategories`
+   made the elected-anchor reason read *"re-elected after nightlife_bars could
+   not be seated"* — claiming we had TRIED to seat a bar for a teetotaller.
+   *"The pool failed us"* and *"the traveller said no"* are different facts,
+   and that channel **stamps a reason**, so it cannot carry both. `electAnchor`
+   now takes `refused` separately: same filtering, no narrative.
+2. **The licence survived its own removal.** Clearing `licensedCategory` by
+   spreading `...intent` and then declining to re-add the key does not delete
+   it. A day was still promoting a category the traveller had refused.
+
+Neither would have been caught by the byte-identity arm — both need the
+fires-when-used arm, which is the Session 14 lesson paying off directly.
+
+**`CATEGORY_LABELS`** added to the vocabulary as the single owner of how a
+category is said out loud, so refusals and chips never print `nightlife_bars`.
+
+### 2.6 The parser — and the floor that asks
+
+`src/shared/intent.ts` (contract), `src/server/generation/parse-llm.ts`,
+20 fixture tests including injection probes.
+
+**Posture inherited verbatim** from `select-llm.ts`, plus one defence the
+selector could not have: **the contract has no place field and no free-form
+text that reaches the engine**, so an injected instruction has nowhere to
+land even if the model obeys it. Containment by absence of a field beats
+containment by filter.
+
+**THE DEPARTURE, and it is the design's centre.** The selector's floor is the
+deterministic selector, because a mechanical day is still a good day. **A
+parser has no such floor.** Any request it invented would be a guess about
+what someone asked for, and a day built on a wrong guess is worse than a
+question — it is confidently not theirs, and it costs money to produce. So an
+exhausted contract is itself a reason to ask.
+
+**Monotonic constraints.** A sentence may ADD a constraint, never silently
+lift one. A standing constraint is a tier-1 fact stated deliberately on the
+profile sheet; a sentence is an inference drawn from prose. Letting the weaker
+evidence delete the stronger is how someone who told us they do not drink ends
+up at a bar for typing the word "cocktail" while describing somewhere they
+were *not* going. A genuine conflict is surfaced as a question.
+
+`THEME_KEYS` is built **from** the theme vocabulary rather than written beside
+it — no second list to forget.
+
+### 2.7 Gate status at the UX checkpoint
+
+`tsc --noEmit` clean · **681 tests passing** (3 skipped) · `npm run build`
+clean · **$0 spent**. Standing exams untouched: golden 6/6, day-7, the
+persona matrix, determinism.
+
+**HOLDING at the UX checkpoint.** The seven screens are founder-approval-
+gated before any interface code is written; the spec is published as its own
+checkpoint artifact.
+
 # Session 14 — Days with a point: themes v1 + lodging cycles (XXX-40, XXX-42, XXX-38 core)
 
 Branch: `session-14-themes-and-lodging`, cut from `main` at `5c0cc3b`. Status:
