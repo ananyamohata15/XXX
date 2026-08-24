@@ -711,6 +711,152 @@ That last observation is worth keeping: XXX-47's two halves are complementary
 rather than redundant. The swap pass fixes a scattered day; a zone day is not
 scattered in the first place.
 
+## Step 4 — The shopping seed run (CHECKPOINT 4)
+
+### The founder red-pens this list
+
+`npx tsx --env-file=.env.local scripts/shopping-seed.ts`
+
+| he said | verdict | reachable? |
+|---|---|---|
+| **Eaton Centre** | PRESENT as `CF Toronto Eaton Centre`, `shopping`, **now LINKED** | ✅ inside `downtown_core` (0.32 km) |
+| **Holt Renfrew** | PRESENT ×2 — but **both suburban** (19.6 km and 11.6 km out); the Bloor flagship is **not in the pool** | ❌ outside every district |
+| **Yorkdale** | PRESENT as `Yorkdale Shopping Centre`, `shopping`, unlinked | ❌ 7.6 km outside every district |
+| **Sherway Gardens** | **ABSENT** — 6 rows contain "Sherway", 2 are shopping, all tenants | ❌ |
+| **outlet malls** | **ABSENT** | ❌ |
+| **Yorkville** | ZONE, not a venue | ✅ `zone:yorkville`, shipped at CP3 |
+| **Queen St W** | ZONE, not a venue | ✅ `zone:queen_west_ossington`, shipped at CP3 |
+
+**Four gaps, not three** — the fourth is geography, and it is the one that
+matters most.
+
+### Two corrections to the Session 15 record
+
+Both from one root: **a name was matched and nobody checked where it was.**
+
+**"Yorkdale — mall absent, only tenants" is WRONG.** `Yorkdale Shopping
+Centre` is in the pool, mapped `shopping`. It read as absent because
+`curation-resolve`'s near-name list was an unsorted **`.slice(0, 6)`** — six
+arbitrary rows offered to the founder under the words *"pick the right one"*.
+The mall sat outside the arbitrary six, and the only available reading was
+that it does not exist.
+
+That is **the second time an instrument in this family has turned a bad sample
+into a recorded pool gap.** Session 14 fixed the apostrophe half (`%Hanlans%`
+against `Hanlan's Point Beach`); the SAMPLING half was never fixed, because
+nobody had yet asked it about a name whose canonical form is longer than the
+one a person says. Now ranked by closeness of spelling, and it prints how many
+rows it is **not** showing — so a short list can never again read as a
+complete one.
+
+**"Holt Renfrew — PRESENT ×2, electable today" is MISLEADING.** Both rows are
+suburban: one 19.6 km out, one 11.6 km out and within ~250 m of Sherway
+Gardens. **The Bloor Street store he means is not in the pool at all.**
+"Present" was true of the name and false of the venue.
+
+### Does linking alone fix it? No — and the arithmetic is exact
+
+`freshness` is the ONLY score term a link changes, weighted 0.1:
+
+```
+unlinked          0.4 × 0.1 = 0.040
+linked            0.6 × 0.1 = 0.060      ← a link is worth +0.020
+details-fetched   1.0 × 0.1 = 0.100
+```
+
+Against `JITTER_BOUND` ±0.04 — a pairwise swing of 0.08. **A link is worth a
+quarter of the noise it competes with.**
+
+And the mandate's premise needs correcting: the comparison is not 0.4 vs 1.0.
+At SHORTLIST time nothing has been fetched, so no candidate is at 1.0. It is
+**0.4 vs 0.6**, and worse — at shortlist time every candidate in a category
+scores *identically* on everything else:
+
+- `ratingQuality` — the 0.35 unrated prior, for all of them
+- `personaAffinity` — per-CATEGORY, so identical within `shopping`
+- `priceFit` — 0.5, pool rows carry no price fact
+- `lensFit` — reads `userRatingCount ?? 0`, so fame = 0 for all of them
+
+**Within one category, at shortlist time, the only terms that differ are
+freshness and jitter.** Eaton Centre was never losing to better venues. It was
+losing a weighted coin flip against 3,422 of them.
+
+Worth naming separately: `lensFit` means an **`icons`** persona — the one who
+most wants the Eaton Centre — scores every unrated venue at fame 0, while a
+`corners` persona scores the same null at 0.2 and is *rewarded* for it.
+**Pre-Details, the pool makes every venue look like a hidden gem.**
+
+And a lottery underneath the lottery: with a 400-row cap per category and
+3,423 shopping venues, `CF Toronto Eaton Centre` appears in **4 of the 8 pool
+windows**. Even the reachable mall is a coin flip before the scoring coin
+flip.
+
+### What was done, and what was deliberately not
+
+**(a) Linked — one venue, the only one where it can have any effect.**
+`CF Toronto Eaton Centre` → `ChIJvUYHUcs0K4gRN8i7jHsUiYs`, name match 1.000,
+`matched_confirmed`, link written. $0.02. Pooled shopping links went 18 → 19.
+
+`scripts/link-curated.ts` is dry-run by default and **refuses to spend** on a
+venue outside every district: a link there is a purchase with no reachable
+effect, and checking first is the point.
+
+**(b) Absent malls NOT added as pool identities — and this is a report, not a
+skip.** The plan says *"add absent malls as pool identities where legal"*. The
+measurement says it would achieve nothing: Sherway Gardens and the outlet
+malls sit outside every district exactly as Yorkdale does, so a new identity
+would be as unreachable as the existing one. **Adding rows the engine can
+never query would look like progress and be none.** Filed as **XXX-53** with
+the three real options and a ruling requested.
+
+**(c) Zone names routed** — done at CP3. `zone:yorkville` and
+`zone:queen_west_ossington` are live, and the parse probe confirms *"shopping
+on Queen St W"* reaches the district while carrying the `shopping` want.
+
+### The blocker behind the blocker — XXX-52
+
+`FOUNDER_ANCHOR_WORTHY` has entries for `parks`, `markets`,
+`museums_galleries`, `historic_sites`, `nightlife_bars` — and **none for
+`shopping` or `scenic_viewpoints`**, the two categories XXX-37 added in
+Session 13.
+
+**The vocabulary-widening failure, in the highest-trust signal the system
+has.** It is a `Partial<Record<…>>`, so the missing key compiles silently and
+reads as *"the founder curated nothing here"* rather than *"nobody ever asked
+him"*.
+
+The consequence is circular and exact: curation needs a NAME (none filed),
+calibre falls to the RATING bar, a rating needs a DETAILS fetch, Details need
+the SHORTLIST — and the shortlist is the coin flip. **The one signal designed
+to beat the coin flip has no key for the category.**
+
+### Tickets filed
+
+**XXX-52** — `FOUNDER_ANCHOR_WORTHY` never widened for the XXX-37 categories;
+proposes making it an exhaustive `Record` so the next category must answer.
+**XXX-53** — retrieval geography cannot reach suburban destinations; carries
+both Session 15 corrections and three options for a ruling.
+
+### What the founder should red-pen here
+
+1. **The resolved list above** — is `CF Toronto Eaton Centre` the right
+   spelling, is `Yorkdale Shopping Centre` the right mall, and is the Bloor
+   Holt Renfrew what he meant by "Holt Renfrew"?
+2. **XXX-53's three options** — widen the districts, add a destination kind,
+   or leave them unreachable and say so. My lean is **option 2**: a suburban
+   mall is a place you travel TO for three hours, which is the excursion shape
+   (golden Day 6), not the district shape.
+3. **XXX-52's worksheet** — which shopping venues are anchor-worthy. That is
+   the tier-1 signal, and it is his to author, not mine.
+
+## CP4 gates
+
+`tsc --noEmit` clean · **786 tests passing**, 3 skipped · `npm run build`
+clean · `eslint` clean · all standing exams unchanged.
+
+**Spend: $0.0846** — seven parses ($0.0646) plus one Details call for the
+Eaton Centre link ($0.02).
+
 ## CP3 gates
 
 `tsc --noEmit` clean · **786 tests passing**, 3 skipped (was 750) ·
@@ -729,11 +875,12 @@ PASS.
 
 ## Spend
 
-**$0.0646** of the $15 gate through CP3 — seven parser calls in
-`scripts/parse-probe.ts`, and nothing else. Every other measurement this
-session is a Supabase read: no Google endpoint, no day generation, and four
-end-to-end `generateDay` runs that are free by construction rather than by
-luck. The free tier resets **Sep 1**.
+**$0.0846** of the $15 gate through CP4 — seven parser calls in
+`scripts/parse-probe.ts` ($0.0646) and one Details call to mint the Eaton
+Centre link ($0.02). Everything else this session is a Supabase read: no other
+Google endpoint, no day generation, and four end-to-end `generateDay` runs
+that are free by construction rather than by luck. The founder session at Step
+5 is budgeted at ~$5. The free tier resets **Sep 1**.
 
 # Session 15 — The taste front door: chat intent, profile, product UX (XXX-43)
 

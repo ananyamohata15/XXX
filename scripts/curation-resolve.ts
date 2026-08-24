@@ -106,9 +106,57 @@ async function main(): Promise<void> {
     const exact = rows.filter(
       (r) => normalizeName(r.name) === normalizeName(wanted),
     );
+    /**
+     * RANKED, not sliced — fixed at XXX-41 (Session 16 CP4).
+     *
+     * This was `rows.filter(...).slice(0, 6)`: six arbitrary rows in whatever
+     * order PostgREST happened to return them, offered to the founder under
+     * the words *"pick the right one"*. When the right one is not in the
+     * arbitrary six, the only available reading is that it does not exist.
+     *
+     * That is exactly what happened, and it reached the record. Session 15's
+     * close-out lists **"Yorkdale — mall absent, only tenants"** and the same
+     * for Sherway Gardens. Both malls are IN THE POOL. Querying "Yorkdale"
+     * returns "Lucky Yorkdale", "Aburi TORA Yorkdale", "Mac's Sushi Yorkdale
+     * Mall open again!"… and `Yorkdale Shopping Centre` sitting outside the
+     * first six.
+     *
+     * This is the sampler lesson (Session 13's alphabetical `shopping`
+     * spot-check) meeting the absence lesson (Session 14's apostrophe-stripped
+     * `%Hanlans%`) in one line — and it is the SECOND time an instrument of
+     * this script's own family has turned a bad sample into a recorded pool
+     * gap. The apostrophe half was fixed; the sampling half was not, because
+     * nobody had asked it about a name whose canonical form is longer than
+     * the one a person says.
+     *
+     * Ranking is by how close the pool's spelling is to the asked-for name:
+     * a row that CONTAINS the query as a whole phrase first (a mall's
+     * official name extends what people call it), then fewest extra
+     * characters, then alphabetical so the order is stable and a re-run is
+     * reproducible. And the count of rows NOT shown is printed, so a short
+     * list can never again read as a complete one.
+     */
+    const norm = normalizeName(wanted);
     const near = rows
       .filter((r) => !exact.includes(r))
-      .slice(0, 6);
+      .map((r) => {
+        const rowNorm = normalizeName(r.name);
+        return {
+          row: r,
+          // 0 = the pool's name is the asked-for name plus more (the usual
+          // shape of an official name); 1 = merely contains the token.
+          rank: rowNorm.startsWith(norm) ? 0 : rowNorm.includes(norm) ? 1 : 2,
+          extra: Math.abs(rowNorm.length - norm.length),
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          a.extra - b.extra ||
+          a.row.name.localeCompare(b.row.name),
+      );
+    const NEAR_SHOWN = 8;
+    const shown = near.slice(0, NEAR_SHOWN).map((n) => n.row);
 
     if (exact.length > 0) {
       for (const r of exact) {
@@ -130,9 +178,12 @@ async function main(): Promise<void> {
     } else {
       line(`   NO EXACT MATCH — the curated spelling would never fire.`);
     }
-    if (near.length > 0) {
-      line(`   near names in the pool, for the founder to pick the right one:`);
-      for (const r of near) {
+    if (shown.length > 0) {
+      line(
+        `   near names, closest spelling first (${shown.length} of ${near.length}` +
+          `${near.length > shown.length ? ` — ${near.length - shown.length} NOT SHOWN, so this list is not evidence of absence` : ""}):`,
+      );
+      for (const r of shown) {
         line(
           `      "${r.name}"  [${mappedOf(r).join("/") || "unmapped"}]${r.google_place_id !== null ? " 🔗" : ""}`,
         );
