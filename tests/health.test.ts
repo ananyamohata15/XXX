@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { checkHealth } from "@/server/health";
+import { checkCredentials, checkHealth } from "@/server/health";
 import { createFakeSupabase } from "./fixtures/fake-supabase";
+
+/**
+ * A fully-configured environment. Injected rather than relied upon, because
+ * the credentials check (Session 16) makes `status` depend on env — and a
+ * suite that inherited the developer's own shell would pass or fail by
+ * accident of whose machine ran it.
+ */
+const FULL_ENV: Record<string, string | undefined> = {
+  ANTHROPIC_API_KEY: "test",
+  GOOGLE_MAPS_API_KEY: "test",
+  NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "test",
+};
+
+/** A fake with a responsive db and a fresh sweep — the healthy baseline. */
+function healthyDb() {
+  const fake = createFakeSupabase({
+    rows: { traces: [sweepTrace(30), weatherTrace(2)] },
+  });
+  return { client: fake.client };
+}
 
 /** A ttl_sweep trace row as the health check reads it. */
 function sweepTrace(ageMinutes: number, metadata: Record<string, unknown> = {}) {
@@ -26,7 +47,7 @@ describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
       rows: { traces: [sweepTrace(30), weatherTrace(2)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.status).toBe("healthy");
     expect(report.checks.db.ok).toBe(true);
@@ -51,7 +72,7 @@ describe("health service (XXX-12 / XXX-14 proof-of-life)", () => {
   it("reports unhealthy with the db error, and the failed trace does not throw", async () => {
     const fake = createFakeSupabase({ failWith: "connection refused" });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.status).toBe("unhealthy");
     expect(report.checks.db.ok).toBe(false);
@@ -64,7 +85,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
   it("is unhealthy when no ttl_sweep trace exists (sweep never ran / schedule dead)", async () => {
     const fake = createFakeSupabase({ rows: { traces: [] } });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.checks.db.ok).toBe(true);
     expect(report.checks.ttlSweep.ok).toBe(false);
@@ -78,7 +99,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
       rows: { traces: [sweepTrace(121)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.checks.ttlSweep.ok).toBe(false);
     expect(report.checks.ttlSweep.ageMinutes).toBeGreaterThan(120);
@@ -91,7 +112,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
       rows: { traces: [sweepTrace(300), sweepTrace(10), sweepTrace(180), weatherTrace(2)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.checks.ttlSweep.ok).toBe(true);
     expect(report.checks.ttlSweep.ageMinutes).toBe(10);
@@ -103,7 +124,7 @@ describe("ttl-sweep recency check (XXX-25 absence-based alerting)", () => {
       rows: { traces: [sweepTrace(5, { expiring_within_7d: 412 }), weatherTrace(2)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.status).toBe("healthy"); // a to-do, not an outage
     expect(report.warnings).toEqual([
@@ -121,7 +142,7 @@ describe("weather staleness warning (XXX-23, severity tiering: warning not 503)"
       rows: { traces: [sweepTrace(30), weatherTrace(50)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.status).toBe("healthy");
     expect(report.warnings).toEqual([
@@ -137,7 +158,7 @@ describe("weather staleness warning (XXX-23, severity tiering: warning not 503)"
       rows: { traces: [sweepTrace(30)] },
     });
 
-    const report = await checkHealth(fake.client);
+    const report = await checkHealth(fake.client, FULL_ENV);
 
     expect(report.status).toBe("healthy");
     expect(report.warnings).toEqual([
@@ -146,5 +167,63 @@ describe("weather staleness warning (XXX-23, severity tiering: warning not 503)"
         message: expect.stringContaining("never been ingested"),
       },
     ]);
+  });
+});
+
+/**
+ * The credentials check (Session 16 close-out) — the prod incident, made
+ * impossible to repeat silently.
+ *
+ * `ANTHROPIC_API_KEY` was missing from Vercel Production and `/api/health`
+ * reported healthy for as long as it was, because it checked the database and
+ * the sweep and nothing else. The founder's failed generation was the first
+ * symptom.
+ */
+describe("generation credentials", () => {
+  it("PREMISE: the key that broke prod is one the codebase never names", () => {
+    // `createAnthropic()` lets the SDK resolve ANTHROPIC_API_KEY itself, so a
+    // grep for `process.env` cannot find it. That is why the list is written
+    // out rather than derived — a derived list would have missed exactly it.
+    const named = checkCredentials({}).missing;
+    expect(named).toContain("ANTHROPIC_API_KEY");
+  });
+
+  it("FIRES: a deployment that cannot generate is not healthy", async () => {
+    const { client } = healthyDb();
+    const report = await checkHealth(client, {
+      ...FULL_ENV,
+      ANTHROPIC_API_KEY: undefined,
+    });
+    expect(report.status).toBe("unhealthy");
+    expect(report.checks.credentials.ok).toBe(false);
+    expect(report.checks.credentials.missing).toEqual(["ANTHROPIC_API_KEY"]);
+    // And it says what the absence COSTS, so whoever reads it knows whether
+    // to page someone or finish their coffee.
+    expect(report.warnings.map((w) => w.code)).toContain("credential_missing");
+    expect(report.warnings.find((w) => w.code === "credential_missing")?.message)
+      .toMatch(/every generation fails/);
+  });
+
+  it("treats an EMPTY string as missing, not as present", () => {
+    // A variable set to "" fails at the first call. Reporting it present
+    // would be the false-healthy this check exists to end.
+    expect(checkCredentials({ ...FULL_ENV, GOOGLE_MAPS_API_KEY: "" }).missing).toEqual([
+      "GOOGLE_MAPS_API_KEY",
+    ]);
+  });
+
+  it("never reports a value, a length, or a prefix — only presence", () => {
+    const check = checkCredentials({ ...FULL_ENV, ANTHROPIC_API_KEY: "sk-ant-SECRET" });
+    const serialized = JSON.stringify(check);
+    expect(serialized).not.toContain("SECRET");
+    expect(serialized).not.toContain("sk-ant");
+    expect(Object.values(check.present).every((v) => typeof v === "boolean")).toBe(true);
+  });
+
+  it("stays healthy when everything is configured", async () => {
+    const { client } = healthyDb();
+    const report = await checkHealth(client, FULL_ENV);
+    expect(report.checks.credentials.ok).toBe(true);
+    expect(report.status).toBe("healthy");
   });
 });

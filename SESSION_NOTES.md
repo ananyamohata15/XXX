@@ -895,6 +895,126 @@ measurement reads* keeps earning its place in the ledger.
 Both filed on XXX-53 as a correction; neither needs next-session work beyond
 the curated spelling.
 
+## Step 5 — The founder's session (CHECKPOINT 5)
+
+**The room is live and serving THIS session's surface** —
+`http://192.168.2.10:3000/tasting`, same Wi-Fi, phone browser, usual
+passphrase.
+
+**Verified, not assumed**, and the check earned itself: a dev server from
+before these changes was still running (PID 31933) — the exact Session 14
+failure. Killed, restarted, and then checked properly:
+
+- `/tasting` returns **200** on localhost and on the LAN address;
+- `/api/tasting/profile` and `/api/tasting/parse` return **401** without a
+  cookie — the gate working, not a fault;
+- the **served client bundle** (20 chunks, 6.4 MB) contains `A picnic in the
+  park`, `park-picnic`, the new `drinking spot` limitation line, and the
+  district slugs the zone picker is built from;
+- the OLD limitation wording (`slip through`) is **gone** — proof the bundle
+  is this session's, not a cached one.
+
+*One correction to my own method, which is the fourth proxy this session.* My
+first bundle check grepped for `"A day in Yorkville"` and reported it absent —
+but that string is composed at runtime from `DISTRICTS`, so it cannot appear
+in a bundle. The right signal is the template (`A day in ${…}`) and the slugs,
+both present. **Grepping for a runtime-composed string is asking the wrong
+question of the right artifact.**
+
+### His two sentences, and the ACs in his words
+
+| he types | the AC |
+|---|---|
+| **"shopping, pub hopping and food for today"** | the day visits real destinations **without zig-zagging** |
+| **the picnic request** | the day **is a picnic** |
+
+What is different since he last typed these:
+
+1. **His words now land.** The parse probe confirms this exact sentence gives
+   three wants and no theme — shopping, nightlife, food — and that *"shopping
+   on Queen St W"* gives the want AND the district.
+2. **A picnic is now a thing the engine has.** Park composite block, grocery
+   provisioning before it, weather-gated, refused honestly in rain.
+3. **The day should not zig-zag.** The coherence pass removed 20.3% of travel
+   across the exam set and every `route.detour-avoidable` advisory.
+4. **No bars, and no pubs.** 56–104 venues per day are now refused by their
+   own directory labels, including the 85 gastropubs he ruled in.
+5. **He can ask for a district.** *"a day in Yorkville"* is a theme now.
+
+**Verdicts go IN THE APP.** Session 12's process note stands: findings that
+live only in chat are findings the miners never see.
+
+### Known limits, said before he finds them
+
+- **Yorkdale, Sherway and the outlet malls are still unreachable** — they sit
+  outside every district and retrieval never queries there. XXX-53, with three
+  options and a ruling owed. A shopping day will be a DOWNTOWN shopping day.
+- **Eaton Centre is linked but not curated**, so it is electable and still
+  fighting a coin flip it usually loses (XXX-52). If it does not appear, that
+  is the known cause, not a new defect.
+- **Hours are unverified on most stops** — only linked venues get Details.
+  Unchanged since CP4, and the Sep 1–3 re-discovery is what lifts it.
+
+## Close-out — the deploy checklist
+
+**The incident this exists for:** `ANTHROPIC_API_KEY` was missing from Vercel
+Production, `/api/health` reported **healthy** throughout, and the first
+symptom was a founder generation failing.
+
+**So the checklist is now a CHECK, not a list.** `/api/health` verifies every
+credential the generation path needs and returns **unhealthy** if one is
+missing. Hit it after any deploy:
+
+```
+curl -s https://<prod>/api/health | jq '.status, .checks.credentials'
+```
+
+### Every env var the generation path reads
+
+| var | scope needed | without it |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Production + Preview + Development | **no selection, no narration — every generation fails** |
+| `GOOGLE_MAPS_API_KEY` | Production + Preview + Development | no Details, no links, no transit — days ship on honest absence |
+| `NEXT_PUBLIC_SUPABASE_URL` | all three | no pool at all |
+| `SUPABASE_SERVICE_ROLE_KEY` | all three, **Sensitive** | no pool at all |
+
+Not on the generation path, but required for the app to function:
+
+| var | scope | purpose |
+|---|---|---|
+| `TASTING_ROOM_SECRET` | all three, **Sensitive** | the tasting room passphrase gate |
+| `CRON_SECRET` | Production | authenticates the weather-ingest cron |
+| `VERCEL_GIT_COMMIT_SHA` | set by Vercel | the version string in `/api/health` |
+
+**`ANTHROPIC_API_KEY` is the one that broke prod and it is the one a grep
+cannot find** — `createAnthropic()` lets the SDK resolve it, so it appears
+nowhere in the codebase as a name. That is exactly why the health check names
+it in a written list rather than deriving one: a derived list would have
+missed the only key that has ever actually been missing.
+
+### Migrations — verified applied, not assumed
+
+All eleven, checked by querying for the object each one creates rather than by
+reading a migrations table:
+
+```
+20260803000000_initial            20260807000000_weather_days
+20260803000001_instrumentation    20260807100000_travel_times
+20260803000002_core_domain        20260809000000_evidence_and_taste
+20260805000000_discovery_pool     20260816000000_city_facts
+20260806000000_base_layer         20260823000000_profiles
+20260806200000_ttl_sweep          (function; last ran 2026-08-24 12:07 UTC)
+```
+
+**This session adds NO migration.** Everything shipped — the drinking-focus
+fact, the adjacency rule, the coherence pass, the picnic spec, the zone mode —
+is code and in-memory facts over the existing schema. `day_wants` rides in
+`traces.metadata`, which is `jsonb` and needs none.
+
+**The one thing this cannot confirm**: whether the Supabase project behind
+`.env.local` is the same one Vercel Production points at. That is a founder
+check (`vercel env ls`), and it is named rather than assumed.
+
 ## CP4 gates
 
 `tsc --noEmit` clean · **786 tests passing**, 3 skipped · `npm run build`
