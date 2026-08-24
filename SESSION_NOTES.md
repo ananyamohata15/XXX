@@ -556,6 +556,171 @@ what makes the founder's named destinations reachable as *places to be in*,
 while linking (Step 4) makes Eaton Centre and Holt Renfrew reachable as
 *venues*. Two halves of one complaint.
 
+## Step 3 — The picnic spec and the zone mode (CHECKPOINT 3)
+
+### XXX-48 — park-picnic, and the claim that was actually tested
+
+The ticket's claim was that Session 14's experience machinery is **already
+general**, and only its zone assumption is islands-specific. That is now
+tested rather than asserted, and it held: the new spec is **one row**, the
+structural change is **one `?`** on `ExperienceSpec.zones`, and
+`themeAffinity`, `templatesHolding` and the refusal path needed nothing.
+
+Thirteen shape assertions — the composite block, spec-bounded dwell, a park
+anchor, provisioning-before-block causality, meal absorption, weather refusal,
+grocery-refusal infeasibility, no-timetable feasibility — **passed on the
+first run.** That is the evidence for "it is a layer".
+
+**It is golden Day 7 minus the ferry**, and the subtraction is the point: with
+no `legs`, there is no `routeRuns` gate, so a picnic is feasible on a January
+date the islands refuse. One assertion tests exactly that pair.
+
+**Its provisioning reason is its own, not the islands' copied.** The islands'
+is *"the island has no supermarket"* — a fact about geography. A city park has
+a shop two streets away, so the causality here is **sequence**: the picnic is
+what the basket is for. `movement.ts`'s "causality outranks distance" clause
+reads `role === "provision"` and protects it without knowing which experience
+it serves, which is itself a small proof the layer is a layer.
+
+Dwell is 240–360 against the islands' 240–480. A picnic is not an expedition:
+no crossing at either end, so the block need not absorb a ferry's worth of
+committed time. The floor sits exactly on
+`THEME_INVARIANTS.compositeMinDwellMinutes` — deliberately at the boundary
+rather than a comfortable distance above it.
+
+### XXX-47 — `zone`, the fourth theme mode
+
+A district is not a venue and cannot be elected as one. The three existing
+modes all answer *what plays the anchor*; this one answers **where**, and
+leaves the anchor to the ordinary arc — which is why it needs **no composer
+branch at all**. There is a test asserting a zone day's skeleton is
+byte-identical to a themeless one.
+
+**Requestable, never derived.** *"Which neighbourhood"* is not a taste
+question. Deriving a day in Leslieville because a die said so would be the
+engine inventing a destination nobody named — the inverse of the ruling that
+opened Session 15. `allThemes()` stays derivable-only; `allRequestableThemes()`
+is the wider list. It also means every existing derived day's draw is
+untouched, so the standing exams still measure the same engine.
+
+**Geography got one owner.** `ANCHORS` moved to `@/shared/districts`, because
+the client now offers districts and the engine retrieves against them. The
+alternative — a second list of slugs in `theme.ts` — is twin drift with the
+ink still wet.
+
+### The defect the live probe found, and the principle underneath it
+
+District themes first got the ordinary **1 km of discovery slack**, on the
+honest-looking ground that an anchor approximates a neighbourhood and someone
+asking for Queen West does not mean the west side of the street only.
+
+The probe then produced **"A day in Yorkville" containing a stop the app
+itself labelled "Kensington Market."** Yorkville's 800 m circle plus 1 km of
+slack reaches 1.8 km — far enough that the ADMITTING circle and the LABELLING
+circle disagree in front of the traveller.
+
+Now zero slack, and it was affordable because it was measured first: at zero
+slack Yorkville still holds **884 venues with no category empty**. Depth was
+never the reason for the slack.
+
+**The principle, which is the ruling in miniature: slack is SILENT widening;
+the spill is HONEST widening. A zone day gets only the honest kind.** Buying
+reach through an invisible kilometre is the silent fallback constraint 4 bans.
+
+### Honest widening, as ruled
+
+A district can hold 884 venues and **six markets** — Yorkville, measured at
+CP2 — so a step can starve while the day is otherwise fine. Refusing would
+refuse a day buildable one street over; dropping the step is the silent
+failure. So the day **spills into the nearest district** (nearest by centre: a
+distance is a fact, an adjacency table is an opinion needing maintenance for
+every city), records which step starved and where it reached, and stops after
+two — past which the traveller did not ask for a day in Yorkville, they asked
+for a day, and the label would outlive the truth.
+
+Detection is CATEGORY PRESENCE, not menu emptiness, and the difference is
+stated rather than blurred: it runs before the Details stage, so no hours are
+known and it cannot see an hours-starved step — which is already reported as
+`unfilled`. What it sees is the structural case a wider bbox can actually fix.
+Running it there is also what keeps the widening **free**.
+
+### One owner for key→theme
+
+`themeFromKey` replaces **three independent copies**, and they disagreed:
+
+- `Concierge`'s returned `null` for anything unrecognised, so a `zone:` key
+  would have been **silently dropped at the seam** — the `wants` failure
+  exactly, and invisible in the trace.
+- `TastingRoom`'s had no fallback: an unknown mode fell into the `experience`
+  branch and **cast** the id, so a typo became a `DayTheme` that throws four
+  layers later inside `threadSpec`.
+- `generation-report`'s was a fourth.
+
+It now validates against the vocabulary, and a round-trip test covers every
+requestable theme: `themeFromKey(themeId(t)) === t` for all of them.
+
+### The `day_wants` trace gap — and the half that should NOT land
+
+`day_wants` now records the **applied** wants — the list that actually became
+the day's gravity, after the `MAX_INTERESTS` cap. So a trace can answer
+whether the parser's words reached generation, which is the question Session
+15's diagnosis had to reason about instead of read.
+
+**`persona_source` deliberately NOT added**, against Session 15's own note
+asking for it. `persona_key === "profile"` already IS the source; a second
+field beside it would be two ways to say one thing, free to disagree — the
+duplicate ownership constraint 3 bans. Half a patch was worth landing, and it
+is recorded which half and why.
+
+### Derivation reaches — proven with the real parser, not the prompt
+
+A prompt that lists an option is not evidence a sentence lands on it. That is
+the same gap as a stage present in the source and never run, so
+`scripts/parse-probe.ts` drives the real parser. **7/7, $0.0646:**
+
+| sentence | theme | wants |
+|---|---|---|
+| "picnic" | `experience:park-picnic` | nature |
+| "a day in the park" | `experience:park-picnic` | — |
+| "hang out with friends outside" | `experience:park-picnic` | nature |
+| **"shopping, pub hopping and food for today"** | **null** | **shopping, nightlife, food** |
+| "I want to spend the day in Yorkville" | `zone:yorkville` | — |
+| "shopping on Queen St W" | `zone:queen_west_ossington` | shopping |
+| "the islands if the weather's good" | `experience:toronto-islands` | — |
+
+Two of those are the interesting ones. The founder's own failed sentence
+produces **three wants and no theme** — shopping with no district named is not
+a zone day, and the parser does not over-reach for one. And *"shopping on
+Queen St W"* produces **both**: a want and a district, neither swallowing the
+other.
+
+The last row is a regression guard: a widened vocabulary must not cost the old
+one its own sentence.
+
+### Live, at $0, through a real `generateDay`
+
+```
+picnic  Rita Cox Park 11:55–17:55 as a composite block,
+        provisioned at King Fresh Foodmarket beforehand — causality holds
+zone    five stops, every neighbourhood label "Yorkville",
+        no widening needed — and the coherence pass made ZERO moves,
+        because a single-district day is coherent by retrieval
+```
+
+That last observation is worth keeping: XXX-47's two halves are complementary
+rather than redundant. The swap pass fixes a scattered day; a zone day is not
+scattered in the first place.
+
+## CP3 gates
+
+`tsc --noEmit` clean · **786 tests passing**, 3 skipped (was 750) ·
+`npm run build` clean · `eslint` clean · golden 6/6 · day-7 clean · anchors
+8/8 · closes 7/7 · discretionary max 0.33 · adjacency census 0/0 ·
+`alcohol-report`, `coherence-probe`, `engine-wiring-probe`, `parse-probe` all
+PASS.
+
+**Spend: $0.0646** — seven parses. Everything else remains Supabase reads.
+
 ## CP2 gates
 
 `tsc --noEmit` clean · **750 tests passing**, 3 skipped (was 731) ·
@@ -564,10 +729,11 @@ while linking (Step 4) makes Eaton Centre and Holt Renfrew reachable as
 
 ## Spend
 
-**$0.00** of the $15 gate through CP2. Every measurement so far is a Supabase
-read — no Google endpoint, no Anthropic call, no day generation — including
-the two end-to-end `generateDay` runs, which are free by construction rather
-than by luck. The free tier resets **Sep 1**.
+**$0.0646** of the $15 gate through CP3 — seven parser calls in
+`scripts/parse-probe.ts`, and nothing else. Every other measurement this
+session is a Supabase read: no Google endpoint, no day generation, and four
+end-to-end `generateDay` runs that are free by construction rather than by
+luck. The free tier resets **Sep 1**.
 
 # Session 15 — The taste front door: chat intent, profile, product UX (XXX-43)
 
