@@ -849,6 +849,52 @@ both Session 15 corrections and three options for a ruling.
 3. **XXX-52's worksheet** — which shopping venues are anchor-worthy. That is
    the tier-1 signal, and it is his to author, not mine.
 
+### CP4 red pen — the founder's two follow-ups, measured
+
+**(a) The Bloor flagship IS in the pool — not a work order.** Three rows, all
+INSIDE the Yorkville circle:
+
+| row | address | from Yorkville centre |
+|---|---|---|
+| `Holt Renfrew Centre` | 50 Bloor St W | 0.41 km |
+| `Holt Renfrew - Head Office` | 60 Bloor St. West | 0.37 km |
+| `Holt Renfrew Furs` | — | 0.42 km |
+
+His read was right on both counts — the two suburban rows are not it, and it
+does not belong in the suburban-mall bucket. But my ticket's claim that the
+flagship *"is not in the pool at all"* was **wrong**, and XXX-53 is corrected
+in place rather than left standing.
+
+It is a **spelling** problem, and the **third instance of one failure in one
+session**: exact-normalized matching on `"Holt Renfrew"` hits Humberline Drive
+and The West Mall and misses the flagship, which the pool spells `Holt Renfrew
+Centre`. The name matched and nobody checked where it was — again. So XXX-52's
+curated entry is `Holt Renfrew Centre`.
+
+*Not settleable from the pool, for his eye*: `Holt Renfrew Centre` is also the
+office complex at 50 Bloor W. The row is mapped `shopping`; whether FSQ means
+the store or the building is not a question the pool answers.
+
+**(b) The Yorkville geometry needs NO fix.** Bounding the Mink Mile by
+coordinates (Bloor W, Yonge → Avenue Rd):
+
+```
+107 of 107 shopping venues inside the 800 m circle   100%
+furthest                                             612 m
+strip centroid from the current centre               180 m
+```
+
+**And a proxy I caught on myself.** The first pass measured *"any address
+containing Bloor"* and reported **28%** coverage — which would have sent next
+session to redraw a circle that is correct. Bloor Street runs ~12 km; the
+venues it counted as missed are on Bloor West in **the Annex**, a district
+that already covers them. Third proxy-measurement correction this session, and
+the only one caught before it was reported as a finding. *State which signal a
+measurement reads* keeps earning its place in the ledger.
+
+Both filed on XXX-53 as a correction; neither needs next-session work beyond
+the curated spelling.
+
 ## CP4 gates
 
 `tsc --noEmit` clean · **786 tests passing**, 3 skipped · `npm run build`
