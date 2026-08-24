@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  allRequestableThemes,
   allThemes,
   environmentIsFair,
   selectTheme,
@@ -17,6 +18,7 @@ import {
 } from "@/server/generation/theme-select";
 import { mulberry32 } from "@/shared/dice";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { ZONE_SLUGS } from "@/shared/theme";
 import { VENUE_THEME, themeId, type DayTheme } from "@/shared/theme";
 
 const ISLANDS: DayTheme = { mode: "experience", experienceId: "toronto-islands" };
@@ -139,12 +141,31 @@ describe("concierge's choice derives, and filters before it rolls", () => {
     );
   });
 
-  it("offers every theme the vocabulary knows", () => {
+  it("offers every DERIVABLE theme, and no district", () => {
     expect(allThemes().map(themeId).sort()).toEqual([
+      "experience:park-picnic",
       "experience:toronto-islands",
       "thread:history-of-toronto",
       "venue",
     ]);
+    // `zone` is requestable, never derived. "Which neighbourhood" is not a
+    // taste question, and handing someone a day in Leslieville because a die
+    // said so is the engine inventing a destination they never named.
+    expect(allThemes().some((t) => t.mode === "zone")).toBe(false);
+  });
+
+  it("makes every district REQUESTABLE, which is the other half", () => {
+    // A mode that exists and cannot be reached is the XXX-48 defect exactly:
+    // experience mode was unreachable for a whole session because the only
+    // experience was an island. A zone mode nothing could ask for would be
+    // the same bug with a new name.
+    const requestable = allRequestableThemes().map(themeId);
+    for (const slug of ZONE_SLUGS) expect(requestable).toContain(`zone:${slug}`);
+    expect(requestable).toContain("experience:park-picnic");
+  });
+
+  it("still offers venue first, so a themeless day heads the list", () => {
+    expect(themeId(allThemes()[0])).toBe("venue");
   });
 });
 

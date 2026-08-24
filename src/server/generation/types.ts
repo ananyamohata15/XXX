@@ -111,6 +111,31 @@ export interface Candidate {
   score: number;
 }
 
+/**
+ * A zone day that had to widen, and why (XXX-47, Session 16 CP3).
+ *
+ * It rides on the outcome rather than living only in the trace, because the
+ * founder's ruling was that the widening is NARRATED: a day that quietly
+ * reached outside the district the traveller named would be the silent
+ * fallback this project banned in constraint 4, and a day that refused
+ * instead would be refusing something buildable one street over.
+ *
+ * `resolved: false` is a real and reportable state — the day widened as far
+ * as it is allowed to and the step is STILL starved. It is not a failure
+ * (the rest of the day is fine and ships); it is the honest answer to "why
+ * is there no market in my market day", and `unfilled` carries the step.
+ */
+export interface ZoneSpill {
+  /** The district the traveller actually named. */
+  zoneLabel: string;
+  /** The steps that had nothing of their kind inside it. */
+  starvedSteps: string[];
+  /** Where the day reached, nearest first. */
+  spilledInto: string[];
+  /** Did widening actually fill them? */
+  resolved: boolean;
+}
+
 /** What a slot in the skeleton wants, before any venue is chosen. */
 export interface SlotIntent {
   id: string;
@@ -358,6 +383,11 @@ export type GenerationOutcome =
       arcTemplateId: string;
       /** How this day's theme was decided, and what it is (XXX-40). */
       theme: ThemeSelection;
+      /**
+       * Non-null = a zone day reached outside the district it names, and the
+       * traveller is told which way and why (XXX-47).
+       */
+      zoneSpill: ZoneSpill | null;
       /** Advisories only — a day with violations never reaches here. */
       findings: Violation[];
       narrated: NarratedDay;

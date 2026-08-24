@@ -3,6 +3,8 @@ import { generateDay, type EngineDeps } from "@/server/generation/engine";
 import type { EngineGoogleClient } from "@/server/generation/google";
 import { DeterministicSelector } from "@/server/generation/select";
 import type { GenerationRequest } from "@/server/generation/types";
+import type { DayTheme } from "@/shared/theme";
+import type { PlaceCategory } from "@/shared/vocabulary";
 import type { Instrumentation, TraceEvent } from "@/server/instrumentation";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 
@@ -121,8 +123,32 @@ async function main(): Promise<void> {
     if (!ok) failures.push(label);
   };
 
-  for (const excluded of [[], ["nightlife_bars"]] as const) {
-    const label = excluded.length === 0 ? "unconstrained" : "no-alcohol";
+  const CASES: {
+    label: string;
+    excluded: readonly string[];
+    theme?: DayTheme;
+    persona: string;
+  }[] = [
+    { label: "unconstrained", excluded: [], persona: "day-1-jays" },
+    { label: "no-alcohol", excluded: ["nightlife_bars"], persona: "day-1-jays" },
+    {
+      // XXX-48: the second tenant of the experience layer.
+      label: "picnic",
+      excluded: [],
+      theme: { mode: "experience", experienceId: "park-picnic" },
+      persona: "day-6-excursion",
+    },
+    {
+      // XXX-47: a district as the day's centre.
+      label: "zone:yorkville",
+      excluded: [],
+      theme: { mode: "zone", zoneSlug: "yorkville" },
+      persona: "persona-shopper",
+    },
+  ];
+
+  for (const testCase of CASES) {
+    const { label, excluded } = testCase;
     head(`a real generateDay — ${label}`);
     const recorder = recordingInstrumentation();
     const google = stubGoogle();
@@ -136,12 +162,15 @@ async function main(): Promise<void> {
     const request: GenerationRequest = {
       city: "toronto",
       date: "2026-09-05",
-      persona: GOLDEN_PERSONAS["day-1-jays"]!,
+      persona: GOLDEN_PERSONAS[testCase.persona]!,
       budgetBand: null,
       // walk-only, so no transit leg is ever priced and no Routes call made
       transport: ["walk"],
       seed: 42,
-      ...(excluded.length === 0 ? {} : { excludedCategories: [...excluded] }),
+      ...(excluded.length === 0
+        ? {}
+        : { excludedCategories: [...excluded] as PlaceCategory[] }),
+      ...(testCase.theme === undefined ? {} : { theme: testCase.theme }),
     };
     const outcome = await generateDay(deps, request);
     line(`  outcome: ${outcome.status}`);
@@ -178,6 +207,53 @@ async function main(): Promise<void> {
         `      moves ${swap.metadata?.moves} · saved ${swap.metadata?.saved_minutes} min · ${swap.metadata?.trials} trials · refused ${swap.metadata?.rejected_by_grammar} by grammar`,
       );
       for (const d of (swap.metadata?.detail ?? []) as string[]) line(`      ${d}`);
+    }
+
+    if (testCase.theme?.mode === "experience") {
+      // 5. THE EXPERIENCE IS A LAYER, not one hard-coded day: a composite
+      //    block, and the provisioning stop that exists because of it.
+      if (outcome.status === "ok") {
+        const composite = outcome.day.slots.find(
+          (sl) => sl.compositeDwell !== undefined,
+        );
+        check(composite !== undefined, "a composite block was seated");
+        const provision = outcome.day.slots.find((sl) => sl.role === "provision");
+        check(provision !== undefined, "a provisioning stop was seated");
+        if (composite !== undefined && provision !== undefined) {
+          check(
+            provision.startTime < composite.startTime,
+            "provisioning comes BEFORE the block it serves — causality",
+          );
+          const park = outcome.day.places[composite.placeId];
+          line(
+            `      ${park?.name} · ${composite.startTime}–${composite.endTime}, provisioned at ${outcome.day.places[provision.placeId]?.name}`,
+          );
+        }
+      } else {
+        line(`      refused: ${JSON.stringify(outcome).slice(0, 160)}`);
+      }
+    }
+
+    if (testCase.theme?.mode === "zone") {
+      // 6. THE DAY STAYED IN THE DISTRICT, or said where else it went.
+      if (outcome.status === "ok") {
+        const labels = new Set(
+          outcome.day.slots.map(
+            (sl) => outcome.day.places[sl.placeId]?.neighborhood ?? "?",
+          ),
+        );
+        line(`      neighbourhoods: ${[...labels].join(", ")}`);
+        const spill = outcome.zoneSpill;
+        line(
+          spill === null
+            ? "      no widening was needed"
+            : `      WIDENED: ${spill.starvedSteps.join(", ")} had nothing in ${spill.zoneLabel}; reached into ${spill.spilledInto.join(", ")} (${spill.resolved ? "resolved" : "still thin"})`,
+        );
+        check(
+          outcome.theme.theme.mode === "zone",
+          "the day kept the theme it was asked for",
+        );
+      }
     }
 
     if (excluded.length > 0) {

@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { InteractiveTimeline } from "@/components/timeline/InteractiveTimeline";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
+import { districtLabel } from "@/shared/districts";
 import {
   EXPERIENCE_SPECS,
   THREAD_SPECS,
-  type DayTheme,
+  ZONE_SLUGS,
+  themeFromKey,
 } from "@/shared/theme";
 import { FORECAST_HORIZON_DAYS } from "@/shared/scheduling-windows";
 import type { TastingOutcome, TastingQuota } from "@/shared/tasting";
@@ -39,19 +41,19 @@ const THEME_OPTIONS: { key: string; label: string }[] = [
   { key: "venue", label: "A day around one place" },
   ...THREAD_SPECS.map((t) => ({ key: `thread:${t.id}`, label: t.label })),
   ...EXPERIENCE_SPECS.map((e) => ({ key: `experience:${e.id}`, label: e.label })),
+  // Districts, so the Workshop can drive a zone day without the chat box.
+  ...ZONE_SLUGS.map((slug) => ({
+    key: `zone:${slug}`,
+    label: `A day in ${districtLabel(slug)}`,
+  })),
 ];
 
-function themeFor(key: string): DayTheme | null {
-  if (key === "") return null; // concierge's choice = no request
-  if (key === "venue") return { mode: "venue" };
-  const [mode, id] = key.split(":");
-  return mode === "thread"
-    ? { mode: "thread", threadId: id as (typeof THREAD_SPECS)[number]["id"] }
-    : {
-        mode: "experience",
-        experienceId: id as (typeof EXPERIENCE_SPECS)[number]["id"],
-      };
-}
+/**
+ * Delegated at XXX-47. This copy had no fallback: an unknown mode fell into
+ * the `experience` branch and CAST the id, so a typo became a DayTheme that
+ * throws four layers later inside `threadSpec`.
+ */
+const themeFor = themeFromKey;
 
 /**
  * The founder's own downtown preset. A single hand-set point rather than an

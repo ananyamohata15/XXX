@@ -77,8 +77,16 @@ import {
   themeId,
   themeZoneSlugs,
 } from "@/shared/theme";
+import { districtLabel } from "@/shared/districts";
 import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
-import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
+import {
+  POOL_WINDOWS,
+  retrieveCandidates,
+  spillDistricts,
+  starvedIntentIds,
+  zonesFor,
+  type RetrievalZone,
+} from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
 import {
@@ -101,6 +109,7 @@ import type {
   Selector,
   SlotIntent,
   StageTimings,
+  ZoneSpill,
 } from "./types";
 
 /**
@@ -109,6 +118,15 @@ import type {
  * of a bound is that an unseatable pool must not loop.
  */
 const MAX_ANCHOR_REELECTIONS = 2;
+
+/**
+ * How far a zone day may widen before its own name stops being true.
+ *
+ * TWO. Past that the traveller did not ask for a day in Yorkville, they asked
+ * for a day — and a label that outlives the truth is the silent failure this
+ * bound exists to prevent, not a rounding error.
+ */
+const MAX_ZONE_SPILLS = 2;
 
 /** How many stable orderings a category's pool page may be taken in. */
 const POOL_WINDOW_COUNT = POOL_WINDOWS.length;
@@ -519,6 +537,70 @@ export async function generateDay(
           POOL_WINDOW_COUNT,
         ),
     );
+
+    /**
+     * -- HONEST WIDENING FOR A ZONE DAY (XXX-47, Session 16 CP3) ------------
+     *
+     * A district can hold 884 venues and still hold six markets. When a step
+     * has NOTHING of its kind inside the named district, the day widens into
+     * the nearest neighbouring one and says so — never a refusal for a day
+     * that was buildable one street over, never a step dropped in silence.
+     *
+     * Bounded at two spills: past that the traveller did not ask for a day in
+     * Yorkville, they asked for a day, and calling it a Yorkville day would be
+     * the label outliving the truth.
+     *
+     * Free: it happens BEFORE the Details stage, so a widened pool costs
+     * another Supabase read and no Google call.
+     */
+    let zoneSpill: ZoneSpill | null = null;
+    if (theme.mode === "zone") {
+      let spilled: RetrievalZone[] = [];
+      for (let attempt = 1; attempt <= MAX_ZONE_SPILLS; attempt += 1) {
+        const starved = starvedIntentIds(skeleton.intents, pool);
+        if (starved.length === 0) break;
+        const extra = spillDistricts([...zones, ...spilled], 1);
+        if (extra.length === 0) break; // out of city, and honest about it
+        spilled = [...spilled, ...extra];
+        const widened = await retrieveCandidates(
+          deps.supabase,
+          request.city,
+          categories,
+          [...zones, ...spilled],
+          (category) =>
+            diceIndex(
+              { seed, identity, site: "pool-window", context: category },
+              POOL_WINDOW_COUNT,
+            ),
+        );
+        pool.length = 0;
+        pool.push(...widened);
+        const stillStarved = starvedIntentIds(skeleton.intents, pool);
+        zoneSpill = {
+          zoneLabel: districtLabel(theme.zoneSlug),
+          starvedSteps: starved
+            .map((id) => skeleton.intents.find((i) => i.id === id)?.label ?? id)
+            .filter((v, i, a) => a.indexOf(v) === i),
+          spilledInto: spilled.map((z) => z.label),
+          resolved: stillStarved.length === 0,
+        };
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "zone",
+          endpoint: "spill",
+          estCostUsd: 0,
+          metadata: {
+            zone: theme.zoneSlug,
+            attempt,
+            starved_steps: zoneSpill.starvedSteps,
+            spilled_into: spilled.map((z) => z.slug),
+            resolved: zoneSpill.resolved,
+            pool_after: pool.length,
+          },
+        });
+        if (stillStarved.length === 0) break;
+      }
+    }
+
     timings.retrieveMs = now().getTime() - tRetrieve;
 
     // -- the traveller's refusals, at venue level (XXX-44) ------------------
@@ -1133,6 +1215,7 @@ export async function generateDay(
             arc_template_id: skeleton.templateId,
             theme: themeId(theme),
             theme_origin: themeOutcome.selection.origin,
+            zone_spill: zoneSpill,
             elected_anchor: skeleton.electedAnchor,
             anchor_degraded: skeleton.anchorDegraded,
             anchor_calibre_unmet: anchorCalibreUnmet,
@@ -1150,6 +1233,7 @@ export async function generateDay(
           anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
           theme: themeOutcome.selection,
+          zoneSpill,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,

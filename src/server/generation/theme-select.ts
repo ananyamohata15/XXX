@@ -21,6 +21,7 @@ import { categoryAffinity, type Persona } from "@/shared/persona";
 import {
   EXPERIENCE_SPECS,
   THREAD_SPECS,
+  ZONE_SLUGS,
   VENUE_THEME,
   experienceSpec,
   themeId,
@@ -83,21 +84,44 @@ export interface ThemeFeasibilityInput {
  * which is the shape of every constant this project has been bitten by.
  */
 export function themeSpineCategories(theme: DayTheme): PlaceCategory[] {
-  if (theme.mode === "thread") return [...threadSpec(theme.threadId).spine.categories];
-  if (theme.mode === "experience") {
-    const spec = experienceSpec(theme.experienceId);
-    return [
-      ...spec.anchor.categories,
+  /**
+   * A `switch`, not an `if` chain — changed at XXX-48 (Session 16 CP3).
+   *
+   * The chain ended `return []`, so a mode added to the vocabulary would have
+   * fallen through to "this theme is made of nothing" in silence, and every
+   * constraint check downstream would have agreed it was feasible. That is
+   * the admit-list failure with a different keyword. Exhaustive switches on a
+   * discriminated union make the compiler ask.
+   */
+  switch (theme.mode) {
+    case "thread":
+      return [...threadSpec(theme.threadId).spine.categories];
+    case "experience": {
+      const spec = experienceSpec(theme.experienceId);
+      return [
+        ...spec.anchor.categories,
+        /**
+         * Provisioning counts. The islands day buys its lunch before the
+         * ferry, and a traveller who excluded `grocery` cannot run that
+         * spine — a theme whose provisioning stop is refused is as infeasible
+         * as one whose anchor is, and checking only the anchor would miss it.
+         * The picnic inherits this for free: refuse `grocery` and the picnic
+         * refuses itself, with the right reason.
+         */
+        ...(spec.provisioning !== undefined ? [spec.provisioning.category] : []),
+      ];
+    }
+    case "venue":
+    case "zone":
       /**
-       * Provisioning counts. The islands day buys its lunch before the ferry,
-       * and a traveller who excluded `grocery` cannot run that spine — a
-       * theme whose provisioning stop is refused is as infeasible as one
-       * whose anchor is, and checking only the anchor would miss it.
+       * Neither has a spine, and for the same reason: both leave WHAT the day
+       * is made of to the ordinary arc. A zone day pins WHERE and nothing
+       * else, so no category is load-bearing for it and no exclusion can make
+       * it infeasible — the arc's own palette narrowing handles refusals
+       * exactly as it does on a themeless day.
        */
-      ...(spec.provisioning !== undefined ? [spec.provisioning.category] : []),
-    ];
+      return [];
   }
-  return [];
 }
 
 /** Why this theme cannot be built today, or null if it can. */
@@ -105,7 +129,21 @@ export function themeInfeasibility(
   theme: DayTheme,
   input: ThemeFeasibilityInput,
 ): ThemeInfeasibility | null {
-  if (theme.mode === "venue") return null;
+  /**
+   * A venue day is always possible, and so is a zone day — a district is
+   * geography, and geography does not run out of season or need a boat.
+   *
+   * A district CAN be too thin to seat a full arc, and that is real: measured
+   * at CP2, the Distillery holds 402 venues but only 3 viewpoints and 6
+   * historic sites. It is deliberately NOT checked here, because this
+   * function is pure and has no pool — and a feasibility answer that guessed
+   * at pool depth would be exactly the confident-about-the-wrong-signal
+   * failure. Starvation is detected where it can be MEASURED, at menu build,
+   * and answered by spilling into the nearest district with the reason
+   * narrated. Never a closed venue, never a silent failure, never a refusal
+   * for a day that was buildable one street over.
+   */
+  if (theme.mode === "venue" || theme.mode === "zone") return null;
 
   if (!input.canHold(theme)) {
     return {
@@ -149,7 +187,29 @@ export function themeInfeasibility(
   return null;
 }
 
-/** Every theme the vocabulary knows, venue first. */
+/**
+ * Themes the concierge may DERIVE — venue first, and deliberately no zones.
+ *
+ * **A zone theme is requestable, not derivable** (XXX-47, Session 16 CP3),
+ * and the distinction is the product's, not a convenience:
+ *
+ * A theme the concierge derives is an answer to *"what kind of day suits this
+ * traveller"*, and the modes above all answer it from taste — a history
+ * thread for someone drawn to culture, a picnic for someone drawn to parks.
+ * **"Which neighbourhood" is not a taste question.** Handing someone a day in
+ * Leslieville because a die said so is the engine inventing a destination the
+ * traveller never named, which is the opposite of the ruling that opened
+ * Session 15: an explicit request outranks a standing default, and the
+ * absence of a request is not a mandate to pick a district for them.
+ *
+ * It is also why adding nine derivable themes would have been wrong on the
+ * evidence as well as the principle: every existing derived day's draw would
+ * change, and the standing distinctiveness exams would be measuring a
+ * different engine for a feature nobody asked to be automatic.
+ *
+ * `allRequestableThemes()` is the wider list — what a picker offers and a
+ * parser may resolve to.
+ */
 export function allThemes(): DayTheme[] {
   return [
     VENUE_THEME,
@@ -157,6 +217,14 @@ export function allThemes(): DayTheme[] {
     ...EXPERIENCE_SPECS.map(
       (e): DayTheme => ({ mode: "experience", experienceId: e.id }),
     ),
+  ];
+}
+
+/** Everything a traveller may ASK for, including every district. */
+export function allRequestableThemes(): DayTheme[] {
+  return [
+    ...allThemes(),
+    ...ZONE_SLUGS.map((zoneSlug): DayTheme => ({ mode: "zone", zoneSlug })),
   ];
 }
 
@@ -174,7 +242,12 @@ export function themeAffinity(persona: Persona, theme: DayTheme): number {
       ? threadSpec(theme.threadId).spine.categories
       : theme.mode === "experience"
         ? experienceSpec(theme.experienceId).anchor.categories
-        : [];
+        : // venue and zone: no spine, so both fall to the persona's own best
+          // interest below. A zone theme never reaches the derived draw
+          // anyway (see `allThemes`), but scoring it as a venue day is the
+          // honest answer if it ever does — a day in Yorkville is, in taste
+          // terms, exactly a venue day.
+          [];
   if (categories.length === 0) {
     // The venue day's own weight: the persona's strongest single interest.
     return Math.max(

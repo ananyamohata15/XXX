@@ -51,7 +51,44 @@ export const tastingContextSchema = z.strictObject({
    * Defaulted so traces written before this field parse unchanged.
    */
   synthetic: z.boolean().default(false),
+  /**
+   * What the traveller asked to DO today (XXX-48, Session 16 CP3).
+   *
+   * THE GAP THIS CLOSES. Session 15 built `wants` — the positive half of the
+   * product, and the fix for a founder day that had neither shopping nor
+   * pubs in it — and recorded that the trace should carry it. The patch
+   * failed to apply and nobody noticed, because a missing audit field breaks
+   * nothing: the OVERRIDE landed and worked, and only its record was absent.
+   * The consequence was exact and was felt this session: the trace of the
+   * picnic request could not confirm whether the parser's `wants` had reached
+   * generation at all, so the diagnosis had to reason about it instead of
+   * reading it.
+   *
+   * That is XXX-43's own defect-4 lesson generalised. A record that cannot
+   * say what governed a day gives a confident wrong answer to anyone mining
+   * it later — and "the field is simply missing" is the same wrong answer as
+   * "the field says day-1-jays".
+   *
+   * These are the APPLIED wants — the list that actually became the day's
+   * gravity, after the `MAX_INTERESTS` cap. A sentence naming five interests
+   * shows three here, and that is the truth about the day rather than the
+   * truth about the sentence.
+   *
+   * `.default([])` so every trace written before this field parses unchanged.
+   */
+  day_wants: z.array(z.string()).default([]),
 });
+
+/**
+ * NOT ADDED, and the omission is deliberate — `persona_source`.
+ *
+ * Session 15's note said the fix should record *"`profile` plus a
+ * `persona_source`"*. It should not. `persona_key === "profile"` already IS
+ * the source; a second field beside it would be two ways to say one thing,
+ * free to disagree, which is the duplicate-ownership this project bans in
+ * constraint 3 and has now paid for five times under other names. The half
+ * of that patch worth landing was `day_wants`, and it is above.
+ */
 export type TastingContext = z.infer<typeof tastingContextSchema>;
 export type ShownCard = z.infer<typeof shownCardSchema>;
 
@@ -66,6 +103,8 @@ export function buildTastingContext(input: {
   findings: Violation[];
   personaKey: string;
   synthetic?: boolean;
+  /** The applied wants — what actually became the day's gravity. */
+  dayWants?: readonly string[];
 }): TastingContext {
   const cards: Record<string, ShownCard> = {};
   for (const slot of input.day.slots) {
@@ -105,6 +144,7 @@ export function buildTastingContext(input: {
     day_date: input.day.date,
     cards,
     synthetic: input.synthetic ?? false,
+    day_wants: [...(input.dayWants ?? [])],
   };
 }
 
