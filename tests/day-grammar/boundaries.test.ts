@@ -30,7 +30,13 @@ import {
   slot,
   tags,
 } from "@/shared/fixtures/golden/support";
-import { TIERS } from "@/shared/vocabulary";
+import {
+  CATEGORY_FAMILIES,
+  CATEGORY_FAMILY,
+  PLACE_CATEGORIES,
+  TIERS,
+  type PlaceCategory,
+} from "@/shared/vocabulary";
 
 // A Saturday, so per-weekday hours have something to bite on.
 const DATE = "2026-05-16";
@@ -656,5 +662,157 @@ describe("an outdoor viewpoint is subject to the daylight rules", () => {
       [slot({ id: "s1", place: "lookout", from: "21:30", to: "22:00" })],
     );
     expect(ruleIds(day, ctxOf())).not.toContain("daylight.outdoor-after-dark");
+  });
+});
+
+/**
+ * XXX-46 (Session 16) — adjacency, per family.
+ *
+ * The ticket asked for one verdict for all five families. It cannot have one:
+ * the blanket rule fails two founder-verified golden days on three outdoor
+ * pairs, and forbids pub hopping. So every branch of the verdict table is
+ * asserted here — a permitted branch that quietly became blocking would break
+ * a founder day, and a blocking branch that quietly became permitted would let
+ * the CP4 defect back in, and neither shows up in a count of green tests.
+ */
+describe("consecutive same-family stops", () => {
+  const pairDay = (
+    categoryA: PlaceCategory,
+    categoryB: PlaceCategory,
+    over: { originB?: "user" | "concierge"; originA?: "user" | "concierge" } = {},
+  ): GrammarDay =>
+    dayOf(
+      [
+        place({
+          id: "a",
+          category: present(categoryA, CONCIERGE, TIERS.observed),
+          hours: present(hours({ default: [["08:00", "23:00"]] }), PLACES_API, TIERS.verified),
+          tags: tags({ outdoor: false }),
+        }),
+        place({
+          id: "b",
+          category: present(categoryB, CONCIERGE, TIERS.observed),
+          hours: present(hours({ default: [["08:00", "23:00"]] }), PLACES_API, TIERS.verified),
+          tags: tags({ outdoor: false }),
+        }),
+      ],
+      [
+        slot({ id: "s1", place: "a", from: "12:00", to: "13:00", origin: over.originA ?? "concierge" }),
+        slot({ id: "s2", place: "b", from: "13:10", to: "14:10", origin: over.originB ?? "concierge" }),
+      ],
+    );
+
+  const adjacency = (day: GrammarDay) =>
+    validateDay(day, ctxOf()).filter(
+      (v) => v.ruleId === "rhythm.consecutive-same-family",
+    );
+
+  it("PREMISE: both verdict tables cover the whole vocabulary", () => {
+    // Exhaustive by type, asserted at runtime too — a family or a category
+    // added to the vocabulary must not default to a verdict in silence, which
+    // is exactly how `eveningOk` deleted a category from every evening close.
+    for (const family of CATEGORY_FAMILIES) {
+      expect(
+        GRAMMAR_PARAMS.pacing.consecutiveFamily[family],
+        family,
+      ).toBeDefined();
+    }
+    for (const category of PLACE_CATEGORIES) {
+      expect(
+        GRAMMAR_PARAMS.pacing.mealGrade[category],
+        category,
+      ).toBeTypeOf("boolean");
+    }
+  });
+
+  it("BLOCKS a second sit-down meal straight after the first — the CP4 defect", () => {
+    const found = adjacency(pairDay("restaurants", "restaurants"));
+    expect(found.map((v) => v.severity)).toEqual(["violation"]);
+    // Names the offending subject, and points repair at the SECOND stop only.
+    expect(found[0].slotIds).toEqual(["s2"]);
+    expect(found[0].data.previousSlotId).toBe("s1");
+  });
+
+  it("PERMITS coffee then brunch — a meal pattern this product ships by name", () => {
+    // The offline recompose opens day-2 and day-6 with exactly this pair.
+    // Blocking it would be legislation against `coffee_then_brunch`, which
+    // sits in the same params object as the rule.
+    expect(adjacency(pairDay("cafes", "restaurants"))).toEqual([]);
+    expect(adjacency(pairDay("restaurants", "cafes"))).toEqual([]);
+    expect(adjacency(pairDay("cafes", "cafes"))).toEqual([]);
+  });
+
+  it("PREMISE: the two pairs above differ only in meal grade, not in family", () => {
+    // Without this the test above proves nothing — it would pass just as well
+    // if the rule had simply stopped looking at the table family at all.
+    expect(CATEGORY_FAMILY.cafes).toBe(CATEGORY_FAMILY.restaurants);
+    expect(GRAMMAR_PARAMS.pacing.mealGrade.restaurants).toBe(true);
+    expect(GRAMMAR_PARAMS.pacing.mealGrade.cafes).toBe(false);
+  });
+
+  it("PERMITS park into park — the founder wrote three such pairs himself", () => {
+    expect(adjacency(pairDay("parks", "parks"))).toEqual([]);
+    expect(adjacency(pairDay("parks", "scenic_viewpoints"))).toEqual([]);
+  });
+
+  it("PERMITS bar after bar — pub hopping is a thing the founder asked for", () => {
+    expect(adjacency(pairDay("nightlife_bars", "nightlife_bars"))).toEqual([]);
+  });
+
+  it("ADVISES on two culture stops, and does not reject them", () => {
+    // Blocking would reject every `history-of-toronto` thread day, whose
+    // spine is 2–3 same-family stops by construction.
+    const found = adjacency(pairDay("museums_galleries", "historic_sites"));
+    expect(found.map((v) => v.severity)).toEqual(["advisory"]);
+  });
+
+  it("ADVISES on two market stops — the family licence exists to produce them", () => {
+    const found = adjacency(pairDay("markets", "shopping"));
+    expect(found.map((v) => v.severity)).toEqual(["advisory"]);
+  });
+
+  it("says nothing about two stops the traveller committed to themselves", () => {
+    expect(
+      adjacency(
+        pairDay("restaurants", "restaurants", {
+          originA: "user",
+          originB: "user",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("still judges a concierge stop that follows a user's own", () => {
+    // The carve-out is for the user's OWN pair. Seating a restaurant right
+    // after their booked lunch is still our doing.
+    expect(
+      adjacency(pairDay("restaurants", "restaurants", { originA: "user" }))
+        .map((v) => v.severity),
+    ).toEqual(["violation"]);
+  });
+
+  it("breaks the chain on an unknown category rather than matching it", () => {
+    // An absence is not evidence of monotony — `checkTexture`'s discipline.
+    const day = pairDay("restaurants", "restaurants");
+    delete day.places.a.category;
+    expect(adjacency(day)).toEqual([]);
+  });
+
+  it("reports three in a row as two pairs, because repair is per pair", () => {
+    const day = dayOf(
+      ["a", "b", "c"].map((id) =>
+        place({
+          id,
+          category: present("restaurants", CONCIERGE, TIERS.observed),
+          hours: present(hours({ default: [["08:00", "23:00"]] }), PLACES_API, TIERS.verified),
+        }),
+      ),
+      [
+        slot({ id: "s1", place: "a", from: "12:00", to: "13:00" }),
+        slot({ id: "s2", place: "b", from: "13:10", to: "14:10" }),
+        slot({ id: "s3", place: "c", from: "14:20", to: "15:20" }),
+      ],
+    );
+    expect(adjacency(day).map((v) => v.slotIds)).toEqual([["s2"], ["s3"]]);
   });
 });

@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { DISTRICTS } from "@/shared/districts";
 import {
   DAY_THEME_MODES,
   EXPERIENCE_SPECS,
@@ -95,13 +96,41 @@ describe("theme specs hold their invariants, per row", () => {
   });
 
   it("every zone a spec names exists", () => {
-    const slugs = new Set(THEME_ZONES.map((z) => z.slug));
+    // A theme may draw from a hand-drawn THEME_ZONE (the islands) or from a
+    // district (a zone day). Both are real geography; an unknown slug is a
+    // typo in a spec, and `zonesFor` throws on one rather than silently
+    // handing back the lens's zones and building a mainland island day.
+    const slugs = new Set([
+      ...THEME_ZONES.map((z) => z.slug),
+      ...DISTRICTS.map((d) => d.slug),
+    ]);
     for (const spec of EXPERIENCE_SPECS) {
-      for (const zone of spec.zones) expect(slugs).toContain(zone);
+      for (const zone of spec.zones ?? []) expect(slugs).toContain(zone);
     }
     for (const spec of THREAD_SPECS) {
       for (const zone of spec.zones ?? []) expect(slugs).toContain(zone);
     }
+  });
+
+  it("an experience with NO zones is a real state, not an oversight", () => {
+    // The picnic's whole structural change. If every spec grew a zone list
+    // again, `themeZoneSlugs`'s `?? []` would be dead code and the fallback
+    // path would rot untested — which is how a branch stops working without
+    // anyone noticing.
+    const unbound = EXPERIENCE_SPECS.filter((s) => s.zones === undefined);
+    expect(unbound.map((s) => s.id)).toContain("park-picnic");
+    for (const spec of unbound) {
+      expect(themeZoneSlugs({ mode: "experience", experienceId: spec.id })).toEqual([]);
+    }
+  });
+
+  it("a picnic needs no timetable, and that is what makes it the second tenant", () => {
+    const picnic = EXPERIENCE_SPECS.find((s) => s.id === "park-picnic");
+    expect(picnic?.legs).toBeUndefined();
+    // The causality the islands spec proved, on a day with no crossing.
+    expect(picnic?.provisioning?.category).toBe("grocery");
+    expect(picnic?.absorbsMeals).toBe(1);
+    expect(picnic?.requiresGoodWeather).toBe(true);
   });
 });
 
@@ -136,13 +165,21 @@ describe("theme identity and geography", () => {
       VENUE_THEME,
       { mode: "thread", threadId: "history-of-toronto" },
       { mode: "experience", experienceId: "toronto-islands" },
+      { mode: "experience", experienceId: "park-picnic" },
+      { mode: "zone", zoneSlug: "yorkville" },
     ];
     expect(themes.map(themeId)).toEqual([
       "venue",
       "thread:history-of-toronto",
       "experience:toronto-islands",
+      "experience:park-picnic",
+      "zone:yorkville",
     ]);
-    expect(themes.map((t) => t.mode).sort()).toEqual([...DAY_THEME_MODES].sort());
+    // EVERY mode must be nameable in a trace — a day whose theme the record
+    // cannot name is the attribution defect XXX-43 fixed for personas.
+    expect([...new Set(themes.map((t) => t.mode))].sort()).toEqual(
+      [...DAY_THEME_MODES].sort(),
+    );
   });
 
   it("a venue theme has no geography of its own — the lens keeps it", () => {

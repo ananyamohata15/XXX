@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createInstrumentation } from "@/server/instrumentation";
+import { allRequestableThemes } from "@/server/generation/theme-select";
 import { generateDay, type EngineDeps } from "@/server/generation/engine";
 import { createEngineGoogleClient } from "@/server/generation/google";
 import { createAnthropic, UsageRecorder } from "@/server/generation/llm";
@@ -19,8 +20,7 @@ import { computeDaylight } from "@/server/weather/ephemeris";
 import { ARC_TEMPLATES } from "@/server/generation/arc";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import {
-  EXPERIENCE_IDS,
-  THREAD_IDS,
+  themeFromKey,
   themeId,
   type DayTheme,
 } from "@/shared/theme";
@@ -346,19 +346,14 @@ async function main() {
   const themeArg = arg("--theme");
   const themeFromArg = (): DayTheme | null => {
     if (themeArg === null) return null;
-    if (themeArg === "venue") return { mode: "venue" };
-    const [mode, id] = themeArg.split(":");
-    if (mode === "thread" && (THREAD_IDS as readonly string[]).includes(id)) {
-      return { mode: "thread", threadId: id as (typeof THREAD_IDS)[number] };
-    }
-    if (mode === "experience" && (EXPERIENCE_IDS as readonly string[]).includes(id)) {
-      return {
-        mode: "experience",
-        experienceId: id as (typeof EXPERIENCE_IDS)[number],
-      };
-    }
+    // The fourth independent copy of this conversion, retired at XXX-47.
+    // `themeFromKey` validates the id against the vocabulary and returns null
+    // on anything it does not know, so a typo is caught here rather than four
+    // layers down inside `threadSpec`.
+    const theme = themeFromKey(themeArg);
+    if (theme !== null) return theme;
     console.error(
-      `Unknown --theme "${themeArg}". Known: venue, ${THREAD_IDS.map((t) => `thread:${t}`).join(", ")}, ${EXPERIENCE_IDS.map((e) => `experience:${e}`).join(", ")}`,
+      `Unknown --theme "${themeArg}". Known: ${allRequestableThemes().map(themeId).join(", ")}`,
     );
     process.exit(1);
   };

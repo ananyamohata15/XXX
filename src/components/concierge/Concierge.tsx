@@ -29,6 +29,7 @@ import type { ParsedDayRequest } from "@/shared/intent";
 import type { TastingOutcome } from "@/shared/tasting";
 import { categoryLabel, type PlaceCategory } from "@/shared/vocabulary";
 import { owesLimitationNotice } from "@/shared/constraints";
+import { themeFromKey } from "@/shared/theme";
 
 type Screen =
   | { name: "gate" }
@@ -526,16 +527,11 @@ const THEME_OPTIONS = [
   { key: "experience:toronto-islands", label: "Islands" },
 ];
 
-/** Theme key → the engine's discriminated union. */
-function themeFor(key: string | null) {
-  if (key === null || key === "") return null;
-  if (key === "venue") return { mode: "venue" as const };
-  if (key.startsWith("thread:")) {
-    return { mode: "thread" as const, threadId: key.slice(7) };
-  }
-  if (key.startsWith("experience:")) {
-    return { mode: "experience" as const, experienceId: key.slice(11) };
-  }
-  return null;
-}
+/**
+ * Theme key → the engine's union. Delegated to `themeFromKey` at XXX-47: this
+ * was one of three independent copies, and this one silently dropped any key
+ * it did not recognise — which would have lost every `zone:` request at the
+ * seam, exactly the way `wants` was lost for a session.
+ */
+const themeFor = themeFromKey;
 

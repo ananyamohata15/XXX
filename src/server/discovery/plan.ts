@@ -1,12 +1,22 @@
 /**
  * The Toronto discovery run plan (XXX-22, SESSION_NOTES Step 2.2).
  *
- * Anchor coordinates are hand-set founder knowledge — deliberately not
- * geocoded via Google (Geocoding output carries its own 30-day cap) and
- * never used for point-in-polygon against returned coordinates
- * (ToS §3.2.3(c)(iv)). A place's neighborhood label is the anchor we
- * SEARCHED, not a computation over where Google says it sits.
+ * The GEOGRAPHY moved to `@/shared/districts` at Session 16 CP3, when a
+ * district became something a traveller can name as a day's theme and the
+ * client needed to read the same list. What stays here is everything about a
+ * discovery RUN: which categories were searched, the query fragments, and the
+ * parks radius floor. Where a district is, and what we once searched inside
+ * it, are different questions with different owners.
+ *
+ * `Anchor` and `ANCHORS` are re-exported so every existing caller keeps
+ * working and there is still exactly one list behind them.
  */
+
+import { DISTRICTS, type District } from "@/shared/districts";
+
+/** The discovery vocabulary's name for a district. One list, two words. */
+export type Anchor = District;
+export const ANCHORS: readonly Anchor[] = DISTRICTS;
 
 export interface Category {
   key: string;
@@ -14,13 +24,6 @@ export interface Category {
   query: string;
 }
 
-export interface Anchor {
-  slug: string;
-  label: string;
-  lat: number;
-  lng: number;
-  radiusM: number;
-}
 
 export interface RunCell {
   category: string;
@@ -39,18 +42,6 @@ export const CATEGORIES: readonly Category[] = [
   { key: "markets", query: "markets" },
   { key: "nightlife_bars", query: "bars and live music venues" },
   { key: "parks", query: "parks and gardens" },
-] as const;
-
-export const ANCHORS: readonly Anchor[] = [
-  { slug: "downtown_core", label: "Downtown", lat: 43.6517, lng: -79.3817, radiusM: 1200 },
-  { slug: "distillery", label: "Distillery District", lat: 43.6503, lng: -79.3596, radiusM: 800 },
-  { slug: "kensington_chinatown", label: "Kensington Market", lat: 43.6547, lng: -79.4005, radiusM: 900 },
-  { slug: "queen_west_ossington", label: "Queen West", lat: 43.6448, lng: -79.42, radiusM: 1200 },
-  { slug: "annex", label: "The Annex", lat: 43.6672, lng: -79.4036, radiusM: 1000 },
-  { slug: "st_lawrence", label: "St. Lawrence Market", lat: 43.6487, lng: -79.3716, radiusM: 800 },
-  { slug: "waterfront", label: "Harbourfront", lat: 43.6389, lng: -79.3817, radiusM: 1500 },
-  { slug: "leslieville", label: "Leslieville", lat: 43.6626, lng: -79.3357, radiusM: 1200 },
-  { slug: "yorkville", label: "Yorkville", lat: 43.6709, lng: -79.3933, radiusM: 800 },
 ] as const;
 
 /** Parks need reach: green space clusters away from commercial anchors. */

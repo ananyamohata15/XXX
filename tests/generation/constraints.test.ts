@@ -6,11 +6,25 @@ import {
   type ThemeFeasibilityInput,
 } from "@/server/generation/theme-select";
 import type { GenerationRequest } from "@/server/generation/types";
+import { buildGrammarContext } from "@/server/generation/context";
+import { computeDaylight } from "@/server/weather/ephemeris";
+import { excludeRefusedVenues } from "@/server/generation/engine";
+import type { Candidate } from "@/server/generation/types";
 import {
+  CATEGORY_CONSTRAINT_LIMITATION,
+  DRINKING_LABEL_PREFIXES,
+  drinkingFocusOf,
+  excludesAlcohol,
   isCategoryPermitted,
   isFullyExcluded,
+  isVenuePermitted,
+  owesLimitationNotice,
   permittedCategories,
 } from "@/shared/constraints";
+import { HaversineStubProvider } from "@/shared/day-grammar/travel";
+import type { GrammarContext } from "@/shared/day-grammar/types";
+import { validateDay } from "@/shared/day-grammar/validate";
+import { TRAP_FIXTURES } from "@/shared/fixtures/golden/traps";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
 import type { DayTheme } from "@/shared/theme";
 import { PLACE_CATEGORIES, type PlaceCategory } from "@/shared/vocabulary";
@@ -220,5 +234,271 @@ describe("theme refusal", () => {
   it("stays silent when nothing is excluded", () => {
     expect(themeInfeasibility(HISTORY, base())).toBeNull();
     expect(themeInfeasibility(ISLANDS, base())).toBeNull();
+  });
+});
+
+/**
+ * XXX-44 (Session 16) — the attribute under the category.
+ *
+ * Every assertion here states its PREMISE before its behaviour, per the
+ * Session-14 lesson: five green tests once guarded a feature that fired zero
+ * times, each one having early-returned past its own claim.
+ */
+describe("the drinking-focus signal", () => {
+  it("FIRES on every declared prefix — none is dead", () => {
+    // A rule asserts that a branch exists; assert it PER RULE, or a dead one
+    // hides behind its live siblings. `Retail > … > Beer Store` matching
+    // nothing would be the `Retail > Farmers Market` defect again.
+    for (const prefix of DRINKING_LABEL_PREFIXES) {
+      expect(drinkingFocusOf([prefix]), prefix).toBe("focused");
+      expect(drinkingFocusOf([`${prefix} > Something`]), prefix).toBe("focused");
+    }
+  });
+
+  it("catches the wine bar the CATEGORY gate cannot see", () => {
+    // Clandestino's exact shape: mapped `restaurants`, labelled a bar.
+    const labels = [
+      "Dining and Drinking > Restaurant",
+      "Dining and Drinking > Bar > Wine Bar",
+    ];
+    expect(drinkingFocusOf(labels)).toBe("focused");
+    expect(isCategoryPermitted("restaurants", ["nightlife_bars"])).toBe(true);
+    expect(isVenuePermitted("restaurants", "focused", ["nightlife_bars"])).toBe(
+      false,
+    );
+  });
+
+  it("does not over-capture on a prefix that merely shares a word", () => {
+    // The punctuation is load-bearing, as it is in CATEGORY_BREADCRUMB_RULES:
+    // "Bar" must not swallow "Barbecue Joint".
+    expect(
+      drinkingFocusOf(["Dining and Drinking > Restaurant > BBQ Joint"]),
+    ).toBe("not-focused");
+    expect(drinkingFocusOf(["Dining and Drinking > Barbecue"])).toBe(
+      "not-focused",
+    );
+  });
+
+  it("separates 'the directory says no' from 'we have no directory record'", () => {
+    // not-focused is a positive Tier-2 observation; unknown is an absence.
+    // Collapsing them is what makes an instrument lie about absence.
+    expect(drinkingFocusOf(["Dining and Drinking > Restaurant"])).toBe(
+      "not-focused",
+    );
+    expect(drinkingFocusOf([])).toBe("unknown");
+  });
+
+  it("risks the unknown and refuses the known — the ruled asymmetry", () => {
+    expect(isVenuePermitted("restaurants", "unknown", ["nightlife_bars"])).toBe(
+      true,
+    );
+    expect(
+      isVenuePermitted("restaurants", "not-focused", ["nightlife_bars"]),
+    ).toBe(true);
+    expect(isVenuePermitted("restaurants", "focused", ["nightlife_bars"])).toBe(
+      false,
+    );
+  });
+
+  it("only applies the attribute test when ALCOHOL is what was refused", () => {
+    // A traveller who excluded museums has said nothing about drinking, and a
+    // day of theirs must be byte-identical to one from before this existed.
+    expect(excludesAlcohol(["museums_galleries"])).toBe(false);
+    expect(
+      isVenuePermitted("restaurants", "focused", ["museums_galleries"]),
+    ).toBe(true);
+    expect(excludesAlcohol(["nightlife_bars"])).toBe(true);
+  });
+
+  it("owes the limitation notice only to a traveller who refused alcohol", () => {
+    // Narrowed at XXX-44: this returned `excluded.length > 0`, so someone who
+    // excluded only galleries was shown a paragraph about bars.
+    expect(owesLimitationNotice([])).toBe(false);
+    expect(owesLimitationNotice(["museums_galleries"])).toBe(false);
+    expect(owesLimitationNotice(["nightlife_bars"])).toBe(true);
+  });
+
+  it("says what is still missing, and not what has been fixed", () => {
+    // The old sentence apologised for wine bars slipping through. They no
+    // longer do, and a caveat that has stopped being true is a silent limit.
+    expect(CATEGORY_CONSTRAINT_LIMITATION).not.toMatch(/slip through/i);
+    expect(CATEGORY_CONSTRAINT_LIMITATION).toMatch(/wine bars/i);
+    expect(CATEGORY_CONSTRAINT_LIMITATION).toMatch(/pours/i);
+  });
+});
+
+describe("the venue-level seam drops what the category seam cannot", () => {
+  const candidate = (
+    id: string,
+    category: PlaceCategory,
+    focus: "focused" | "not-focused" | null,
+  ): Candidate => ({
+    place: {
+      id,
+      name: id,
+      neighborhood: "Old Town",
+      coords: { lat: 43.65, lng: -79.37 },
+      tags: { outdoor: false, goldenHourAffine: false, highCrowd: false },
+      category: {
+        status: "present",
+        value: category,
+        source: "fsq_os_places",
+        tier: 2,
+        fetchedAt: "2026-08-23T00:00:00-04:00",
+      },
+      ...(focus === null
+        ? {}
+        : {
+            drinkingFocused: {
+              status: "present" as const,
+              value: focus === "focused",
+              source: "fsq_os_places",
+              tier: 2 as const,
+              fetchedAt: "2026-08-23T00:00:00-04:00",
+            },
+          }),
+    },
+    category,
+    googlePlaceId: null,
+    rating: null,
+    userRatingCount: null,
+    cuisines: [],
+    detailsFetched: false,
+    score: 0,
+  });
+
+  const pool = [
+    candidate("clandestino", "restaurants", "focused"),
+    candidate("rasta-pasta", "restaurants", "not-focused"),
+    candidate("lcbo", "grocery", "focused"),
+    candidate("no-record", "restaurants", null),
+    candidate("ruby-soho", "nightlife_bars", "focused"),
+  ];
+
+  it("PREMISE: the category gate alone would keep the wine bar and the LCBO", () => {
+    // Without this premise the test below proves nothing — it would pass
+    // just as well against a pool the category gate had already cleaned.
+    const survivingCategoryGate = pool.filter((c) =>
+      isCategoryPermitted(c.category, ["nightlife_bars"]),
+    );
+    expect(survivingCategoryGate.map((c) => c.place.id)).toEqual([
+      "clandestino",
+      "rasta-pasta",
+      "lcbo",
+      "no-record",
+    ]);
+  });
+
+  it("FIRES: drops the labelled venues and keeps the rest", () => {
+    const { kept, dropped } = excludeRefusedVenues(pool, ["nightlife_bars"]);
+    expect(kept.map((c) => c.place.id)).toEqual(["rasta-pasta", "no-record"]);
+    expect(dropped.map((d) => d.placeId)).toEqual([
+      "clandestino",
+      "lcbo",
+      "ruby-soho",
+    ]);
+  });
+
+  it("keeps the liquor store off a provisioning stop", () => {
+    // Not decoration: the first live islands day provisioned at an LCBO, and
+    // `grocery` is what an experience's `provisioning` draws from.
+    const { kept } = excludeRefusedVenues(pool, ["nightlife_bars"]);
+    expect(kept.some((c) => c.place.id === "lcbo")).toBe(false);
+  });
+
+  it("is byte-identical — the same array — for an unconstrained request", () => {
+    const { kept, dropped } = excludeRefusedVenues(pool, []);
+    expect(kept).toBe(pool);
+    expect(dropped).toEqual([]);
+  });
+});
+
+/**
+ * XXX-47 (Session 16 CP2) — the backstop was never wired in.
+ *
+ * Session 15 shipped `constraint.excluded-category` described as *"the one
+ * place that cannot be forgotten, because it sits after all of them and
+ * rejects the day"*. The engine's only validation context never passed
+ * `excludedCategories`, so `ctx.excludedCategories` was `null` on every
+ * generation and the rule returned on its first line. It has never once been
+ * able to reject a day.
+ *
+ * The 27-trap exam did not catch it because `contextFor` — the FIXTURE
+ * context builder — does pass the field. Two context builders, one told and
+ * one not: `support.ts`'s own comment anticipated this exact divergence and
+ * named the opposite direction.
+ *
+ * `scripts/constraint-proof.ts` did not catch it either, and that is the
+ * sharper lesson. Its assertion reads *"the grammar backstop did not need to
+ * catch anything"* and treats silence as PASS. **A rule whose success
+ * condition is silence cannot tell "it worked" from "it was never
+ * connected."**
+ *
+ * These tests reproduce the defect at the seam, and the required parameter
+ * makes the class of it a compile error rather than a silence.
+ */
+describe("the backstop reaches the engine's own context", () => {
+  const barDay = () => {
+    const trap = TRAP_FIXTURES.find((t) => t.key === "trap-excluded-category");
+    if (trap === undefined) throw new Error("trap fixture missing");
+    return trap.golden;
+  };
+
+  const engineShapedContext = (
+    excludedCategories: readonly PlaceCategory[] | null,
+  ): GrammarContext =>
+    buildGrammarContext({
+      // The exact argument list `generateDay` assembles, so this test fails
+      // if the engine's call and this one ever drift apart in shape.
+      environment: {
+        // The real ephemeris, as the engine's own `fetchEnvironment` builds
+        // it — the fixture's `DaylightTimes` is a narrower shape, and using
+        // it here would make this context a different one from the engine's,
+        // which is the exact divergence the test exists to catch.
+        daylight: computeDaylight(barDay().day.city, barDay().day.date),
+        windows: barDay().windows,
+      },
+      mealPattern: barDay().mealPattern!,
+      persona: GOLDEN_PERSONAS["day-1-jays"]!,
+      budgetBand: barDay().budgetBand,
+      lodging: barDay().lodging,
+      anchorBaseline: barDay().anchorBaseline,
+      travel: new HaversineStubProvider(),
+      transport: ["walk", "transit"],
+      excludedCategories,
+    });
+
+  it("PREMISE: this day really does seat a bar", () => {
+    // Without the premise the test below proves nothing — it would pass just
+    // as well against a day with no bar in it.
+    const day = barDay().day;
+    const categories = Object.values(day.places).map((p) =>
+      p.category?.status === "present" ? p.category.value : null,
+    );
+    expect(categories).toContain("nightlife_bars");
+  });
+
+  it("REPRODUCES the defect: an untold context passes the bar day", () => {
+    const found = validateDay(barDay().day, engineShapedContext(null));
+    expect(
+      found.filter((v) => v.ruleId === "constraint.excluded-category"),
+    ).toEqual([]);
+  });
+
+  it("FIXED: told the constraint, the same context rejects it", () => {
+    const found = validateDay(
+      barDay().day,
+      engineShapedContext(["nightlife_bars"]),
+    );
+    const hit = found.find((v) => v.ruleId === "constraint.excluded-category");
+    expect(hit?.severity).toBe("violation");
+  });
+
+  it("null still means UNKNOWN, not 'no constraints' — the transport precedent", () => {
+    // The fix is that you can no longer reach `null` by saying nothing. The
+    // meaning of `null` itself is unchanged, and must stay unchanged: a
+    // context that was not told must not assert there were none.
+    expect(engineShapedContext(null).excludedCategories).toBeNull();
+    expect(engineShapedContext([]).excludedCategories).toEqual([]);
   });
 });

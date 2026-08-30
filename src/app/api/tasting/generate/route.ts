@@ -5,7 +5,7 @@ import { PLACE_CATEGORIES } from "@/shared/vocabulary";
 import { checkGate, gateResponse } from "@/server/tasting/gate";
 import { runTastingGeneration } from "@/server/tasting/generate";
 import { GOLDEN_PERSONAS } from "@/shared/persona";
-import { EXPERIENCE_IDS, THREAD_IDS } from "@/shared/theme";
+import { EXPERIENCE_IDS, THREAD_IDS, ZONE_SLUGS } from "@/shared/theme";
 
 /**
  * Generate a fresh Toronto day for the founder (XXX-32).
@@ -44,6 +44,16 @@ const bodySchema = z.strictObject({
       z.strictObject({
         mode: z.literal("experience"),
         experienceId: z.enum(EXPERIENCE_IDS),
+      }),
+      z.strictObject({
+        mode: z.literal("zone"),
+        /**
+         * Enumerated, not a free string. A slug the engine cannot resolve
+         * makes `zonesFor` throw mid-generation; refusing it at the boundary
+         * is the Zod discipline this file exists for — parse, don't
+         * validate-and-hope.
+         */
+        zoneSlug: z.enum(ZONE_SLUGS as unknown as [string, ...string[]]),
       }),
     ])
     .nullable()

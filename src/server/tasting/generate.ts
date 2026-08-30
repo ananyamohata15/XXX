@@ -392,6 +392,12 @@ export async function runTastingGeneration(
      * build the day.
      */
     personaKey: input.useProfile ? "profile" : input.personaKey,
+    /**
+     * The APPLIED wants (XXX-48). `wants` above is already capped at
+     * `MAX_INTERESTS` and is exactly the list that became `dayPersona.gravity`
+     * — so the trace records what governed the day, not what was typed.
+     */
+    dayWants: wants,
   });
   const { data: traceRow, error: traceError } = await supabase
     .from("traces")

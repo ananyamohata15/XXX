@@ -28,6 +28,7 @@ import {
   slotLabel,
   violation,
 } from "../internal";
+import { excludesAlcohol } from "../../constraints";
 import { categoryLabel } from "../../vocabulary";
 import type { GrammarContext, GrammarDay, Violation } from "../types";
 
@@ -63,6 +64,46 @@ export function checkConstraints(
      * nothing new.
      */
     if (category.state !== "present") continue;
+
+    /**
+     * The ATTRIBUTE backstop (XXX-44, Session 16).
+     *
+     * Checked BEFORE the category test and reported instead of it when it
+     * fires, because the two rules would otherwise both indict a bar and the
+     * traveller would read the same objection twice. The category rule is for
+     * a venue whose CATEGORY was refused; this one is for a venue whose
+     * category was permitted and whose own directory record files it as a
+     * drinking spot. Different failures, and the second one is the
+     * interesting one — it means every upstream seam let it through.
+     *
+     * Absent is silent, and deliberately so. `dwell.category-unknown` already
+     * reports the slots we know nothing about; a second rule saying the same
+     * thing doubles a day's notes to tell the reader nothing new. It is also
+     * the ruling recorded at `isVenuePermitted`: the population with no
+     * directory record is, in practice, the traveller's own commitments —
+     * which the `origin === "user"` carve-out above already declines to judge.
+     */
+    const drinking = readFact(place.drinkingFocused);
+    if (
+      excludesAlcohol(excluded) &&
+      drinking.state === "present" &&
+      drinking.value === true
+    ) {
+      found.push(
+        violation(
+          "constraint.drinking-focused-venue",
+          [slot.id],
+          `${slotLabel(day, slot.id)} is ${describePlace(place, slot.placeId)}, which its own listing files as a drinking spot, and this traveller does not drink. The day cannot include it.`,
+          {
+            slotId: slot.id,
+            placeId: place.id,
+            category: category.value,
+            excludedCategories: [...excluded],
+          },
+        ),
+      );
+      continue;
+    }
 
     if (!excluded.includes(category.value)) continue;
 

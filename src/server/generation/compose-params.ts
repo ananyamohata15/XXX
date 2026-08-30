@@ -31,6 +31,44 @@ export const COMPOSE_PARAMS = {
    *
    * All Tier 3 judgment, tunable post-CP3 per the CP1 ruling.
    */
+  /**
+   * The post-selection coherence pass (XXX-47, Session 16 CP2).
+   *
+   * Here rather than in `GRAMMAR_PARAMS` for the reason stated at the top of
+   * this file: no rule reads them and no client needs them. There is no
+   * `route.incoherent` violation and there must not be one — a day that
+   * zig-zags is legal, and `route.detour-avoidable` already says so as an
+   * advisory. Coherence is a PREFERENCE, so its proof is the measured travel
+   * delta, not a rule.
+   */
+  coherence: {
+    /**
+     * Minutes a move must save to be worth making.
+     *
+     * TEN, and it is a confidence threshold rather than a caution one. Legs
+     * this engine cannot price from the stored matrix fall back to a
+     * Haversine estimate, and a five-minute difference between two such
+     * estimates is inside their own error. Below this the pass would be
+     * overruling the selector's taste on a number we cannot stand behind.
+     *
+     * It is deliberately the SAME order as `route.detourThresholdMinutes`,
+     * which is what decides whether the day's own advisory thinks a
+     * reordering is worth mentioning. A pass that acted on savings its own
+     * advisory considers noise would be arguing with the day it just built.
+     */
+    minSavingMinutes: 10,
+    /**
+     * How many moves one pass may make.
+     *
+     * THREE, and the bound is about authority rather than about compute. A
+     * pass that rewrote every slot would be a second selector with no taste,
+     * and the first one is where the product's judgment lives. Three is
+     * enough to unpick the founder's day — which swung east–west three times
+     * — and not enough to author a different one.
+     */
+    maxMoves: 3,
+  },
+
   dice: {
     /**
      * The anchor mostly follows gravity — it IS the persona's first interest

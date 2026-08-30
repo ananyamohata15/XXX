@@ -16,12 +16,14 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { drinkingFocusOf } from "@/shared/constraints";
 import { cuisinesFromLabels } from "@/shared/cuisine";
 import { haversineKm } from "@/shared/day-grammar/travel";
 import type { GrammarFact, LatLng } from "@/shared/day-grammar/types";
 import type { Lens } from "@/shared/persona";
 import { isOutdoorCategory, type PlaceCategory } from "@/shared/vocabulary";
 import { weightedOrderBy } from "@/shared/dice";
+import { districtBySlug, DISTRICTS } from "@/shared/districts";
 import { THEME_ZONES } from "@/shared/theme";
 import { ANCHORS, type Anchor } from "../discovery/plan";
 import { COMPOSE_PARAMS } from "./compose-params";
@@ -114,19 +116,61 @@ export function zonesFor(
   themeZoneSlugs: readonly string[] = [],
 ): RetrievalZone[] {
   if (themeZoneSlugs.length > 0 && anchorCoords.length === 0) {
-    const zones = THEME_ZONES.filter((z) => themeZoneSlugs.includes(z.slug));
-    // An unknown slug is a typo in a spec, not a reason to silently hand back
-    // the lens's zones and generate a mainland day under an island theme.
-    if (zones.length !== themeZoneSlugs.length) {
+    /**
+     * A theme's geography can be a hand-drawn THEME ZONE or a DISTRICT
+     * (XXX-47, Session 16 CP3). Both are real; they differ in how much slack
+     * they earn, which is a property of how they were drawn:
+     *
+     *   THEME_ZONES — one circle drawn for one purpose against measured
+     *   coordinates. `slackKm: 0`, because the extra kilometre reaches across
+     *   the harbour and put St. James Park on an island day.
+     *
+     *   DISTRICTS — also `slackKm: 0`, and this was CHANGED ON EVIDENCE
+     *   rather than reasoned. The first build gave them the ordinary
+     *   discovery slack, on the honest-looking ground that an anchor is an
+     *   approximation of a neighbourhood and someone asking for Queen West
+     *   does not mean the west side of the street only.
+     *
+     *   The live probe then produced a day themed **"A day in Yorkville"
+     *   containing a stop the app itself labelled "Kensington Market."**
+     *   Yorkville's 800 m circle plus 1 km of slack reaches 1.8 km — far
+     *   enough to admit venues that `nearestZone(ANCHORS, …)` assigns to a
+     *   different neighbourhood. **On a zone day the admitting circle and the
+     *   LABELLING circle must agree, or the day contradicts itself in front
+     *   of the traveller.**
+     *
+     *   The trade that made it affordable was measured before it was taken:
+     *   at zero slack Yorkville still holds 884 venues with no category
+     *   empty, and even the Distillery holds 402. Depth was never the reason
+     *   for the slack.
+     *
+     *   And the deeper point: **slack is SILENT widening; the spill is HONEST
+     *   widening.** A zone day that needs to reach further should say so —
+     *   `spillDistricts` names the step that starved and the district it
+     *   reached into. Buying the same reach through an invisible kilometre
+     *   is the silent fallback constraint 4 bans.
+     */
+    const zones: (RetrievalZone | null)[] = themeZoneSlugs.map((slug) => {
+      const themeZone = THEME_ZONES.find((z) => z.slug === slug);
+      if (themeZone !== undefined) return { ...themeZone, slackKm: 0 };
+      const district = districtBySlug(slug);
+      return district === null ? null : { ...district, slackKm: 0 };
+    });
+    // An unknown slug is a typo in a spec or a request, not a reason to
+    // silently hand back the lens's zones and generate a mainland day under
+    // an island theme — or a citywide day under a district's name.
+    if (zones.some((z) => z === null)) {
       throw new Error(
         `unknown theme zone(s): ${themeZoneSlugs
-          .filter((s) => !THEME_ZONES.some((z) => z.slug === s))
+          .filter(
+            (slug) =>
+              !THEME_ZONES.some((z) => z.slug === slug) &&
+              districtBySlug(slug) === null,
+          )
           .join(", ")}`,
       );
     }
-    // A theme zone carries NO discovery slack: it is a hand-drawn circle for
-    // one purpose, and the extra kilometre reaches across the harbour.
-    return zones.map((z) => ({ ...z, slackKm: 0 }));
+    return zones.filter((z): z is RetrievalZone => z !== null);
   }
   if (anchorCoords.length > 0) {
     // A committed day is a geographic fact: draw from every zone within
@@ -171,6 +215,69 @@ export function zonesFor(
   // Restored to the canonical ANCHORS order so the bbox and every downstream
   // `nearestZone` read the same list regardless of what the dice returned.
   return ANCHORS.filter((z) => drawn.includes(z));
+}
+
+/**
+ * The nearest districts NOT already drawn from — honest widening for a
+ * zone-anchored day (XXX-47, Session 16 CP3, founder ruling).
+ *
+ * THE PROBLEM IT SOLVES, measured before it was built. A district holds
+ * plenty overall — Yorkville 884 venues, even the Distillery 402 — but the
+ * distribution is lumpy in exactly the categories a day's edges need:
+ * Yorkville has 6 markets and 7 viewpoints; the Distillery has 3 viewpoints
+ * and 6 historic sites. A single-district day can be perfectly buildable and
+ * still have no legal option for one step.
+ *
+ * THE THREE ANSWERS, and why this one. Refusing the day is wrong — it was
+ * buildable one street over. Dropping the step is wrong — that is the silent
+ * failure this project banned, and the traveller would never learn their day
+ * was thinner than it should be. Seating something closed or wrong is
+ * obviously wrong. So the day WIDENS, and says that it did.
+ *
+ * Nearest-by-centre rather than a hand-drawn adjacency table: two circles and
+ * a distance is a fact, and an adjacency list is an opinion that would need
+ * maintaining for every city. Ties break on declaration order, so the same
+ * request always spills the same way and a trace replays exactly.
+ */
+export function spillDistricts(
+  base: readonly RetrievalZone[],
+  count: number,
+): RetrievalZone[] {
+  if (base.length === 0 || count <= 0) return [];
+  const taken = new Set(base.map((z) => z.slug));
+  const centre = {
+    lat: base.reduce((sum, z) => sum + z.lat, 0) / base.length,
+    lng: base.reduce((sum, z) => sum + z.lng, 0) / base.length,
+  };
+  return DISTRICTS.filter((d) => !taken.has(d.slug))
+    .map((d) => ({ d, km: haversineKm(centre, { lat: d.lat, lng: d.lng }) }))
+    .sort((a, b) => a.km - b.km)
+    .slice(0, count)
+    .map(({ d }) => ({ ...d }));
+}
+
+/**
+ * Which of a skeleton's steps this pool cannot fill at all.
+ *
+ * Deliberately CATEGORY presence and not menu emptiness, and the difference
+ * matters. It runs before the Details stage, so no hours are known — which
+ * means it cannot see a step starved by opening times, and it must not
+ * pretend to. What it does see is the structural case: **the district holds
+ * nothing of this kind, at any hour.** That is the case the measurement
+ * showed is real, and it is the only one a wider bbox can fix. An
+ * hours-starved step is already reported as `unfilled`.
+ *
+ * Running it before Details is also what keeps the widening FREE: spilling
+ * after the shortlist would mean a second round of paid Details calls.
+ */
+export function starvedIntentIds(
+  intents: readonly { id: string; categories: readonly PlaceCategory[] }[],
+  pool: readonly Candidate[],
+): string[] {
+  const present = new Set(pool.map((c) => c.category));
+  return intents
+    .filter((i) => !i.categories.some((c) => present.has(c)))
+    .map((i) => i.id);
 }
 
 /**
@@ -361,6 +468,34 @@ export async function retrieveCandidates(
         tier: 2,
         fetchedAt: row.fetched_at,
       };
+      /**
+       * The drinking-focus fact, read from the SAME labels the category and
+       * the cuisine already come from (XXX-44, Session 16). One join, three
+       * derivations — no new query, no re-ingest, no Google call.
+       *
+       * `domain/schemas.ts` types `source_labels` as `.nonempty()`, so a
+       * pooled row that reached here has labels and the fact is present. The
+       * `absent` branch is not dead defensiveness: `sourceLabelsOf` returns
+       * `[]` for a malformed `value` too, and a malformed record is exactly
+       * the case that must say "we do not know" rather than "not a bar".
+       */
+      const labels = sourceLabelsOf(row);
+      const focus = drinkingFocusOf(labels);
+      const drinkingFact: GrammarFact<boolean> =
+        focus === "unknown"
+          ? {
+              status: "absent",
+              source: row.source,
+              tier: 2,
+              fetchedAt: row.fetched_at,
+            }
+          : {
+              status: "present",
+              value: focus === "focused",
+              source: row.source,
+              tier: 2,
+              fetchedAt: row.fetched_at,
+            };
       candidates.push({
         place: {
           id: row.id,
@@ -381,6 +516,7 @@ export async function retrieveCandidates(
             highCrowd: false,
           },
           category: categoryFact,
+          drinkingFocused: drinkingFact,
         },
         category,
         /**
@@ -392,7 +528,7 @@ export async function retrieveCandidates(
          * A venue with no cuisine label gets `[]`, which scores neutral. We
          * are ignorant of its kitchen, and ignorance is not a demerit.
          */
-        cuisines: cuisinesFromLabels(sourceLabelsOf(row)),
+        cuisines: cuisinesFromLabels(labels),
         googlePlaceId: row.google_place_id,
         rating: null,
         userRatingCount: null,

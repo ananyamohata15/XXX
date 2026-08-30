@@ -25,16 +25,59 @@
  * engine reads these; the tasting room's picker reads the same list.
  */
 
+import { DISTRICTS, districtLabel } from "./districts";
 import type { PlaceCategory } from "./vocabulary";
 
-export const DAY_THEME_MODES = ["venue", "thread", "experience"] as const;
+/**
+ * `zone` joins at XXX-47 (Session 16 CP3, founder ruling).
+ *
+ * The founder named DISTRICTS as destinations — *"Yorkville", "Queen St W"* —
+ * and the pool holds only venues. A district is not a venue and cannot be
+ * elected as one; it is an answer to a different question. The three existing
+ * modes all answer *what plays the anchor*; this one answers **where the day
+ * happens**, and leaves the anchor to the ordinary arc.
+ *
+ * Which is why a zone day needs no composer branch at all: `experience` and
+ * `thread` stay null, `themeOwnsAnchor` stays false, `electAnchor` runs as it
+ * always did. **A zone day is a venue day with its geography pinned.** The
+ * theme owns WHERE; the arc owns WHAT.
+ *
+ * It is also what *"shopping day"* means in practice, which is why XXX-41's
+ * named districts route here rather than into a fourth kind of anchor.
+ */
+export const DAY_THEME_MODES = ["venue", "thread", "experience", "zone"] as const;
 export type DayThemeMode = (typeof DAY_THEME_MODES)[number];
 
 export const THREAD_IDS = ["history-of-toronto"] as const;
 export type ThreadId = (typeof THREAD_IDS)[number];
 
-export const EXPERIENCE_IDS = ["toronto-islands"] as const;
+/**
+ * `park-picnic` joins at XXX-48 (Session 16 CP3).
+ *
+ * Widening a VOCABULARY is a behaviour change, and the standing instruction is
+ * to hunt the lists that enumerated the old one. Hunted, and recorded so the
+ * next widening starts from a map rather than a grep: `theme-select.ts`
+ * (four mode branches), `compose.ts` (spec resolution), `engine.ts` (the
+ * ferry timetable read and `canHold`), `parse-llm.ts` (the id vocabulary
+ * offered to the parser), `api/tasting/generate/route.ts` (the Zod enum),
+ * `TastingRoom.tsx` (the picker), `generation-report.ts` (the `--theme` arg).
+ *
+ * The mode branches were `if` chains that would have fallen through in
+ * silence. They are exhaustive `switch`es now, so the compiler asks.
+ */
+export const EXPERIENCE_IDS = ["toronto-islands", "park-picnic"] as const;
 export type ExperienceId = (typeof EXPERIENCE_IDS)[number];
+
+/**
+ * Districts offerable as a day's theme — ALL of them, and that is a decision.
+ *
+ * A curated subset would be an admit-list needing its own justification and
+ * its own maintenance, and the list it would subset is already curated: nine
+ * hand-set neighbourhoods a founder chose. Offering all nine means the tenth
+ * district someone adds is offerable the day it lands, instead of defaulting
+ * to "no" in the silence this project has now been bitten by five times.
+ */
+export const ZONE_SLUGS = DISTRICTS.map((d) => d.slug);
 
 /**
  * A discriminated union rather than `{mode, threadId?, experienceId?}` —
@@ -45,7 +88,9 @@ export type ExperienceId = (typeof EXPERIENCE_IDS)[number];
 export type DayTheme =
   | { mode: "venue" }
   | { mode: "thread"; threadId: ThreadId }
-  | { mode: "experience"; experienceId: ExperienceId };
+  | { mode: "experience"; experienceId: ExperienceId }
+  /** A named district is the day's centre. `zoneSlug` indexes `DISTRICTS`. */
+  | { mode: "zone"; zoneSlug: string };
 
 /** The themeless default. Named, so call sites do not spell it inline. */
 export const VENUE_THEME: DayTheme = { mode: "venue" };
@@ -190,7 +235,23 @@ export interface ExperienceSpec {
     /** Key into the city-facts timetable, e.g. "ferry:hanlans". */
     routeKey: string;
   };
-  zones: string[];
+  /**
+   * Zones this experience is BOUND to, or absent for one that is not.
+   *
+   * **OPTIONAL since XXX-48 (Session 16 CP3), and this was the only
+   * structural blocker to a second experience.** Zone-binding is a property
+   * of *the islands* — they are across a harbour and reachable by one boat —
+   * not a property of *experiences*. A picnic wants a good park near the
+   * traveller, not a fixed district, and forcing it to name one would either
+   * invent a canonical picnic neighbourhood or bind every future experience
+   * to a geography it does not have.
+   *
+   * Absent → `zonesFor` falls through to the traveller's own zones (the lens
+   * bucket, or their anchors), which is the same door a themeless day uses.
+   * The precedence line is unchanged and now reads: **user anchors > theme
+   * zones > lens bucket**, with "theme zones" simply empty here.
+   */
+  zones?: string[];
   /** Rain kills this day; the weather gate is a SELECTION input. */
   requiresGoodWeather: boolean;
   /**
@@ -275,6 +336,95 @@ export const EXPERIENCE_SPECS: readonly ExperienceSpec[] = [
      */
     absorbsMeals: 1,
   },
+  {
+    /**
+     * THE SECOND TENANT (XXX-48, Session 16 CP3) — and its whole point is
+     * that the machinery did not have to change to hold it.
+     *
+     * The founder asked for a picnic and got four table-family stops and no
+     * park. Not because a picnic is hard: because `EXPERIENCE_IDS` held
+     * exactly one id and it was an island, so derivation had nothing mainland
+     * to reach for and fell through to `venue` — which is the shape that
+     * produces a meal-heavy day.
+     *
+     * **It is golden Day 7 minus the ferry**, which is the founder's own
+     * framing and is exactly why it is the right second tenant: it exercises
+     * the composite anchor, the provisioning causality, the meal absorption
+     * and the weather refusal on a day that depends on no timetable. If the
+     * experience layer is a layer, this costs one row. It cost one row and
+     * one `?`.
+     */
+    id: "park-picnic",
+    label: "A picnic in the park",
+    anchor: {
+      /**
+       * `parks` alone, and NOT `["parks", "scenic_viewpoints"]` as the
+       * islands spec carries. A lookout is a place you stand at; a picnic
+       * needs ground to sit on for three hours. The islands day can use both
+       * because the island IS the block and the lighthouse is a beat inside
+       * it — here the park is the block, and a viewpoint composite would be a
+       * different day wearing this one's name.
+       */
+      categories: ["parks"],
+      /**
+       * 2.5–4 hours, against the islands' 4–8.
+       *
+       * A picnic is not an expedition: there is no crossing at either end, so
+       * the block does not have to absorb a ferry's worth of committed time.
+       * The floor is `THEME_INVARIANTS.compositeMinDwellMinutes` exactly —
+       * below 240 a "composite" block is just a long stop, and this sits at
+       * the boundary deliberately rather than a comfortable distance above
+       * it. The ceiling is what a Toronto afternoon holds before the light
+       * goes; the daylight rules bound it further and the dusk clamp governs
+       * an outdoor block regardless.
+       */
+      dwell: { min: 240, max: 360 },
+      microActivities: [
+        "spread the blanket and claim a patch of shade",
+        "picnic",
+        "cards, music, and nowhere to be",
+        "a slow lap of the park when the light softens",
+      ],
+    },
+    /**
+     * The same mechanism as the islands', with its own reason — and the
+     * reason is the point, not decoration.
+     *
+     * The islands' is *"the island has no supermarket"*, which is a fact
+     * about geography. A city park has a supermarket two streets away, so the
+     * causality here is not scarcity but SEQUENCE: the picnic is the reason
+     * the shop happens, and a picnic you shop for afterwards is not one.
+     * `movement.ts`'s "causality outranks distance" clause reads `role ===
+     * "provision"` and so protects this without knowing which experience it
+     * is serving.
+     */
+    provisioning: {
+      category: "grocery",
+      reason: "the picnic is what the basket is for — this stop comes first",
+    },
+    /**
+     * NO `legs`. This is the field whose optionality was already there and
+     * unused, and the ticket's own finding: a mainland experience simply
+     * omits it. No ferry means no `routeRuns` gate, so a picnic is feasible
+     * on a January date that refuses the islands — which is the layer proving
+     * it is a layer.
+     */
+    /**
+     * NO `zones`. The blocker this ticket removed. A picnic wants a good park
+     * near the traveller; binding it to a district would either invent a
+     * canonical picnic neighbourhood or hand every persona the same park.
+     * Absent, `zonesFor` falls through to the traveller's own zones.
+     */
+    requiresGoodWeather: true,
+    /**
+     * One, and it is lunch. The founder's request was *"a picnic"*, and a
+     * picnic IS the midday meal — the provisioning stop is its evidence, the
+     * same argument the islands spec makes. Absorbing the middle window
+     * leaves brunch before and a conditional dinner after, which is the shape
+     * a picnic day actually has.
+     */
+    absorbsMeals: 1,
+  },
 ];
 
 /**
@@ -322,7 +472,54 @@ export function themeId(theme: DayTheme): string {
       return `thread:${theme.threadId}`;
     case "experience":
       return `experience:${theme.experienceId}`;
+    case "zone":
+      return `zone:${theme.zoneSlug}`;
   }
+}
+
+/**
+ * A theme key back into a theme — the inverse of `themeId` (XXX-47).
+ *
+ * ONE OWNER, and it earns the word: this conversion existed in THREE places
+ * before Session 16 CP3 — `Concierge.tsx`, `TastingRoom.tsx` and
+ * `generation-report.ts` — each written independently, and they disagreed:
+ *
+ *   · `Concierge`'s returned `null` for anything it did not recognise, so a
+ *     `zone:` key would have been SILENTLY DROPPED. That is the `wants`
+ *     failure exactly — a request with nowhere to land, lost at the seam
+ *     rather than downstream, and invisible in the trace.
+ *   · `TastingRoom`'s had no fallback at all: an unknown mode fell into the
+ *     `experience` branch and CAST the id, so `thread:typo` became a
+ *     DayTheme that throws four layers later in `threadSpec`.
+ *
+ * Both are the twin-drift shape the ledger records five times, and neither
+ * would have survived a fourth theme mode. So the question has one
+ * implementation, it VALIDATES the id against the vocabulary rather than
+ * asserting it, and an unknown key returns `null` — which every caller
+ * already handles, because "no theme requested" is a state the engine has
+ * always had.
+ */
+export function themeFromKey(key: string | null): DayTheme | null {
+  if (key === null || key === "") return null;
+  if (key === "venue") return VENUE_THEME;
+  const separator = key.indexOf(":");
+  if (separator < 0) return null;
+  const mode = key.slice(0, separator);
+  const id = key.slice(separator + 1);
+  if (mode === "thread") {
+    return (THREAD_IDS as readonly string[]).includes(id)
+      ? { mode: "thread", threadId: id as ThreadId }
+      : null;
+  }
+  if (mode === "experience") {
+    return (EXPERIENCE_IDS as readonly string[]).includes(id)
+      ? { mode: "experience", experienceId: id as ExperienceId }
+      : null;
+  }
+  if (mode === "zone") {
+    return ZONE_SLUGS.includes(id) ? { mode: "zone", zoneSlug: id } : null;
+  }
+  return null;
 }
 
 /**
@@ -355,7 +552,17 @@ export function themeZoneSlugs(theme: DayTheme): readonly string[] {
     case "thread":
       return threadSpec(theme.threadId).zones ?? [];
     case "experience":
-      return experienceSpec(theme.experienceId).zones;
+      /**
+       * `?? []` is the picnic's whole structural change (XXX-48). An
+       * experience with no zones of its own returns the same empty list a
+       * VENUE day does — so `zonesFor` treats it identically and falls
+       * through to the traveller's own geography. No new branch, no
+       * citywide sentinel to remember to handle.
+       */
+      return experienceSpec(theme.experienceId).zones ?? [];
+    case "zone":
+      // A zone day IS its geography. This is the whole mode.
+      return [theme.zoneSlug];
   }
 }
 
@@ -372,6 +579,11 @@ export function themeLabel(id: string): string {
   if (thread !== undefined) return thread.label;
   const experience = EXPERIENCE_SPECS.find((e) => e.id === id);
   if (experience !== undefined) return experience.label;
+  // A zone day IS its district, so the district's own name is the title —
+  // and it arrives here as the bare slug or the `zone:` key depending on the
+  // caller, so both are accepted rather than one being the caller's problem.
+  const slug = id.startsWith("zone:") ? id.slice(5) : id;
+  if (ZONE_SLUGS.includes(slug)) return `A day in ${districtLabel(slug)}`;
   // `venue` and anything unnamed: a day built around one place has no title
   // beyond the place, and inventing one would be decoration.
   return "A day in Toronto";

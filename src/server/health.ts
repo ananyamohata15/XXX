@@ -28,9 +28,43 @@ export interface HealthWarning {
   message: string;
 }
 
+/**
+ * Are the generation path's credentials PRESENT? (Session 16 close-out.)
+ *
+ * WHY THIS EXISTS, and it is an incident rather than an idea:
+ * `ANTHROPIC_API_KEY` was missing from Vercel Production. `/api/health`
+ * reported **healthy** throughout, because it checked the database and the
+ * sweep and nothing else — and the first symptom was the founder's own
+ * generation failing.
+ *
+ * The key is the hardest of the four to notice missing, and for a structural
+ * reason: `createAnthropic()` lets the SDK resolve `ANTHROPIC_API_KEY`
+ * itself, so **the one credential that broke production is the one the
+ * codebase never names.** A grep for `process.env` does not find it. Nothing
+ * would have, short of a generation.
+ *
+ * PRESENCE ONLY — never a value, never a length, never a prefix. The question
+ * "is it configured" is answerable without disclosing anything, and answering
+ * more than the question is how a health endpoint becomes a leak.
+ *
+ * `db` and `ttlSweep` describe whether the app is SERVING. This describes
+ * whether it can DO ITS JOB, which is a different question and gets its own
+ * answer rather than being folded into the first.
+ */
+export interface CredentialsCheck {
+  ok: boolean;
+  /** Present-or-not, per credential. Never the value. */
+  present: Record<string, boolean>;
+  missing: string[];
+}
+
 export interface HealthReport {
   status: "healthy" | "unhealthy";
-  checks: { db: DbCheck; ttlSweep: TtlSweepCheck };
+  checks: {
+    db: DbCheck;
+    ttlSweep: TtlSweepCheck;
+    credentials: CredentialsCheck;
+  };
   /** Non-fatal, action-needed notices (severity tiering: Checkpoint 1 ruling 5). */
   warnings: HealthWarning[];
   version: string;
@@ -44,6 +78,51 @@ export interface HealthReport {
 const TTL_SWEEP_MAX_AGE_MINUTES = 120;
 
 /**
+ * What a day generation needs, and what happens without each.
+ *
+ * Named here rather than derived from a grep, because `ANTHROPIC_API_KEY` is
+ * invisible to a grep — the SDK resolves it — and a list that only contains
+ * what a grep can find would have missed the exact key that broke production.
+ */
+const GENERATION_CREDENTIALS: readonly { name: string; without: string }[] = [
+  {
+    name: "ANTHROPIC_API_KEY",
+    without: "no selection and no narration — every generation fails",
+  },
+  {
+    name: "GOOGLE_MAPS_API_KEY",
+    without: "no Details, no links, no transit — days ship on honest absence",
+  },
+  {
+    name: "NEXT_PUBLIC_SUPABASE_URL",
+    without: "no pool at all",
+  },
+  {
+    name: "SUPABASE_SERVICE_ROLE_KEY",
+    without: "no pool at all",
+  },
+];
+
+/**
+ * Presence, never value. `Boolean(process.env.X)` treats an empty string as
+ * absent, which is correct: a variable set to "" is a variable that will fail
+ * at the first call, and reporting it present would be the false-healthy this
+ * check exists to end.
+ */
+export function checkCredentials(
+  env: Record<string, string | undefined> = process.env,
+): CredentialsCheck {
+  const present: Record<string, boolean> = {};
+  const missing: string[] = [];
+  for (const credential of GENERATION_CREDENTIALS) {
+    const ok = Boolean(env[credential.name]);
+    present[credential.name] = ok;
+    if (!ok) missing.push(credential.name);
+  }
+  return { ok: missing.length === 0, present, missing };
+}
+
+/**
  * Checks Supabase connectivity and records the check itself as a trace
  * (proof-of-life for the instrumentation scaffolding, XXX-14).
  *
@@ -51,6 +130,8 @@ const TTL_SWEEP_MAX_AGE_MINUTES = 120;
  */
 export async function checkHealth(
   client?: SupabaseClient,
+  /** Injectable for tests, exactly as `client` is. Production passes nothing. */
+  env: Record<string, string | undefined> = process.env,
 ): Promise<HealthReport> {
   let supabase: SupabaseClient | null = null;
   let configError: string | null = null;
@@ -72,14 +153,30 @@ export async function checkHealth(
     await warnIfWeatherStale(supabase, warnings);
   }
 
+  const credentials = checkCredentials(env);
+  for (const name of credentials.missing) {
+    const spec = GENERATION_CREDENTIALS.find((c) => c.name === name);
+    warnings.push({
+      code: "credential_missing",
+      message: `${name} is not set — ${spec?.without ?? "the generation path is degraded"}.`,
+    });
+  }
+
   if (supabase) {
     await recordHealthTrace(supabase, db);
   }
 
-  const sha = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
+  const sha = env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
   return {
-    status: db.ok && ttlSweep.ok ? "healthy" : "unhealthy",
-    checks: { db, ttlSweep },
+    /**
+     * A deployment that cannot generate is not healthy, whatever the database
+     * says. Folding this into the verdict rather than leaving it a warning is
+     * the whole point: Production ran for a day reporting healthy with no
+     * Anthropic key, and a warning nobody was paged on would have done the
+     * same.
+     */
+    status: db.ok && ttlSweep.ok && credentials.ok ? "healthy" : "unhealthy",
+    checks: { db, ttlSweep, credentials },
     warnings,
     version: sha ? `${pkg.version}+${sha}` : pkg.version,
     timestamp: new Date().toISOString(),

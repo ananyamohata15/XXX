@@ -1,3 +1,1053 @@
+# Session 16 — Geography and experiences (XXX-47, XXX-48, XXX-41, XXX-44, XXX-46)
+
+Branch: `session-16-geography-and-experiences`
+
+Mandate: Session 15's CP4 round-two diagnosis — *the engine composes stops
+but not geography, and not experiences beyond the islands template.*
+
+## Step 1 — The two ruled first commits (CHECKPOINT 1)
+
+Both landed, each with a golden re-run. Two atomic commits, each verified
+green on its own before the next was made.
+
+### XXX-44 — the alcohol constraint reads labels, not just categories
+
+`10d2ad1`
+
+**The gap.** Nine seams answered *"may this traveller be sent here?"* and
+every one asked a CATEGORY question. Clandestino Wine Bar reached a
+no-alcohol day because it is mapped `restaurants` and every seam did its
+job. The tenth seam is the first to read an ATTRIBUTE.
+
+**The signal, stated because the last measurement of it was wrong.** Raw
+FSQ breadcrumbs already stored on the `categories` fact, which
+`retrieveCandidates` already joins. One pure function, no new I/O, no
+re-ingest, no Google call. Session 15's name-regex read *names* and put the
+gap at 130 (0.67%); labels put it at 742 (3.85%). This reads labels.
+
+**RULING — the honest-absence asymmetry (the ticket's own question).** An
+unknown-alcohol venue is **RISKED, not excluded** — but not on
+`filters.ts`'s usual grounds. That rule ("unknown facts do not eliminate a
+candidate; only a known-bad fact is a hard no") is about facts about the
+world, and for alcohol the harm is lopsided enough that a general principle
+is not warrant enough: a traveller who does not drink, seated in a bar, has
+been ignored; a traveller denied one restaurant among thousands has lost
+nothing they can feel.
+
+The warrant is the measurement. `domain/schemas.ts` types `source_labels`
+as `.nonempty()`, so `unknown` **cannot** mean "a restaurant we did not
+check". It means *no `categories` fact at all* — a user's own anchor, a
+fixture place, a Google-only venue — which is precisely the population
+`checkConstraints` already declines to judge on the ground that *the user
+owns their own commitments*. The two principles do not collide. Verified
+live: **0 pooled rows are label-blind**, and `scripts/alcohol-report.ts`
+exits non-zero if that ever stops being true, because the ruling rests on
+it.
+
+Three states, not two: `focused` / `not-focused` / `unknown`. `not-focused`
+is a POSITIVE Tier-2 observation — a directory that filed this venue and
+did not file it under a drinking branch — not an absence. Collapsing the
+two is how an instrument starts lying about absence.
+
+**Derived, not a new field.** The constraint comes from the existing
+`nightlife_bars` exclusion, because `Interview.tsx`'s chip for that category
+reads **"No alcohol"** in those words and the parse prompt says the same. A
+`noAlcohol: boolean` beside `excludedCategories: ["nightlife_bars"]` would
+be two ways to say one thing, free to disagree, and every stored profile
+would need a migration to gain the second. Derived, the fix reaches every
+no-alcohol profile already in the database on its next generation.
+
+Cost, stated: someone who excludes bars because they are LOUD also loses the
+wine bar filed as a restaurant. A strictly smaller day, never a broken
+promise.
+
+**FIRE-RATE, against each exam persona's own retrieved pool** — the proof a
+green test cannot give:
+
+| persona | pool | refused | of those, CATEGORY-permitted |
+|---|---|---|---|
+| day-1-jays | 2274 | 376 | **69** |
+| day-2-old-town | 2818 | 448 | **98** |
+| day-3-winter | 2550 | 424 | **89** |
+| day-4-budget | 2453 | 411 | **93** |
+| day-5-wanderer | 2377 | 220 | **56** |
+| day-6-excursion | 2783 | 473 | **104** |
+| persona-shopper | 2712 | 475 | **97** |
+| persona-scenic | 2738 | 498 | **103** |
+
+Named examples, all mapped `restaurants`: Wylie's Neighbourhood Pub,
+Amsterdam Brewhouse, Top Deck Bar, Alto Basso Bar, Katipunan Resto-Bar.
+
+Plus **629 of 5,493 pooled `grocery` venues (11.45%)** — LCBO, Beer Store,
+wine shops. Not decoration: `grocery` is what an experience's
+`provisioning` stop draws from, and the first live islands day provisioned
+at an LCBO (recorded in `movement.ts`'s causality clause).
+
+**The in-product limitation line moved with the fix.** It apologised for
+wine bars slipping through; they no longer do. *An honest limit that has
+stopped being true is a silent one*, and the old sentence would have been a
+lie in the traveller's favour — the more dangerous direction, going on
+apologising for a closed hole while saying nothing about the open one. It
+now names what is genuinely left: a restaurant that simply pours and whose
+listing says nothing about it.
+
+Found while rewriting it: `owesLimitationNotice` returned
+`excluded.length > 0`, so a traveller who excluded only
+`museums_galleries` was shown a paragraph about bars — a caveat about a
+promise nobody made them. Narrowed to `excludesAlcohol`.
+
+**DELIBERATELY OUT, and counted every run so the decision is re-made against
+a number rather than forgotten:** `Dining and Drinking > Restaurant >
+Gastropub` (**85 in Toronto**) and `… > German Restaurant > Apple Wine Pub`
+(0). Both are pubs by any honest reading and both are filed by FSQ under
+Restaurant. Including them means overriding the source taxonomy with a
+private opinion about which restaurant leaves are really bars — the call
+`CUISINE_PREFIXES` refused for `Pizzeria`. **Founder ruling wanted on the
+85.**
+
+### The instrument caught two things on its first run
+
+`scripts/alcohol-report.ts` is the instrument of record.
+
+1. **`"Nightlife"` was a dead prefix.** It matches nothing under
+   node-boundary matching (`=== prefix` or `startsWith(prefix + " > ")`),
+   because the taxonomy's node is `Nightlife Spot`. Corrected to the label
+   that exists — the `Retail > Farmers Market` correction exactly.
+   *Reported, not fixed here:* `CATEGORY_BREADCRUMB_RULES.nightlife_bars`
+   still carries the bare `"Nightlife"`, which works only because that
+   matcher uses bare `startsWith` — the over-capture risk its own comment
+   names ("the comma is load-bearing"). Filed for XXX-37.
+2. **Its own first version conflated two different claims.** It printed
+   `Nightlife` as DEAD on zero *pooled* rows and exited non-zero. A rule
+   that matches nothing IN THE TAXONOMY is a defect; a rule that matches
+   nothing IN THIS CITY is a fact about Toronto. The report now separates
+   them — taxonomy is pass/fail, pool count is context. *An instrument that
+   always looks at the same part of its data will eventually accuse the
+   data.*
+
+### Session 15's 742 does not reproduce — recorded, not restated
+
+Denominator reproduces exactly (19,286 `restaurants`). Numerator does not:
+
+- **653** — strict `Dining and Drinking > Bar` prefix
+- **673** — every drinking prefix in this file
+- 699 — restaurants OR cafes with a Bar label
+- 757 — venues mapped `nightlife_bars` and something else
+
+None is 742. The pool has been re-ingested since, so a moved number is
+expected — but it is recorded as **unreconciled with the predicate stated**,
+because a figure nobody can re-derive is the shape of instrument this
+project has been burned by three times.
+
+**What did reconcile, and matters more:** of the 653, exactly **ZERO** are
+mapped `restaurants` without ALSO being mapped `nightlife_bars`. The
+`mapped` union already knew. Labels were chosen anyway, for two stated
+reasons: they reach the 629 grocery venues no category signal can see, and
+one owner beats two agreeing signals free to drift apart.
+
+### XXX-46 — adjacency as a grammar rule, narrowed by the measurement
+
+`302793a`
+
+**The ticket asked for a blanket rule and cannot have one.** Run *"no two
+consecutive stops of the same texture family"* over the six
+founder-verified golden days and **two of six fail, on three pairs:**
+
+| day | pair | family |
+|---|---|---|
+| day-1-jays | Harbourfront → Roundhouse Park | outdoor |
+| day-4-budget | Grange Park → Trinity Bellwoods | outdoor |
+| day-4-budget | Trinity Bellwoods → Harbourfront | outdoor |
+
+He authored every one. Park into park is a walk, not a repetition, and
+day-4 is the budget day whose whole shape is walking the city.
+
+Worse: **the blanket rule refuses something he asked for by name.** His own
+failed sentence this session is *"shopping, pub hopping and food for
+today"* — **pub hopping IS consecutive bars.** A rule forbidding it would
+make the request undeliverable in the very session that exists to deliver
+it.
+
+**Fixtures were not edited. The rule was.** Same shape as
+`minTextureFamilies`, which the golden set corrected at Session 7.
+
+**Then the offline recompose caught a second narrowing that no fixture
+could.** The live composer opens **day-2 and day-6 with `cafes` →
+`restaurants`** — coffee then brunch, and `coffee_then_brunch` is a **meal
+pattern this product ships by name**, sitting in the same params object as
+the rule. Blocking it would have been legislation against a feature two
+screens up. No founder-authored fixture happens to have that pair, so the
+green 6/6 said nothing.
+
+The near-miss underneath it: reusing `pacing.foodCategories` (which lists
+both `restaurants` and `cafes`) would have produced exactly that bug.
+That list is right for a CEILING — a pub with a kitchen ends a hungry
+stretch, four coffees are four food stops — and wrong for ADJACENCY. **A
+constant is suspect if its correctness depends on a behaviour nobody wrote
+down**, arriving on schedule.
+
+**So: two questions, two owners, neither standing in for the other** — the
+`EVENING_VIABLE` / `isCategoryPermitted` division:
+
+| owner | question | verdict |
+|---|---|---|
+| `pacing.mealGrade` | is a stop here a full sit-down meal? | two in a row → **BLOCKING** |
+| `pacing.consecutiveFamily` | are these two stops the same texture? | advisory at most |
+
+`mealGrade` is `Record<PlaceCategory, boolean>`; only `restaurants` is true,
+and **`cafes: false` is the entry the whole rule turns on** (`dwell.typical`
+agrees: 45 minutes against 90).
+
+`consecutiveFamily` is `Record<CategoryFamily, AdjacencyVerdict>`:
+
+- `table` → **permitted**, because everything worth blocking in it is
+  `mealGrade` and everything else is coffee-then-brunch.
+- `culture` → **advisory.** Cannot be blocking: a THREAD day's spine is
+  same-family BY CONSTRUCTION (`history-of-toronto` is 2–3 culture stops)
+  and `GrammarContext` does not carry the theme, so the rule cannot tell a
+  spine from a rut.
+- `market` → **advisory.** Session 14's family licence exists to put TWO
+  shopping venues in a shopper's day, and XXX-41 is about making Eaton
+  Centre → Yorkville reachable. Blocking would fight the feature next door.
+- `outdoor` → **permitted.** Three founder-verified pairs, measured.
+- `night` → **permitted.** Pub hopping, in his own words.
+
+Both exhaustive `Record`s rather than admit-lists: a category or family
+added to the vocabulary must SAY, instead of defaulting to a verdict in
+silence the way `eveningOk` did.
+
+**Mechanics.** Reported as PAIRS, not runs — three parks is two findings,
+because the repair is per-pair. Only the LATER slot goes into `slotIds`:
+`PLACE_CAUSED` strikes every id it is handed, and striking the first would
+re-draw a stop that is not the problem, quite possibly the anchor. Routed in
+`repair.ts`, without which the rule would be correct and the generation
+would still die at `plan.unroutable`.
+
+**Trap fixture** is the founder's own CP4 close, reproduced rather than
+paraphrased: a second restaurant seated as an ACTIVITY ten minutes after
+dinner ends — under the food cap (4 against `classic`'s 4) and inside
+`minTextureFamilies` (3 distinct), so neither existing rule has anything to
+say about it. That is what makes it the right trap.
+
+## CP1 gates — the golden re-run, both commits
+
+`tsc --noEmit` clean · **731 tests passing**, 3 skipped (was 701) ·
+`npm run build` clean · `eslint` clean.
+
+Offline recompose (`$0`, DB pool only, no Google, no Anthropic):
+
+```
+anchors seated                8/8    PASS
+closes                        7/7    PASS
+discretionary max             0.67   PASS (gate ≤0.67)
+venue overlap                 mean 0.014  max 0.20
+adjacency census              0 blocking, 0 advisory   PASS
+```
+
+Fixture exams: **golden 6/6 clean**, trap fixtures 27→**29** all caught
+(two added, one per ticket), **day-7 shape exam clean**, determinism
+unchanged, persona matrix unchanged, `alcohol-report` PASS.
+
+**Deviations from the mandate, both stated rather than smuggled:**
+
+1. **XXX-46 did not land the blanket rule the ticket drafted.** It fails two
+   founder-verified golden days and forbids pub hopping. The mandate says
+   *report any golden day it fails and stop for a ruling rather than editing
+   fixtures* — no fixture was edited, the three failing pairs are named
+   above, and the narrowed rule is **proposed as a ruling for
+   ratification**. It is landed rather than held because the narrowed form
+   is strictly safer than no rule at all and the golden set is green under
+   it; reverting is one line per verdict if the founder disagrees.
+2. **`Gastropub` (85 Toronto venues) stays inside a no-alcohol day.**
+   Declined on taxonomy-override grounds, counted every run, **founder
+   ruling wanted.**
+
+## Step 1a — CP1 ratification (founder)
+
+Both deviations accepted. XXX-46's narrowing **supersedes** the blanket
+ruling. The alcohol asymmetry accepted as argued, with the self-invalidating
+guard commended as the model for conditional rulings. **Gastropub OVERRULED**
+— ruled INTO the exclusion set (`27cda52`), reasoning of record: the word's
+meaning is pub, and on a hard constraint the stakes are asymmetric — one lost
+restaurant of 19,286 against a teetotaller seated in a pub they refused, the
+same logic as `closed_permanently` carrying no expiry. My `Pizzeria` analogy
+fails on that exact point: a pizzeria misfiled out of `italian` costs a
+PREFERENCE; a pub misfiled out of the drinking set costs a PROMISE. **Revisit
+trigger:** a founder verdict naming a venue this wrongly excludes; the
+instrument prints the 85 every run so that verdict arrives with its price.
+`Apple Wine Pub` included under the same reasoning (0 Toronto venues).
+
+Three ledger entries promoted to CLAUDE.md: the near-miss class (right
+constant, wrong question), rulings-carry-guards, and rulings-carry-revisit-
+triggers.
+
+## Step 2 — Geography (CHECKPOINT 2, the session's spine)
+
+### XXX-47, the four options — and why only one was built
+
+The reviewer's lean was **option 1 + option 3**. I built **option 3 only**,
+and the argument is not economy.
+
+| option | what it costs | what it cannot fix |
+|---|---|---|
+| **1. anchor-relative menu clustering** | *cannot be built as stated* — see below | anchor in a corner; two stops near the anchor but far from each other |
+| **2. sequential selection** | changes the selector contract; the LLM call receives all menus at once, which is what makes it cheap | nothing structural — it is the "right" answer and the most expensive |
+| **3. post-selection swap pass** | one pure pass, zero LLM calls | anything the MENUS did not offer — retrieval's ceiling |
+| **4. promote the advisory to blocking** | trivial to write | everything: it burns validation passes on a defect composition reproduces, since nothing upstream got smarter |
+
+**Option 1 cannot be built as the ticket states it, and I checked before
+declining it.** At `buildMenus` time the anchor is a CATEGORY, not a place —
+`skeleton.electedAnchor` is `{category, dwellMinutes, reason}` and carries no
+coordinates. "Prefer candidates within a radius of the anchor" has no centre
+to measure from. Making it well-defined needs one of:
+
+- fix the anchor VENUE before selection → the LLM loses the single most
+  important taste judgment of the day;
+- build menus twice, selecting once to learn the anchor and again to choose
+  around it → two LLM calls, doubling the selection cost and latency.
+
+So the ticket's own observation — *the cheap fix does not exist, because
+"prefer the current zone" needs a current zone* — applies one layer up too.
+Option 1 is the same problem wearing the anchor's clothes.
+
+**And it turns out not to be needed.** Because the pass PINS THE ANCHOR and
+draws everything else toward the shortest tour through it, **the result is
+anchor-relative clustering, arrived at by measurement instead of by biasing
+the menu.** Options 1 and 3 are the same intent; only one of them has to
+guess. Building both would also put two mechanisms on one goal, free to
+disagree — the shape this codebase has a five-instance ledger about.
+
+**Argument against my own choice, recorded:** option 3 can only work with what
+selection was OFFERED. Where every menu option for a slot sits in one far
+corner, no move exists. That ceiling is retrieval's, and it is reported rather
+than hidden — `moves: 0` with a live `route.detour-avoidable` is the signature
+of a menu problem, not a sequencing one, and the probe prints exactly that.
+
+### What makes the pass honest — four properties, each tested
+
+1. **It only ever proposes venues the MENU already held.** Every move is a
+   venue selection was offered and could have taken. The same guarantee
+   `ComposeInput.alternates` already makes for the scheduler's fallback.
+2. **Every accepted move is recomposed and REVALIDATED.** A move that saves
+   twenty minutes and breaks an hours window is not an improvement.
+3. **It must PROVE a strict saving** past a 10-minute threshold — a
+   confidence threshold, not a caution one: below it we would be overruling
+   the selector's taste on a number inside our own Haversine error. A
+   coherent day comes back byte-identical.
+4. **The anchor never moves**, and a `provision` stop is never EXCHANGED —
+   `movement.ts` already ruled that causality outranks distance. Substituting
+   a nearer grocery is still allowed: a different shop is not a different
+   order.
+
+Slot ORDER is never touched. `route.detour-avoidable` proposes swapping two
+adjacent STOPS; `composeDay` seats by intent window, so swapping stops would
+swap their times and move lunch into the evening. Exchanging the VENUES
+between two intents expresses the same idea correctly — each venue re-seated
+in its own slot's own window, with legality carried by the menus.
+
+### Acceptance evidence
+
+**The founder's own zig-zag day** (trace `10708aa4`, 2026-08-29), measured
+from its own recorded card place_ids — real venues, real coordinates:
+
+```
+as shipped:       217 min travel · 31.5 km · 3 east-west reversals
+best ordering:    113 min · 11.2 km · 0 reversals
+SEQUENCING BOUND: 104 min (48%) available from ordering alone
+```
+
+Stated as the upper bound it is: a free permutation of six stops ignores meal
+windows and opening hours, so no real day necessarily reaches it. The
+substitution half cannot be measured from this trace at all — the trace
+records his venues, not his menus.
+
+**A number I deleted rather than kept.** The first version of the probe
+rebuilt his menus from a different persona's pool window (his profile was
+edited after the day, so his `persona_identity` matches nothing stored),
+recovered **3 of his 6 stops**, and reported a saving on that three-stop day.
+It was not his day. A measurement of the wrong thing is not evidence, however
+carefully labelled, so it is gone rather than caveated.
+
+**The eight exam personas, recomposed offline ($0):**
+
+```
+total travel        973 → 775 min      20.3% saved
+days improved       6 of 8             days made WORSE: 0
+route.detour-avoidable   1 → 0         ← the ticket's AC
+```
+
+**Standing gates, all moved the right way or unmoved:**
+
+| gate | before | after |
+|---|---|---|
+| discretionary max (GATED ≤0.67) | 0.67 | **0.33** |
+| unequal-length max (watched) | 0.67 | 0.50 |
+| raw category-sequence mean | 0.506 | 0.494 |
+| closes | 7/7 | 7/7 |
+| anchors seated | 8/8 | 8/8 |
+| adjacency census | 0/0 | 0/0 |
+| golden fixtures | 6/6 | 6/6 |
+
+**The trade, reported not buried:** venue overlap rose — mean 0.014 → 0.029,
+max 0.20 → **0.40**. `day-4-budget` and `persona-scenic` now share **Rebel
+House** and **Shop Nyla**, because the pass pulls days toward central venues.
+Not a gated metric, and the report now NAMES the worst pair and the shared
+venues, because a max that moves deserves a name.
+
+Byte-identity holds where no geography constraint applies: `moves.length === 0`
+returns the original composition object untouched, and there is a test for it.
+
+### Two defects found while building it
+
+#### 1. `constraint.excluded-category` has NEVER FIRED
+
+Session 15 built it with nine upstream seams, a trap fixture and a live proof
+script, and described it as *"the one place that cannot be forgotten, because
+it sits after all of them and rejects the day"*.
+
+**The engine's only validation context never passed `excludedCategories`.**
+`ctx.excludedCategories` was `null` on every generation this product has ever
+run, and `checkConstraints` returned on its first line. The rule has never
+once been able to reject a day.
+
+Three layers of exam missed it, and each miss is its own lesson:
+
+- **The 27-trap exam** passes because `contextFor` — the FIXTURE context
+  builder — does pass the field. `support.ts`'s own comment anticipated
+  exactly this divergence and named the opposite direction: *"a constraint
+  added only to the engine's would leave the golden exam validating blind"*.
+  It went the other way.
+- **`scripts/constraint-proof.ts`** asserts *"the grammar backstop did not
+  need to catch anything"* and treats silence as PASS. **A rule whose success
+  condition is SILENCE cannot tell "it worked" from "it was never
+  connected."** That is the fire-rate lesson, applied to a live proof rather
+  than a unit test, and worse than the Session 14 version: this proof was
+  *designed* to assert silence.
+- **I found it by accident**, writing a second `buildGrammarContext` call for
+  the coherence pass and passing a field the first one did not.
+
+**Fixed as a class, not an instance.** `excludedCategories` is now a REQUIRED,
+explicitly-nullable parameter. `null` still means "we were not told" — the
+`transport` precedent is unchanged — but it can no longer be reached by
+saying nothing. An optional parameter defaulting to the safe-looking value is
+the admit-list failure wearing a function signature. The proof script now also
+asserts the rule is REACHABLE: the trap day, under this profile's own
+constraints, must still be rejected.
+
+#### 2. `route.detour-avoidable` quoted savings the day could not take
+
+It permuted the slot array and re-priced it, never asking whether the two
+venues could occupy each other's positions. Measured on `day-1-jays`: it
+proposed swapping the contrast (**St. Michael's Cathedral**, `historic_sites`)
+with the day's **meal** to save 28 minutes — which would seat a cathedral for
+lunch. **And the grammar validates that day.** The founder was quoted a
+74-minute saving on his own day by this rule.
+
+Guarded on slot `kind`: a meal slot and an activity slot are not
+interchangeable positions. Session 11's ruling that *a food venue is a food
+stop wherever it sits* runs one way only.
+
+Filed as **XXX-50**, not patched: `rhythm.ts`'s `isFood` returns true for
+`kind === "meal"` **by assumption rather than by checking**, so no rule
+requires a meal slot to hold food. Composition cannot reach that state, so
+with the guard the hole is unreachable rather than merely unlikely — which is
+precisely the kind of guarantee this codebase has watched decay before.
+
+Also filed: **XXX-51**, `CATEGORY_BREADCRUMB_RULES` matching on bare prefixes
+rather than node boundaries (found by the alcohol instrument at CP1).
+
+### Proving the engine runs what the source says it runs
+
+`scripts/engine-wiring-probe.ts` drives a **real `generateDay`** — real pool,
+real skeleton, real menus, real composition, real validation — and asserts on
+what the run emitted. It exists because of defect 1: **a stage's presence in
+the source is not evidence that the engine runs it**, and the only thing that
+is evidence is watching the engine run it.
+
+Free by construction, not by hope: `transport: ["walk"]` means no transit leg
+is ever offered to Routes, a stub Google client answers everything, no
+narrator, in-memory instrumentation.
+
+**And it asserts on the right signal.** My first assertion was
+`estCostUsd === 0` and it FAILED at $0.4000 — because the engine books a
+charge per call it ASKS FOR, so a stubbed client still accrues. The engine was
+right and the assertion was wrong: it read intent, not I/O. It now asserts
+zero Routes calls and counts the stub's own invocations, and reports the
+notional estimate separately.
+
+Observed, both runs: **the coherence pass ran inside the engine** (2 moves),
+**the venue-level alcohol filter ran and caught 22** venues the category gate
+admits — all `cafes` this time (Palladium Bar Grill, Nile Coffee And Bar) —
+and **zero bars reached the day**.
+
+### Zones as destinations — proposed, not built
+
+The C-side of the same coin: Yorkville, Queen West and the Distillery are
+things a traveller NAMES, and the pool holds only venues. This is also what
+"shopping day" means in practice.
+
+**The geography already exists.** `ANCHORS` — Session 4's nine hand-set
+discovery anchors — literally contains `yorkville` and `queen_west_ossington`.
+Nothing needs surveying; what is missing is a way for a REQUEST to name one.
+
+**Measured first, because the obvious objection is depth.** Venues per
+category, one district at a time, at zero slack (the circle is the answer):
+
+| district | total | thinnest categories |
+|---|---|---|
+| Downtown | 2076 | scenic 32, markets 50 |
+| Queen West | 1390 | historic 8, scenic 6 |
+| Kensington | 1382 | historic 6, scenic 4 |
+| St. Lawrence | 963 | scenic 9, historic 15 |
+| Yorkville | 884 | markets 6, scenic 7, historic 9 |
+| The Annex | 882 | markets 7, scenic 9 |
+| Leslieville | 601 | scenic 2, markets 7 |
+| Distillery | 402 | scenic 3, historic 6, markets 7 |
+
+**No district is empty in any of the ten categories.** Even the Distillery,
+the thinnest, holds 402. So raw depth is not the blocker — which corrects the
+obvious reading of `MIN_ZONES_FOR_A_DAY = 4` ("below four zones the bbox stops
+holding enough venues to seat a full arc"). That constant was measured
+downstream of hours filtering and menu allocation at one seed, not on raw
+counts. **Stating which signal each number reads:** 884 raw candidates is not
+884 seatable-at-21:00 candidates, and the thin categories above — `markets`,
+`scenic_viewpoints`, `historic_sites` in single digits — are exactly where a
+single-district arc would lose a contrast or a close. That is testable
+offline before anything ships.
+
+**Three designs, and the recommendation:**
+
+**(A) A fourth theme mode — `{ mode: "zone"; zoneSlug }`. RECOMMENDED.**
+The theme already owns a day's geography (`themeZoneSlugs`), and `zonesFor`
+already ranks theme zones above the lens bucket. A zone theme scopes retrieval
+to one district and lets the ordinary venue arc compose inside it. It is
+honest about what it is: *a day in Yorkville* is a different organizing mode
+from *a day around one venue*, which is what `DayThemeMode` exists to express.
+Costs: every `switch` over the mode must answer — `themeId`, `themeZoneSlugs`,
+`themeAffinity`, `themeInfeasibility`, `themeLabel`, `templatesHolding`. That
+is the vocabulary-widening lesson, in its good form: the discriminated union
+makes the compiler demand each one instead of letting a new mode default to
+silence.
+
+**(B) A zone as an ANCHOR KIND. Rejected.** `AnchorInput` is a *commitment* —
+it carries `startTime`/`endTime` and `anchor.mutated` protects it from being
+moved. A zone has neither a time nor a booking. Overloading one type with two
+meanings is what this codebase's discriminated-union preference exists to
+prevent.
+
+**(C) A retrieval hint — `request.zoneSlugs`, no theme change. Rejected,
+and for the reason Session 15 already paid for.** It is the cheapest and it is
+invisible: the day would not be *called* a day in Yorkville, `themeLabel`
+would not say it, and there would be no refusal path when the district cannot
+seat an arc. A request the product cannot narrate is a request it cannot be
+held to — which is exactly how `wants` was lost at the contract for a whole
+session.
+
+**What (A) still needs, named rather than discovered live:**
+1. a `zone-too-thin` infeasibility reason, so a district that cannot seat an
+   arc refuses honestly instead of shipping four restaurants;
+2. a parse-contract widening so *"a day in Yorkville"* reaches the request —
+   the `wants` mechanism's sibling, and the same lesson;
+3. `ZONE_THEMES` must MAP TO `ANCHORS` rather than restate their coordinates.
+   One owner for where Yorkville is.
+
+**And the relationship to XXX-41 is the point:** a district-anchored day is
+what makes the founder's named destinations reachable as *places to be in*,
+while linking (Step 4) makes Eaton Centre and Holt Renfrew reachable as
+*venues*. Two halves of one complaint.
+
+## Step 3 — The picnic spec and the zone mode (CHECKPOINT 3)
+
+### XXX-48 — park-picnic, and the claim that was actually tested
+
+The ticket's claim was that Session 14's experience machinery is **already
+general**, and only its zone assumption is islands-specific. That is now
+tested rather than asserted, and it held: the new spec is **one row**, the
+structural change is **one `?`** on `ExperienceSpec.zones`, and
+`themeAffinity`, `templatesHolding` and the refusal path needed nothing.
+
+Thirteen shape assertions — the composite block, spec-bounded dwell, a park
+anchor, provisioning-before-block causality, meal absorption, weather refusal,
+grocery-refusal infeasibility, no-timetable feasibility — **passed on the
+first run.** That is the evidence for "it is a layer".
+
+**It is golden Day 7 minus the ferry**, and the subtraction is the point: with
+no `legs`, there is no `routeRuns` gate, so a picnic is feasible on a January
+date the islands refuse. One assertion tests exactly that pair.
+
+**Its provisioning reason is its own, not the islands' copied.** The islands'
+is *"the island has no supermarket"* — a fact about geography. A city park has
+a shop two streets away, so the causality here is **sequence**: the picnic is
+what the basket is for. `movement.ts`'s "causality outranks distance" clause
+reads `role === "provision"` and protects it without knowing which experience
+it serves, which is itself a small proof the layer is a layer.
+
+Dwell is 240–360 against the islands' 240–480. A picnic is not an expedition:
+no crossing at either end, so the block need not absorb a ferry's worth of
+committed time. The floor sits exactly on
+`THEME_INVARIANTS.compositeMinDwellMinutes` — deliberately at the boundary
+rather than a comfortable distance above it.
+
+### XXX-47 — `zone`, the fourth theme mode
+
+A district is not a venue and cannot be elected as one. The three existing
+modes all answer *what plays the anchor*; this one answers **where**, and
+leaves the anchor to the ordinary arc — which is why it needs **no composer
+branch at all**. There is a test asserting a zone day's skeleton is
+byte-identical to a themeless one.
+
+**Requestable, never derived.** *"Which neighbourhood"* is not a taste
+question. Deriving a day in Leslieville because a die said so would be the
+engine inventing a destination nobody named — the inverse of the ruling that
+opened Session 15. `allThemes()` stays derivable-only; `allRequestableThemes()`
+is the wider list. It also means every existing derived day's draw is
+untouched, so the standing exams still measure the same engine.
+
+**Geography got one owner.** `ANCHORS` moved to `@/shared/districts`, because
+the client now offers districts and the engine retrieves against them. The
+alternative — a second list of slugs in `theme.ts` — is twin drift with the
+ink still wet.
+
+### The defect the live probe found, and the principle underneath it
+
+District themes first got the ordinary **1 km of discovery slack**, on the
+honest-looking ground that an anchor approximates a neighbourhood and someone
+asking for Queen West does not mean the west side of the street only.
+
+The probe then produced **"A day in Yorkville" containing a stop the app
+itself labelled "Kensington Market."** Yorkville's 800 m circle plus 1 km of
+slack reaches 1.8 km — far enough that the ADMITTING circle and the LABELLING
+circle disagree in front of the traveller.
+
+Now zero slack, and it was affordable because it was measured first: at zero
+slack Yorkville still holds **884 venues with no category empty**. Depth was
+never the reason for the slack.
+
+**The principle, which is the ruling in miniature: slack is SILENT widening;
+the spill is HONEST widening. A zone day gets only the honest kind.** Buying
+reach through an invisible kilometre is the silent fallback constraint 4 bans.
+
+### Honest widening, as ruled
+
+A district can hold 884 venues and **six markets** — Yorkville, measured at
+CP2 — so a step can starve while the day is otherwise fine. Refusing would
+refuse a day buildable one street over; dropping the step is the silent
+failure. So the day **spills into the nearest district** (nearest by centre: a
+distance is a fact, an adjacency table is an opinion needing maintenance for
+every city), records which step starved and where it reached, and stops after
+two — past which the traveller did not ask for a day in Yorkville, they asked
+for a day, and the label would outlive the truth.
+
+Detection is CATEGORY PRESENCE, not menu emptiness, and the difference is
+stated rather than blurred: it runs before the Details stage, so no hours are
+known and it cannot see an hours-starved step — which is already reported as
+`unfilled`. What it sees is the structural case a wider bbox can actually fix.
+Running it there is also what keeps the widening **free**.
+
+### One owner for key→theme
+
+`themeFromKey` replaces **three independent copies**, and they disagreed:
+
+- `Concierge`'s returned `null` for anything unrecognised, so a `zone:` key
+  would have been **silently dropped at the seam** — the `wants` failure
+  exactly, and invisible in the trace.
+- `TastingRoom`'s had no fallback: an unknown mode fell into the `experience`
+  branch and **cast** the id, so a typo became a `DayTheme` that throws four
+  layers later inside `threadSpec`.
+- `generation-report`'s was a fourth.
+
+It now validates against the vocabulary, and a round-trip test covers every
+requestable theme: `themeFromKey(themeId(t)) === t` for all of them.
+
+### The `day_wants` trace gap — and the half that should NOT land
+
+`day_wants` now records the **applied** wants — the list that actually became
+the day's gravity, after the `MAX_INTERESTS` cap. So a trace can answer
+whether the parser's words reached generation, which is the question Session
+15's diagnosis had to reason about instead of read.
+
+**`persona_source` deliberately NOT added**, against Session 15's own note
+asking for it. `persona_key === "profile"` already IS the source; a second
+field beside it would be two ways to say one thing, free to disagree — the
+duplicate ownership constraint 3 bans. Half a patch was worth landing, and it
+is recorded which half and why.
+
+### Derivation reaches — proven with the real parser, not the prompt
+
+A prompt that lists an option is not evidence a sentence lands on it. That is
+the same gap as a stage present in the source and never run, so
+`scripts/parse-probe.ts` drives the real parser. **7/7, $0.0646:**
+
+| sentence | theme | wants |
+|---|---|---|
+| "picnic" | `experience:park-picnic` | nature |
+| "a day in the park" | `experience:park-picnic` | — |
+| "hang out with friends outside" | `experience:park-picnic` | nature |
+| **"shopping, pub hopping and food for today"** | **null** | **shopping, nightlife, food** |
+| "I want to spend the day in Yorkville" | `zone:yorkville` | — |
+| "shopping on Queen St W" | `zone:queen_west_ossington` | shopping |
+| "the islands if the weather's good" | `experience:toronto-islands` | — |
+
+Two of those are the interesting ones. The founder's own failed sentence
+produces **three wants and no theme** — shopping with no district named is not
+a zone day, and the parser does not over-reach for one. And *"shopping on
+Queen St W"* produces **both**: a want and a district, neither swallowing the
+other.
+
+The last row is a regression guard: a widened vocabulary must not cost the old
+one its own sentence.
+
+### Live, at $0, through a real `generateDay`
+
+```
+picnic  Rita Cox Park 11:55–17:55 as a composite block,
+        provisioned at King Fresh Foodmarket beforehand — causality holds
+zone    five stops, every neighbourhood label "Yorkville",
+        no widening needed — and the coherence pass made ZERO moves,
+        because a single-district day is coherent by retrieval
+```
+
+That last observation is worth keeping: XXX-47's two halves are complementary
+rather than redundant. The swap pass fixes a scattered day; a zone day is not
+scattered in the first place.
+
+## Step 4 — The shopping seed run (CHECKPOINT 4)
+
+### The founder red-pens this list
+
+`npx tsx --env-file=.env.local scripts/shopping-seed.ts`
+
+| he said | verdict | reachable? |
+|---|---|---|
+| **Eaton Centre** | PRESENT as `CF Toronto Eaton Centre`, `shopping`, **now LINKED** | ✅ inside `downtown_core` (0.32 km) |
+| **Holt Renfrew** | PRESENT ×2 — but **both suburban** (19.6 km and 11.6 km out); the Bloor flagship is **not in the pool** | ❌ outside every district |
+| **Yorkdale** | PRESENT as `Yorkdale Shopping Centre`, `shopping`, unlinked | ❌ 7.6 km outside every district |
+| **Sherway Gardens** | **ABSENT** — 6 rows contain "Sherway", 2 are shopping, all tenants | ❌ |
+| **outlet malls** | **ABSENT** | ❌ |
+| **Yorkville** | ZONE, not a venue | ✅ `zone:yorkville`, shipped at CP3 |
+| **Queen St W** | ZONE, not a venue | ✅ `zone:queen_west_ossington`, shipped at CP3 |
+
+**Four gaps, not three** — the fourth is geography, and it is the one that
+matters most.
+
+### Two corrections to the Session 15 record
+
+Both from one root: **a name was matched and nobody checked where it was.**
+
+**"Yorkdale — mall absent, only tenants" is WRONG.** `Yorkdale Shopping
+Centre` is in the pool, mapped `shopping`. It read as absent because
+`curation-resolve`'s near-name list was an unsorted **`.slice(0, 6)`** — six
+arbitrary rows offered to the founder under the words *"pick the right one"*.
+The mall sat outside the arbitrary six, and the only available reading was
+that it does not exist.
+
+That is **the second time an instrument in this family has turned a bad sample
+into a recorded pool gap.** Session 14 fixed the apostrophe half (`%Hanlans%`
+against `Hanlan's Point Beach`); the SAMPLING half was never fixed, because
+nobody had yet asked it about a name whose canonical form is longer than the
+one a person says. Now ranked by closeness of spelling, and it prints how many
+rows it is **not** showing — so a short list can never again read as a
+complete one.
+
+**"Holt Renfrew — PRESENT ×2, electable today" is MISLEADING.** Both rows are
+suburban: one 19.6 km out, one 11.6 km out and within ~250 m of Sherway
+Gardens. **The Bloor Street store he means is not in the pool at all.**
+"Present" was true of the name and false of the venue.
+
+### Does linking alone fix it? No — and the arithmetic is exact
+
+`freshness` is the ONLY score term a link changes, weighted 0.1:
+
+```
+unlinked          0.4 × 0.1 = 0.040
+linked            0.6 × 0.1 = 0.060      ← a link is worth +0.020
+details-fetched   1.0 × 0.1 = 0.100
+```
+
+Against `JITTER_BOUND` ±0.04 — a pairwise swing of 0.08. **A link is worth a
+quarter of the noise it competes with.**
+
+And the mandate's premise needs correcting: the comparison is not 0.4 vs 1.0.
+At SHORTLIST time nothing has been fetched, so no candidate is at 1.0. It is
+**0.4 vs 0.6**, and worse — at shortlist time every candidate in a category
+scores *identically* on everything else:
+
+- `ratingQuality` — the 0.35 unrated prior, for all of them
+- `personaAffinity` — per-CATEGORY, so identical within `shopping`
+- `priceFit` — 0.5, pool rows carry no price fact
+- `lensFit` — reads `userRatingCount ?? 0`, so fame = 0 for all of them
+
+**Within one category, at shortlist time, the only terms that differ are
+freshness and jitter.** Eaton Centre was never losing to better venues. It was
+losing a weighted coin flip against 3,422 of them.
+
+Worth naming separately: `lensFit` means an **`icons`** persona — the one who
+most wants the Eaton Centre — scores every unrated venue at fame 0, while a
+`corners` persona scores the same null at 0.2 and is *rewarded* for it.
+**Pre-Details, the pool makes every venue look like a hidden gem.**
+
+And a lottery underneath the lottery: with a 400-row cap per category and
+3,423 shopping venues, `CF Toronto Eaton Centre` appears in **4 of the 8 pool
+windows**. Even the reachable mall is a coin flip before the scoring coin
+flip.
+
+### What was done, and what was deliberately not
+
+**(a) Linked — one venue, the only one where it can have any effect.**
+`CF Toronto Eaton Centre` → `ChIJvUYHUcs0K4gRN8i7jHsUiYs`, name match 1.000,
+`matched_confirmed`, link written. $0.02. Pooled shopping links went 18 → 19.
+
+`scripts/link-curated.ts` is dry-run by default and **refuses to spend** on a
+venue outside every district: a link there is a purchase with no reachable
+effect, and checking first is the point.
+
+**(b) Absent malls NOT added as pool identities — and this is a report, not a
+skip.** The plan says *"add absent malls as pool identities where legal"*. The
+measurement says it would achieve nothing: Sherway Gardens and the outlet
+malls sit outside every district exactly as Yorkdale does, so a new identity
+would be as unreachable as the existing one. **Adding rows the engine can
+never query would look like progress and be none.** Filed as **XXX-53** with
+the three real options and a ruling requested.
+
+**(c) Zone names routed** — done at CP3. `zone:yorkville` and
+`zone:queen_west_ossington` are live, and the parse probe confirms *"shopping
+on Queen St W"* reaches the district while carrying the `shopping` want.
+
+### The blocker behind the blocker — XXX-52
+
+`FOUNDER_ANCHOR_WORTHY` has entries for `parks`, `markets`,
+`museums_galleries`, `historic_sites`, `nightlife_bars` — and **none for
+`shopping` or `scenic_viewpoints`**, the two categories XXX-37 added in
+Session 13.
+
+**The vocabulary-widening failure, in the highest-trust signal the system
+has.** It is a `Partial<Record<…>>`, so the missing key compiles silently and
+reads as *"the founder curated nothing here"* rather than *"nobody ever asked
+him"*.
+
+The consequence is circular and exact: curation needs a NAME (none filed),
+calibre falls to the RATING bar, a rating needs a DETAILS fetch, Details need
+the SHORTLIST — and the shortlist is the coin flip. **The one signal designed
+to beat the coin flip has no key for the category.**
+
+### Tickets filed
+
+**XXX-52** — `FOUNDER_ANCHOR_WORTHY` never widened for the XXX-37 categories;
+proposes making it an exhaustive `Record` so the next category must answer.
+**XXX-53** — retrieval geography cannot reach suburban destinations; carries
+both Session 15 corrections and three options for a ruling.
+
+### What the founder should red-pen here
+
+1. **The resolved list above** — is `CF Toronto Eaton Centre` the right
+   spelling, is `Yorkdale Shopping Centre` the right mall, and is the Bloor
+   Holt Renfrew what he meant by "Holt Renfrew"?
+2. **XXX-53's three options** — widen the districts, add a destination kind,
+   or leave them unreachable and say so. My lean is **option 2**: a suburban
+   mall is a place you travel TO for three hours, which is the excursion shape
+   (golden Day 6), not the district shape.
+3. **XXX-52's worksheet** — which shopping venues are anchor-worthy. That is
+   the tier-1 signal, and it is his to author, not mine.
+
+### CP4 red pen — the founder's two follow-ups, measured
+
+**(a) The Bloor flagship IS in the pool — not a work order.** Three rows, all
+INSIDE the Yorkville circle:
+
+| row | address | from Yorkville centre |
+|---|---|---|
+| `Holt Renfrew Centre` | 50 Bloor St W | 0.41 km |
+| `Holt Renfrew - Head Office` | 60 Bloor St. West | 0.37 km |
+| `Holt Renfrew Furs` | — | 0.42 km |
+
+His read was right on both counts — the two suburban rows are not it, and it
+does not belong in the suburban-mall bucket. But my ticket's claim that the
+flagship *"is not in the pool at all"* was **wrong**, and XXX-53 is corrected
+in place rather than left standing.
+
+It is a **spelling** problem, and the **third instance of one failure in one
+session**: exact-normalized matching on `"Holt Renfrew"` hits Humberline Drive
+and The West Mall and misses the flagship, which the pool spells `Holt Renfrew
+Centre`. The name matched and nobody checked where it was — again. So XXX-52's
+curated entry is `Holt Renfrew Centre`.
+
+*Not settleable from the pool, for his eye*: `Holt Renfrew Centre` is also the
+office complex at 50 Bloor W. The row is mapped `shopping`; whether FSQ means
+the store or the building is not a question the pool answers.
+
+**(b) The Yorkville geometry needs NO fix.** Bounding the Mink Mile by
+coordinates (Bloor W, Yonge → Avenue Rd):
+
+```
+107 of 107 shopping venues inside the 800 m circle   100%
+furthest                                             612 m
+strip centroid from the current centre               180 m
+```
+
+**And a proxy I caught on myself.** The first pass measured *"any address
+containing Bloor"* and reported **28%** coverage — which would have sent next
+session to redraw a circle that is correct. Bloor Street runs ~12 km; the
+venues it counted as missed are on Bloor West in **the Annex**, a district
+that already covers them. Third proxy-measurement correction this session, and
+the only one caught before it was reported as a finding. *State which signal a
+measurement reads* keeps earning its place in the ledger.
+
+Both filed on XXX-53 as a correction; neither needs next-session work beyond
+the curated spelling.
+
+## Step 5 — The founder's session (CHECKPOINT 5)
+
+**The room is live and serving THIS session's surface** —
+`http://192.168.2.10:3000/tasting`, same Wi-Fi, phone browser, usual
+passphrase.
+
+**Verified, not assumed**, and the check earned itself: a dev server from
+before these changes was still running (PID 31933) — the exact Session 14
+failure. Killed, restarted, and then checked properly:
+
+- `/tasting` returns **200** on localhost and on the LAN address;
+- `/api/tasting/profile` and `/api/tasting/parse` return **401** without a
+  cookie — the gate working, not a fault;
+- the **served client bundle** (20 chunks, 6.4 MB) contains `A picnic in the
+  park`, `park-picnic`, the new `drinking spot` limitation line, and the
+  district slugs the zone picker is built from;
+- the OLD limitation wording (`slip through`) is **gone** — proof the bundle
+  is this session's, not a cached one.
+
+*One correction to my own method, which is the fourth proxy this session.* My
+first bundle check grepped for `"A day in Yorkville"` and reported it absent —
+but that string is composed at runtime from `DISTRICTS`, so it cannot appear
+in a bundle. The right signal is the template (`A day in ${…}`) and the slugs,
+both present. **Grepping for a runtime-composed string is asking the wrong
+question of the right artifact.**
+
+### His two sentences, and the ACs in his words
+
+| he types | the AC |
+|---|---|
+| **"shopping, pub hopping and food for today"** | the day visits real destinations **without zig-zagging** |
+| **the picnic request** | the day **is a picnic** |
+
+What is different since he last typed these:
+
+1. **His words now land.** The parse probe confirms this exact sentence gives
+   three wants and no theme — shopping, nightlife, food — and that *"shopping
+   on Queen St W"* gives the want AND the district.
+2. **A picnic is now a thing the engine has.** Park composite block, grocery
+   provisioning before it, weather-gated, refused honestly in rain.
+3. **The day should not zig-zag.** The coherence pass removed 20.3% of travel
+   across the exam set and every `route.detour-avoidable` advisory.
+4. **No bars, and no pubs.** 56–104 venues per day are now refused by their
+   own directory labels, including the 85 gastropubs he ruled in.
+5. **He can ask for a district.** *"a day in Yorkville"* is a theme now.
+
+**Verdicts go IN THE APP.** Session 12's process note stands: findings that
+live only in chat are findings the miners never see.
+
+### Known limits, said before he finds them
+
+- **Yorkdale, Sherway and the outlet malls are still unreachable** — they sit
+  outside every district and retrieval never queries there. XXX-53, with three
+  options and a ruling owed. A shopping day will be a DOWNTOWN shopping day.
+- **Eaton Centre is linked but not curated**, so it is electable and still
+  fighting a coin flip it usually loses (XXX-52). If it does not appear, that
+  is the known cause, not a new defect.
+- **Hours are unverified on most stops** — only linked venues get Details.
+  Unchanged since CP4, and the Sep 1–3 re-discovery is what lifts it.
+
+## Close-out — the deploy checklist
+
+**The incident this exists for:** `ANTHROPIC_API_KEY` was missing from Vercel
+Production, `/api/health` reported **healthy** throughout, and the first
+symptom was a founder generation failing.
+
+**So the checklist is now a CHECK, not a list.** `/api/health` verifies every
+credential the generation path needs and returns **unhealthy** if one is
+missing. Hit it after any deploy:
+
+```
+curl -s https://<prod>/api/health | jq '.status, .checks.credentials'
+```
+
+### Every env var the generation path reads
+
+| var | scope needed | without it |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Production + Preview + Development | **no selection, no narration — every generation fails** |
+| `GOOGLE_MAPS_API_KEY` | Production + Preview + Development | no Details, no links, no transit — days ship on honest absence |
+| `NEXT_PUBLIC_SUPABASE_URL` | all three | no pool at all |
+| `SUPABASE_SERVICE_ROLE_KEY` | all three, **Sensitive** | no pool at all |
+
+Not on the generation path, but required for the app to function:
+
+| var | scope | purpose |
+|---|---|---|
+| `TASTING_ROOM_SECRET` | all three, **Sensitive** | the tasting room passphrase gate |
+| `CRON_SECRET` | Production | authenticates the weather-ingest cron |
+| `VERCEL_GIT_COMMIT_SHA` | set by Vercel | the version string in `/api/health` |
+
+**`ANTHROPIC_API_KEY` is the one that broke prod and it is the one a grep
+cannot find** — `createAnthropic()` lets the SDK resolve it, so it appears
+nowhere in the codebase as a name. That is exactly why the health check names
+it in a written list rather than deriving one: a derived list would have
+missed the only key that has ever actually been missing.
+
+### Migrations — verified applied, not assumed
+
+All eleven, checked by querying for the object each one creates rather than by
+reading a migrations table:
+
+```
+20260803000000_initial            20260807000000_weather_days
+20260803000001_instrumentation    20260807100000_travel_times
+20260803000002_core_domain        20260809000000_evidence_and_taste
+20260805000000_discovery_pool     20260816000000_city_facts
+20260806000000_base_layer         20260823000000_profiles
+20260806200000_ttl_sweep          (function; last ran 2026-08-24 12:07 UTC)
+```
+
+**This session adds NO migration.** Everything shipped — the drinking-focus
+fact, the adjacency rule, the coherence pass, the picnic spec, the zone mode —
+is code and in-memory facts over the existing schema. `day_wants` rides in
+`traces.metadata`, which is `jsonb` and needs none.
+
+**The one thing this cannot confirm**: whether the Supabase project behind
+`.env.local` is the same one Vercel Production points at. That is a founder
+check (`vercel env ls`), and it is named rather than assumed.
+
+## CP4 gates
+
+`tsc --noEmit` clean · **786 tests passing**, 3 skipped · `npm run build`
+clean · `eslint` clean · all standing exams unchanged.
+
+**Spend: $0.0846** — seven parses ($0.0646) plus one Details call for the
+Eaton Centre link ($0.02).
+
+## CP3 gates
+
+`tsc --noEmit` clean · **786 tests passing**, 3 skipped (was 750) ·
+`npm run build` clean · `eslint` clean · golden 6/6 · day-7 clean · anchors
+8/8 · closes 7/7 · discretionary max 0.33 · adjacency census 0/0 ·
+`alcohol-report`, `coherence-probe`, `engine-wiring-probe`, `parse-probe` all
+PASS.
+
+**Spend: $0.0646** — seven parses. Everything else remains Supabase reads.
+
+## CP2 gates
+
+`tsc --noEmit` clean · **750 tests passing**, 3 skipped (was 731) ·
+`npm run build` clean · `eslint` clean · golden 6/6 · 29 traps · day-7 clean ·
+`alcohol-report` PASS · `coherence-probe` PASS · `engine-wiring-probe` PASS.
+
+## Spend
+
+**$0.0846** of the $15 gate through CP4 — seven parser calls in
+`scripts/parse-probe.ts` ($0.0646) and one Details call to mint the Eaton
+Centre link ($0.02). Everything else this session is a Supabase read: no other
+Google endpoint, no day generation, and four end-to-end `generateDay` runs
+that are free by construction rather than by luck. The founder session at Step
+5 is budgeted at ~$5. The free tier resets **Sep 1**.
+
 # Session 15 — The taste front door: chat intent, profile, product UX (XXX-43)
 
 Branch: `session-15-taste-front-door`, cut from `main` at `057c922` (the

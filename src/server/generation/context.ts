@@ -66,11 +66,26 @@ export function buildGrammarContext(options: {
   /** Trip circumstance — the leg-exposure rule needs it (XXX-35). */
   transport: TransportMode[];
   /**
-   * The traveller's refused categories (XXX-43). Absent → `null` → the
-   * backstop rule stays silent, because a context that was not told the
-   * constraints must not assert there were none.
+   * The traveller's refused categories (XXX-43).
+   *
+   * **REQUIRED, and explicitly nullable — changed at XXX-47 (Session 16 CP2)
+   * because being optional is what made the backstop dead code.**
+   *
+   * `null` still means what it always meant: we were not told, so the rule
+   * must stay silent rather than assert there were no constraints. What is
+   * gone is the ability to reach that state by SAYING NOTHING. Session 15
+   * built this field, the rule that reads it, nine upstream seams and a trap
+   * fixture — and the engine's only validation context never passed it, so
+   * `checkConstraints` returned on its first line for every day this product
+   * has ever generated. The rule described as *"the one place that cannot be
+   * forgotten"* was forgotten at the wire-up.
+   *
+   * An optional parameter defaulting to the safe-looking value is the
+   * admit-list failure wearing a function signature: the caller who forgets
+   * gets silence, and silence is indistinguishable from correctness. Required
+   * means the compiler asks every caller, including the next one.
    */
-  excludedCategories?: readonly PlaceCategory[];
+  excludedCategories: readonly PlaceCategory[] | null;
 }): GrammarContext {
   return {
     daylight: options.environment.daylight,
@@ -82,7 +97,7 @@ export function buildGrammarContext(options: {
     anchorBaseline: options.anchorBaseline,
     travel: options.travel,
     transport: options.transport,
-    excludedCategories: options.excludedCategories ?? null,
+    excludedCategories: options.excludedCategories,
     params: GRAMMAR_PARAMS,
   };
 }

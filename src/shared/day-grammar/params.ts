@@ -12,8 +12,21 @@
  * Ratified at Session 7 CHECKPOINT 1.
  */
 
-import type { PlaceCategory, TransportMode } from "../vocabulary";
+import type {
+  CategoryFamily,
+  PlaceCategory,
+  TransportMode,
+} from "../vocabulary";
 import type { MealPatternId, OpenInterval } from "./types";
+
+/**
+ * What two consecutive stops of one texture family amount to.
+ *
+ * Three states rather than a boolean, because the honest answers to
+ * "park then park" and "dinner then dinner" are genuinely different in kind:
+ * one is fine, one is worth a word, one cannot ship.
+ */
+export type AdjacencyVerdict = "blocking" | "advisory" | "permitted";
 
 /** Minutes. `typical` is used in messages and by the breather rule only. */
 export interface DwellRange {
@@ -278,6 +291,120 @@ export const GRAMMAR_PARAMS = {
      * fully-scheduled output for this persona is a FAILURE."
      */
     wandererMinUnstructuredFraction: 0.35,
+    /**
+     * ADJACENCY, part one: is a second SIT-DOWN MEAL straight after the first
+     * a repetition? (XXX-46, Session 16.)
+     *
+     * The founder's CP4 day is the canonical case: dinner at Simpl Things
+     * 18:45–20:15, then Tibet Kitchen at 20:25 as the close. Nothing caught
+     * it — the food cap counts TOTALS (3 against `classic`'s 4) and
+     * `rhythm.alternating-texture` counts DISTINCT FAMILIES in a window (3,
+     * meeting `minTextureFamilies`). Neither looks at adjacency.
+     *
+     * WHY THIS IS NOT `foodCategories`, which sits ten lines above and lists
+     * both `restaurants` and `cafes`. That list is right for a CEILING — a
+     * pub with a kitchen ends a hungry stretch, and four coffees is four food
+     * stops. It is wrong for ADJACENCY, and the offline recompose is what
+     * proved it rather than an argument: the live composer opens **day-2 and
+     * day-6 with `cafes` → `restaurants`**, which is coffee then brunch, and
+     * `coffee_then_brunch` is a MEAL PATTERN THIS PRODUCT SHIPS BY NAME
+     * (see `mealPatterns` above). A rule blocking it would have been
+     * legislation against a feature sitting in the same object.
+     *
+     * That is the fifth constant lesson arriving on schedule: `foodCategories`
+     * was written for a ceiling, and reusing it here would have made its
+     * correctness depend on a behaviour nobody wrote down. So the question
+     * gets its own owner and its own name.
+     *
+     * Exhaustive `Record<PlaceCategory, boolean>` rather than a list of the
+     * true ones: a category added to the vocabulary must SAY whether a stop
+     * there is a full meal, instead of defaulting to "no" in silence, which
+     * is exactly how `eveningOk` deleted `scenic_viewpoints` from every
+     * evening close.
+     */
+    mealGrade: {
+      /** A table, a menu, an hour. Two in a row is eating twice. */
+      restaurants: true,
+      /**
+       * FALSE, and this is the entry the whole rule turns on. A café is a
+       * different act from a meal — thirty minutes and a coffee — so
+       * `cafes` → `restaurants` is one continuous morning, not a repeat.
+       * `dwell.typical` agrees: 45 minutes against a restaurant's 90.
+       */
+      cafes: false,
+      museums_galleries: false,
+      historic_sites: false,
+      markets: false,
+      nightlife_bars: false,
+      parks: false,
+      shopping: false,
+      scenic_viewpoints: false,
+      /** Buying food is not eating it — the `provision` role's whole point. */
+      grocery: false,
+    } as const satisfies Record<PlaceCategory, boolean>,
+    /**
+     * ADJACENCY, part two: what two stops IN A ROW of one texture family
+     * amount to, when they are not two meals (XXX-46, Session 16).
+     *
+     * THE TICKET ASKED FOR A BLANKET RULE — *"no two consecutive stops of the
+     * same texture family"*. It cannot have one, and the measurement is why,
+     * the same way `minTextureFamilies` above was corrected by the golden set
+     * rather than chosen. Run the blanket rule over the six founder-verified
+     * days:
+     *
+     *   day-1-jays    Harbourfront → Roundhouse Park                 outdoor
+     *   day-4-budget  Grange Park → Trinity Bellwoods                outdoor
+     *   day-4-budget  Trinity Bellwoods → Harbourfront               outdoor
+     *
+     * Two of six golden days fail, on three pairs, ALL of them outdoor, and
+     * the founder authored every one. Park into park is not a repetition — it
+     * is a walk. day-4 is the budget day whose whole shape is walking the
+     * city, and Session 12 already lost a close to a rule that took a quarter
+     * of that day's geography away.
+     *
+     * And the blanket rule would refuse something the founder asked for BY
+     * NAME. His own failed sentence this session is *"shopping, pub hopping
+     * and food for today"* — **pub hopping IS consecutive bars.** A rule
+     * forbidding it would make the request undeliverable in the very session
+     * that exists to deliver it.
+     *
+     * So adjacency is a PER-FAMILY question with an exhaustive owner.
+     * `Record<CategoryFamily, …>` and not an admit-list, for the reason this
+     * project has now learned five times.
+     *
+     * The verdicts, each with its argument:
+     *
+     *  - `table` → **permitted here**, because everything worth blocking in
+     *    this family is `mealGrade` above, and everything else in it is
+     *    coffee-then-brunch. An advisory would fire on a shipped meal
+     *    pattern, every day it is used.
+     *  - `culture` → **advisory.** Two galleries in a row is the founder's own
+     *    complaint and `pickContrast` already forbids it. It cannot be
+     *    blocking because a THREAD day's spine is same-family BY
+     *    CONSTRUCTION — `history-of-toronto` is 2–3 culture stops — and
+     *    `GrammarContext` does not carry the theme, so this rule cannot tell
+     *    a spine from a rut. Blocking would reject the one theme mode built
+     *    to produce it.
+     *  - `market` → **advisory.** Session 14's family licence exists precisely
+     *    to put TWO shopping venues in a shopper's day, and XXX-41 is about
+     *    making Eaton Centre → Yorkville reachable. Blocking would fight the
+     *    feature next door.
+     *  - `outdoor` → **permitted.** Measured above: three founder-verified
+     *    pairs.
+     *  - `night` → **permitted.** Pub hopping, in the founder's own words.
+     *
+     * TIER 3 and a RULING, not a tuning: the narrowing from the ticket's
+     * blanket wording is recorded in SESSION_NOTES for ratification rather
+     * than made quietly. An unrecorded tightening is legislation nobody voted
+     * for; so is an unrecorded loosening.
+     */
+    consecutiveFamily: {
+      table: "permitted",
+      culture: "advisory",
+      market: "advisory",
+      outdoor: "permitted",
+      night: "permitted",
+    } as const satisfies Record<CategoryFamily, AdjacencyVerdict>,
   },
 
   structure: {

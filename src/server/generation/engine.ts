@@ -61,6 +61,11 @@ import {
   type ComposeInput,
   type Skeleton,
 } from "./compose";
+import {
+  describeMove,
+  improveCoherence,
+} from "./coherence";
+import { COMPOSE_PARAMS } from "./compose-params";
 import { applyFounderGroundtruth } from "./groundtruth";
 import { environmentIsFair, selectTheme } from "./theme-select";
 import { readFerryTimetable } from "../city-facts/repo";
@@ -72,11 +77,24 @@ import {
   themeId,
   themeZoneSlugs,
 } from "@/shared/theme";
+import { districtLabel } from "@/shared/districts";
 import { holdsAThread, holdsAnExperience, templatesHolding } from "./arc";
-import { POOL_WINDOWS, retrieveCandidates, zonesFor } from "./retrieve";
+import {
+  POOL_WINDOWS,
+  retrieveCandidates,
+  spillDistricts,
+  starvedIntentIds,
+  zonesFor,
+  type RetrievalZone,
+} from "./retrieve";
 import { planRepair, MAX_VALIDATION_PASSES, type RepairPlan } from "./repair";
 
-import { isCategoryPermitted } from "@/shared/constraints";
+import {
+  excludesAlcohol,
+  isCategoryPermitted,
+  isVenuePermitted,
+  type DrinkingFocus,
+} from "@/shared/constraints";
 import type { CuisineTag } from "@/shared/cuisine";
 import { collapseByPlace, scoreAll } from "./score";
 import { MENU_SIZE, MENU_SIZE_DISCRETIONARY } from "./select";
@@ -87,9 +105,11 @@ import type {
   GenerationRequest,
   GenerationStats,
   Menu,
+  Selection,
   Selector,
   SlotIntent,
   StageTimings,
+  ZoneSpill,
 } from "./types";
 
 /**
@@ -98,6 +118,15 @@ import type {
  * of a bound is that an unseatable pool must not loop.
  */
 const MAX_ANCHOR_REELECTIONS = 2;
+
+/**
+ * How far a zone day may widen before its own name stops being true.
+ *
+ * TWO. Past that the traveller did not ask for a day in Yorkville, they asked
+ * for a day — and a label that outlives the truth is the silent failure this
+ * bound exists to prevent, not a rounding error.
+ */
+const MAX_ZONE_SPILLS = 2;
 
 /** How many stable orderings a category's pool page may be taken in. */
 const POOL_WINDOW_COUNT = POOL_WINDOWS.length;
@@ -508,10 +537,105 @@ export async function generateDay(
           POOL_WINDOW_COUNT,
         ),
     );
+
+    /**
+     * -- HONEST WIDENING FOR A ZONE DAY (XXX-47, Session 16 CP3) ------------
+     *
+     * A district can hold 884 venues and still hold six markets. When a step
+     * has NOTHING of its kind inside the named district, the day widens into
+     * the nearest neighbouring one and says so — never a refusal for a day
+     * that was buildable one street over, never a step dropped in silence.
+     *
+     * Bounded at two spills: past that the traveller did not ask for a day in
+     * Yorkville, they asked for a day, and calling it a Yorkville day would be
+     * the label outliving the truth.
+     *
+     * Free: it happens BEFORE the Details stage, so a widened pool costs
+     * another Supabase read and no Google call.
+     */
+    let zoneSpill: ZoneSpill | null = null;
+    if (theme.mode === "zone") {
+      let spilled: RetrievalZone[] = [];
+      for (let attempt = 1; attempt <= MAX_ZONE_SPILLS; attempt += 1) {
+        const starved = starvedIntentIds(skeleton.intents, pool);
+        if (starved.length === 0) break;
+        const extra = spillDistricts([...zones, ...spilled], 1);
+        if (extra.length === 0) break; // out of city, and honest about it
+        spilled = [...spilled, ...extra];
+        const widened = await retrieveCandidates(
+          deps.supabase,
+          request.city,
+          categories,
+          [...zones, ...spilled],
+          (category) =>
+            diceIndex(
+              { seed, identity, site: "pool-window", context: category },
+              POOL_WINDOW_COUNT,
+            ),
+        );
+        pool.length = 0;
+        pool.push(...widened);
+        const stillStarved = starvedIntentIds(skeleton.intents, pool);
+        zoneSpill = {
+          zoneLabel: districtLabel(theme.zoneSlug),
+          starvedSteps: starved
+            .map((id) => skeleton.intents.find((i) => i.id === id)?.label ?? id)
+            .filter((v, i, a) => a.indexOf(v) === i),
+          spilledInto: spilled.map((z) => z.label),
+          resolved: stillStarved.length === 0,
+        };
+        await deps.instrumentation.logEvent(traceId, {
+          provider: "zone",
+          endpoint: "spill",
+          estCostUsd: 0,
+          metadata: {
+            zone: theme.zoneSlug,
+            attempt,
+            starved_steps: zoneSpill.starvedSteps,
+            spilled_into: spilled.map((z) => z.slug),
+            resolved: zoneSpill.resolved,
+            pool_after: pool.length,
+          },
+        });
+        if (stillStarved.length === 0) break;
+      }
+    }
+
     timings.retrieveMs = now().getTime() - tRetrieve;
 
+    // -- the traveller's refusals, at venue level (XXX-44) ------------------
+    const excluded = request.excludedCategories ?? [];
+    const permitted = excludeRefusedVenues(pool, excluded);
+    if (excluded.length > 0) {
+      const byAttribute = permitted.dropped.filter((d) =>
+        isCategoryPermitted(d.category, excluded),
+      );
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "constraints",
+        endpoint: "venues_refused",
+        estCostUsd: 0,
+        metadata: {
+          excluded_categories: [...excluded],
+          retrieved: pool.length,
+          dropped_total: permitted.dropped.length,
+          /**
+           * The number this ticket exists for: venues the CATEGORY gate would
+           * have let through and the LABEL gate caught. Zero here on a
+           * no-alcohol day means the fix did nothing, and the trace says so
+           * rather than letting a green test imply otherwise.
+           */
+          dropped_by_drinking_label: byAttribute.length,
+          alcohol_excluded: excludesAlcohol(excluded),
+          sample: byAttribute
+            .slice(0, 5)
+            .map((d) => `${d.name} (${d.category})`),
+        },
+      });
+    }
+    const permittedPool = permitted.kept;
+
     // -- pre-score + shortlist --------------------------------------------
-    let scored = scoreAll(pool, request.persona, request.budgetBand, seed);
+    let scored = scoreAll(permittedPool, request.persona, request.budgetBand, seed);
     const shortlist = pickShortlist(scored, skeleton);
 
     // -- link-on-demand + request-time facts (in-memory only) --------------
@@ -767,6 +891,98 @@ export async function generateDay(
         }
         transitFetched = true;
       }
+
+      /**
+       * -- ZONE COHERENCE (XXX-47, Session 16 CP2) -------------------------
+       *
+       * The missing stage, and it goes HERE for one reason: this is the first
+       * moment at which the whole sequence exists, is priced against the best
+       * travel numbers this request will ever have, and can still change.
+       *
+       * After the transit fetch, deliberately. Running it before would let it
+       * optimise against Haversine estimates and then discover, once real
+       * transit numbers arrived, that it had bought nothing — a pass that
+       * measured its own saving with the wrong instrument. Before validation,
+       * equally deliberately: a day this improves must be judged as the day it
+       * became, not as the one it replaced.
+       *
+       * It composes and validates each trial in memory. That is pure — no
+       * Google call, no Anthropic call, no query — so the whole pass costs
+       * some milliseconds and nothing else. `trials` is recorded anyway,
+       * because a cost nobody reports is a cost nobody notices growing.
+       */
+      const coherenceContext = buildGrammarContext({
+        environment,
+        mealPattern,
+        persona: request.persona,
+        budgetBand: request.budgetBand,
+        lodging: request.lodging ?? null,
+        anchorBaseline: composed.anchorBaseline,
+        travel: travelProvider,
+        transport: request.transport,
+        excludedCategories: request.excludedCategories ?? null,
+      });
+      const travelTotal = (legs: readonly ComposedLeg[]): number =>
+        legs.reduce((sum, leg) => sum + leg.minutes, 0);
+      const composeWith = (candidate: readonly Selection[]): ComposeInput => ({
+        ...composeInput,
+        travel: travelProvider,
+        selections: [...candidate],
+      });
+      /**
+       * The anchor does not move. It was elected for calibre and chosen for
+       * taste, and the day's geography should organise AROUND its centrepiece
+       * rather than trade it away for eleven minutes. Pinning it is also what
+       * makes the result anchor-relative: everything else is drawn toward the
+       * shortest tour through a fixed centre.
+       */
+      const protectedIntentIds = new Set(
+        skeleton.intents.filter((i) => i.role === "anchor").map((i) => i.id),
+      );
+      const coherence = improveCoherence({
+        selections,
+        menus,
+        protectedIntentIds,
+        params: COMPOSE_PARAMS.coherence,
+        evaluate: (candidate) => {
+          const trial = composeDay(composeWith(candidate));
+          const findings = validateDay(trial.day, coherenceContext);
+          return {
+            totalTravelMinutes: travelTotal(trial.legs),
+            valid: !hasViolations(findings),
+            unfilledCount: trial.unfilled.length,
+          };
+        },
+      });
+      if (coherence.moves.length > 0) {
+        composed = composeDay(composeWith(coherence.selections));
+      }
+      /**
+       * Logged on EVERY constrained-or-not generation, including the ones
+       * where it did nothing — `moves: 0` with a live `route.detour-avoidable`
+       * on the day is the signature of a MENU problem rather than a
+       * sequencing one, and that is the distinction the next session needs.
+       * A fire-rate that is only recorded when it fires is not a fire-rate.
+       */
+      await deps.instrumentation.logEvent(traceId, {
+        provider: "coherence",
+        endpoint: "swap_pass",
+        estCostUsd: 0,
+        metadata: {
+          moves: coherence.moves.length,
+          saved_minutes: coherence.savedMinutes,
+          trials: coherence.trials,
+          rejected_by_grammar: coherence.rejectedByGrammar,
+          rejected_by_unfilled: coherence.rejectedByUnfilled,
+          detail: coherence.moves.map((m) =>
+            describeMove(
+              m,
+              (id) => composed.day.places[id]?.name ?? candidatesById.get(id)?.place.name ?? id,
+            ),
+          ),
+        },
+      });
+
       /**
        * Name the crossings (XXX-43, Session 14 finding #4). The theme
        * declares its own route; the legs into and out of the composite block
@@ -949,6 +1165,16 @@ export async function generateDay(
         anchorBaseline: composed.anchorBaseline,
         travel: travelProvider,
         transport: request.transport,
+        /**
+         * THIS LINE WAS MISSING (XXX-43 shipped without it; found at XXX-47,
+         * Session 16 CP2). Without it `ctx.excludedCategories` was `null` on
+         * every generation this product has ever run, and `checkConstraints`
+         * returned on its first line — so the backstop that was supposed to
+         * turn *"we filtered carefully"* into *"a day seating an excluded
+         * category cannot reach a user"* has never once been able to reject
+         * a day.
+         */
+        excludedCategories: request.excludedCategories ?? null,
       });
       const tValidate = now().getTime();
       const findings = validateDay(composed.day, context);
@@ -989,6 +1215,7 @@ export async function generateDay(
             arc_template_id: skeleton.templateId,
             theme: themeId(theme),
             theme_origin: themeOutcome.selection.origin,
+            zone_spill: zoneSpill,
             elected_anchor: skeleton.electedAnchor,
             anchor_degraded: skeleton.anchorDegraded,
             anchor_calibre_unmet: anchorCalibreUnmet,
@@ -1006,6 +1233,7 @@ export async function generateDay(
           anchorCalibreUnmet,
           arcTemplateId: skeleton.templateId,
           theme: themeOutcome.selection,
+          zoneSpill,
           findings: advisories,
           narrated: describeViolations(findings),
           reasons,
@@ -1314,6 +1542,70 @@ export function allocateMenu(
  * `SHORTLIST_NOMINAL` still caps the whole thing, so the spend bound is
  * unchanged by the wider discretionary menus.
  */
+/**
+ * The venue-level constraint seam (XXX-44, Session 16) — the tenth.
+ *
+ * Session 15 counted nine places the founder's *"I don't drink"* has to
+ * reach, every one of them a CATEGORY gate. This is the first that reads an
+ * ATTRIBUTE, and it sits here — immediately after retrieval, before scoring
+ * and the shortlist — for one reason: it is the earliest point at which a
+ * venue exists as a venue. Every seam downstream (shortlist, details, menu,
+ * selection, composition, the grammar backstop) then works on a pool that
+ * cannot offer a refused venue, so none of them needs its own copy of this
+ * question. One gate, upstream of all of them.
+ *
+ * It returns the drops rather than swallowing them because a constraint that
+ * fires invisibly is a constraint nobody can prove fired. Session 14's rest
+ * stop fired ZERO times across eight personas with five green tests around
+ * it; the lesson was that a feature's first proof is its FIRE-RATE against
+ * real data. The count and a sample go into the trace on every constrained
+ * generation.
+ */
+export function excludeRefusedVenues(
+  candidates: Candidate[],
+  excluded: readonly PlaceCategory[],
+): {
+  kept: Candidate[];
+  dropped: { placeId: string; name: string; category: PlaceCategory; focus: DrinkingFocus }[];
+} {
+  // The unconstrained request is the overwhelmingly common one and must stay
+  // byte-identical to a request from before this function existed.
+  if (excluded.length === 0) return { kept: candidates, dropped: [] };
+  const kept: Candidate[] = [];
+  const dropped: {
+    placeId: string;
+    name: string;
+    category: PlaceCategory;
+    focus: DrinkingFocus;
+  }[] = [];
+  for (const candidate of candidates) {
+    const fact = candidate.place.drinkingFocused;
+    /**
+     * A candidate with no fact reads `unknown`, and `isVenuePermitted`
+     * permits it. The asymmetry is argued at that function; the short version
+     * is that `unknown` here means "no `categories` fact at all", which is a
+     * population the constraint was never meant to govern.
+     */
+    const focus: DrinkingFocus =
+      fact === undefined || fact.status === "absent"
+        ? "unknown"
+        : fact.value
+          ? "focused"
+          : "not-focused";
+    if (isVenuePermitted(candidate.category, focus, excluded)) {
+      kept.push(candidate);
+      continue;
+    }
+    dropped.push({
+      placeId: candidate.place.id,
+      name: candidate.place.name,
+      category: candidate.category,
+      focus,
+    });
+  }
+  return { kept, dropped };
+}
+
 const SHORTLIST_SPARE = 2;
 export function pickShortlist(
   scored: Candidate[],
